@@ -65,6 +65,7 @@ export function createBeforeCreateUser(database: InviteDb) {
   }): Promise<void> {
     if (user.emailVerified !== true) {
       throw new APIError("FORBIDDEN", {
+        code: "email_not_verified",
         message: "Email address is not verified",
       });
     }
@@ -73,6 +74,7 @@ export function createBeforeCreateUser(database: InviteDb) {
     const invited = await hasPendingInvite(normalizedEmail, database);
     if (!invited) {
       throw new APIError("FORBIDDEN", {
+        code: "not_invited",
         message: "Not invited",
       });
     }
@@ -101,7 +103,10 @@ export function createBeforeCreateSession(database: InviteDb) {
   }): Promise<void> {
     const userId = typeof session.userId === "string" ? session.userId : "";
     if (!userId) {
-      throw new APIError("FORBIDDEN", { message: "Not invited" });
+      throw new APIError("FORBIDDEN", {
+        code: "not_invited",
+        message: "Not invited",
+      });
     }
 
     const [user] = await database
@@ -115,10 +120,14 @@ export function createBeforeCreateSession(database: InviteDb) {
       .limit(1);
 
     if (!user) {
-      throw new APIError("FORBIDDEN", { message: "Not invited" });
+      throw new APIError("FORBIDDEN", {
+        code: "not_invited",
+        message: "Not invited",
+      });
     }
     if (!user.emailVerified) {
       throw new APIError("FORBIDDEN", {
+        code: "email_not_verified",
         message: "Email address is not verified",
       });
     }
@@ -136,7 +145,10 @@ export function createBeforeCreateSession(database: InviteDb) {
     const normalizedEmail = normalizeEmail(user.email);
     const invited = await hasPendingInvite(normalizedEmail, database);
     if (!invited) {
-      throw new APIError("FORBIDDEN", { message: "Not invited" });
+      throw new APIError("FORBIDDEN", {
+        code: "not_invited",
+        message: "Not invited",
+      });
     }
   };
 }

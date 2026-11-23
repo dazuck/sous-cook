@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import type { PGlite } from "@electric-sql/pglite";
+import { APIError } from "better-auth/api";
 
 vi.mock("@/lib/hooks/connected", async () => {
   const { HOOK_NAMES } = await import("../hooks/types");
@@ -35,6 +36,7 @@ import {
   acceptInvite,
   beforeCreateSession,
   beforeCreateUser,
+  createBeforeCreateSession,
 } from "./invites";
 import { slugFromName } from "./slug";
 import { authenticateWebhookRequest } from "./webhook-tokens";
@@ -556,6 +558,28 @@ describe("Invites, gates, slugs, and membership", () => {
       beforeCreateSession({ userId: savedUser.id }),
       /Not invited/,
     );
+  });
+
+  it("GATE-6 (codes): createBeforeCreateSession refuses empty and missing user ids with FORBIDDEN code not_invited", async () => {
+    const checkSession = createBeforeCreateSession(db);
+
+    for (const session of [{ userId: "" }, { userId: "no-such-user-id" }]) {
+      let caught: unknown;
+      try {
+        await checkSession(session);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(APIError);
+      expect(caught).toMatchObject({
+        status: "FORBIDDEN",
+        message: "Not invited",
+        body: {
+          code: "not_invited",
+          message: "Not invited",
+        },
+      });
+    }
   });
 
   it("GATE-8: slugFromName derives slugs, enforces rules, reserves slugs on pending invites, and acceptInvite uses the stored slug", async () => {

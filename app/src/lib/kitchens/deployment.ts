@@ -11,8 +11,13 @@ import {
 } from "@/lib/ai/prices";
 import { connected } from "@/lib/hooks/connected";
 import { HOOK_NAMES } from "@/lib/hooks/types";
+import {
+  DeploymentConfigError,
+  getDeploymentMode,
+  type DeploymentMode,
+} from "./mode";
 
-export type DeploymentMode = "sign-in" | "single-kitchen";
+export { DeploymentConfigError, getDeploymentMode, type DeploymentMode };
 
 export type DeploymentDb = PgDatabase<PgQueryResultHKT, typeof schema>;
 
@@ -27,41 +32,6 @@ export const REQUIRED_SIGN_IN_ENV_VARS = [
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const MIN_BETTER_AUTH_SECRET_LENGTH = 32;
-
-/**
- * Raised when deployment mode, required environment variables, hook switches,
- * or database state fail start-up validation.
- */
-export class DeploymentConfigError extends Error {
-  /** Full message for server logs when details are omitted from caller responses. */
-  readonly logMessage: string;
-
-  constructor(message: string, logMessage?: string) {
-    super(message);
-    this.name = "DeploymentConfigError";
-    this.logMessage = logMessage ?? message;
-  }
-}
-
-/**
- * Reads `SOUS_SIGN_IN` and resolves the deployment mode.
- * Unset (or empty) and `"on"` mean sign-in mode; `"off"` means single-kitchen
- * mode; any other value refuses to start.
- */
-export function getDeploymentMode(
-  env: Record<string, string | undefined> = process.env,
-): DeploymentMode {
-  const raw = env.SOUS_SIGN_IN;
-  if (raw === undefined || raw === "" || raw === "on") {
-    return "sign-in";
-  }
-  if (raw === "off") {
-    return "single-kitchen";
-  }
-  throw new DeploymentConfigError(
-    `Invalid SOUS_SIGN_IN value "${raw}". Expected "on", "off", or unset.`,
-  );
-}
 
 /**
  * Parses `BETTER_AUTH_URL` and returns its exact origin (scheme + host + port).

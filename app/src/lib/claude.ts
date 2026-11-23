@@ -1,8 +1,10 @@
 import type { Pack, Recipe } from "@sous/pack";
+import { sql } from "drizzle-orm";
 import { db, conversationLogs } from "./db";
 import {
   chat as aiChat,
   getConfig,
+  isAllowanceUsed,
   kitchenMeter,
   type AIMessage,
   type ChatResponse as AIChatResponse,
@@ -388,6 +390,7 @@ async function logMessage(
   role: "user" | "assistant" | "system",
   content: string,
   context?: NotionContext,
+  createdAt?: Date,
 ): Promise<void> {
   await db.insert(conversationLogs).values({
     kitchenId,
@@ -396,6 +399,11 @@ async function logMessage(
     role,
     content,
     context: context ? JSON.stringify(context) : null,
+    // created_at is a timestamp without time zone written in the database
+    // session's time zone; cast through timestamptz to match the column default.
+    ...(createdAt
+      ? { createdAt: sql`${createdAt.toISOString()}::timestamptz::timestamp` }
+      : {}),
   });
 }
 
@@ -420,23 +428,13 @@ export async function chat(
     ? `${baseSystemPrompt}\n\n${contextBlock}`
     : baseSystemPrompt;
 
-  // Log user message (the last one in the array, before turnContext is appended)
+  // Find the last user message in the array (before turnContext is appended)
   let lastUserIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === "user") {
       lastUserIdx = i;
       break;
     }
-  }
-  if (lastUserIdx >= 0) {
-    await logMessage(
-      kitchenId,
-      memberId,
-      sessionId,
-      "user",
-      messages[lastUserIdx].content,
-      notionContext,
-    );
   }
 
   const aiMessages: AIMessage[] =
@@ -455,18 +453,52 @@ export async function chat(
 
   // Make API call using AI abstraction layer
   const maxTokens = options.maxTokens ?? 4096;
-  const response = await aiChat(
-    {
-      messages: aiMessages,
-      systemPrompt,
-      model: options.model,
-      maxTokens,
-      temperature: options.temperature ?? 0.7,
-      googleSearch: options.googleSearch,
-      thinkingBudget: options.thinkingBudget,
-    },
-    kitchenMeter(kitchenId, memberId, "ask"),
-  );
+  // Capture the moment the question was asked before calling the model. The
+  // row is only written after the call so an AI-cap refusal stores nothing,
+  // but readers such as report listing match the question against flags taken
+  // while waiting for the reply and rely on it keeping its asked time.
+  const askedAt = new Date();
+  const logUserMessage = async () => {
+    if (lastUserIdx >= 0) {
+      await logMessage(
+        kitchenId,
+        memberId,
+        sessionId,
+        "user",
+        messages[lastUserIdx].content,
+        notionContext,
+        askedAt,
+      );
+    }
+  };
+
+  let response: AIChatResponse;
+  try {
+    response = await aiChat(
+      {
+        messages: aiMessages,
+        systemPrompt,
+        model: options.model,
+        maxTokens,
+        temperature: options.temperature ?? 0.7,
+        googleSearch: options.googleSearch,
+        thinkingBudget: options.thinkingBudget,
+      },
+      kitchenMeter(kitchenId, memberId, "ask"),
+    );
+  } catch (err) {
+    if (!isAllowanceUsed(err)) {
+      try {
+        await logUserMessage();
+      } catch (logErr) {
+        console.error("[AskSous] could not store the question:", logErr);
+      }
+    }
+    throw err;
+  }
+
+  // Log user message (the last one in the array, before turnContext is appended)
+  await logUserMessage();
 
   // A reply that didn't stop normally fails below; say why in the server log
   // (Vercel's runtime logs), never with its words, so a cut shows up there.

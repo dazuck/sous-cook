@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { PGlite } from "@electric-sql/pglite";
 
 const fakeProvider = await vi.hoisted(async () => {
@@ -1175,6 +1175,207 @@ describe("AI caps across tRPC, webhook, cook plans, refresh, intake, and pantry"
     ).rejects.toMatchObject({
       code: "TOO_MANY_REQUESTS",
       message: expect.stringContaining("AI allowance for this month is used up"),
+    });
+  });
+
+  describe("ASKCAP-1: Ask at the AI cap writes nothing to conversation_logs", () => {
+    it("refuses with 429 TOO_MANY_REQUESTS for a kitchen at cap without calling the provider or logging the question", async () => {
+      await db
+        .update(kitchens)
+        .set({ aiMonthlyCapMicros: 0 })
+        .where(eq(kitchens.id, kitchenA.id));
+
+      const headersA = await signedInHeaders(userA.id, db);
+      headersA.set("origin", "https://app.example.com");
+
+      const res = await httpCall<HttpTrpcErrorBody>(
+        "chatCooking",
+        {
+          sessionId: "askcap-1-capped",
+          messages: [
+            { role: "user", content: "Can I swap shallots for yellow onion?" },
+          ],
+        },
+        { method: "POST", headers: headersA },
+      );
+
+      expect(res.status).toBe(429);
+      expect(res.body.error.data.code).toBe("TOO_MANY_REQUESTS");
+      expect(res.body.error.data.allowance?.scope).toBe("kitchen");
+      expect(fakeProvider.chatCalls).toHaveLength(0);
+
+      const rows = await db
+        .select()
+        .from(conversationLogs)
+        .where(eq(conversationLogs.kitchenId, kitchenA.id));
+      expect(rows).toEqual([]);
+    });
+
+    it("stores the user question and then the assistant answer when the cap allows the call", async () => {
+      await client.exec("SET TIME ZONE 'America/Los_Angeles'");
+      try {
+        await db
+          .update(kitchens)
+          .set({ aiMonthlyCapMicros: null })
+          .where(eq(kitchens.id, kitchenA.id));
+
+        const headersA = await signedInHeaders(userA.id, db);
+        headersA.set("origin", "https://app.example.com");
+
+        const sessionId = "askcap-1-allowed";
+        const question = "How long should the lentils simmer?";
+        const answer = "Simmer the lentils gently for twenty minutes.";
+
+        let replyAt: Date | undefined;
+        fakeProvider.onNextChat(() => {
+          const startedAt = Date.now();
+          while (Date.now() <= startedAt) {
+            // Wait until the clock moves on by at least one millisecond.
+          }
+          replyAt = new Date();
+          return {
+            content: answer,
+            finishReason: "stop",
+            usage: { inputTokens: 120, outputTokens: 24 },
+          };
+        });
+
+        const res = await httpCall<{ result: { data: { content: string } } }>(
+          "chatCooking",
+          {
+            sessionId,
+            messages: [{ role: "user", content: question }],
+          },
+          { method: "POST", headers: headersA },
+        );
+
+        expect(res.status).toBe(200);
+        expect(res.body.result.data.content).toBe(answer);
+        expect(replyAt).toBeInstanceOf(Date);
+
+        // conversation_logs.created_at is a timestamp without time zone written
+        // in the database session's time zone; cast to timestamptz in SQL so
+        // epoch milliseconds match UTC instants such as replyAt in any time zone.
+        const rows = await db
+          .select({
+            role: conversationLogs.role,
+            content: conversationLogs.content,
+            createdAtMs: sql<number>`(extract(epoch from ${conversationLogs.createdAt}::timestamptz) * 1000)::double precision`,
+          })
+          .from(conversationLogs)
+          .where(
+            and(
+              eq(conversationLogs.kitchenId, kitchenA.id),
+              eq(conversationLogs.sessionId, sessionId),
+            ),
+          );
+        expect(rows).toHaveLength(2);
+
+        const userRow = rows.find((r) => r.role === "user");
+        const assistantRow = rows.find((r) => r.role === "assistant");
+        expect(userRow?.content).toBe(question);
+        expect(assistantRow?.content).toBe(answer);
+        expect(userRow!.createdAtMs).toBeLessThan(replyAt!.getTime());
+        expect(assistantRow!.createdAtMs).toBeGreaterThanOrEqual(
+          userRow!.createdAtMs,
+        );
+      } finally {
+        await client.exec("RESET TIME ZONE");
+      }
+    });
+
+    it("stores the user question and no assistant answer when the provider throws another error", async () => {
+      const headersA = await signedInHeaders(userA.id, db);
+      headersA.set("origin", "https://app.example.com");
+
+      const sessionId = "askcap-1-provider-error";
+      const question = "Should I cover the pot while braising?";
+
+      fakeProvider.onNextChat(() => {
+        throw new Error("provider unavailable");
+      });
+
+      const res = await httpCall<HttpTrpcErrorBody>(
+        "chatCooking",
+        {
+          sessionId,
+          messages: [{ role: "user", content: question }],
+        },
+        { method: "POST", headers: headersA },
+      );
+
+      expect(res.status).not.toBe(429);
+      expect(res.status).toBe(500);
+      expect(res.body.error.data.code).toBe("INTERNAL_SERVER_ERROR");
+
+      const rows = await db
+        .select()
+        .from(conversationLogs)
+        .where(
+          and(
+            eq(conversationLogs.kitchenId, kitchenA.id),
+            eq(conversationLogs.sessionId, sessionId),
+          ),
+        );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.role).toBe("user");
+      expect(rows[0]?.content).toBe(question);
+    });
+
+    it("returns the provider error and logs when storing the question fails after a provider error", async () => {
+      const headersA = await signedInHeaders(userA.id, db);
+      headersA.set("origin", "https://app.example.com");
+
+      const sessionId = "askcap-1-log-write-fails";
+      const question = "Can I substitute lime juice for vinegar?";
+      const providerErrorMessage = "upstream provider failed: distinctive-askcap1";
+      const constraintName = "askcap1_refuse_question_insert";
+
+      fakeProvider.onNextChat(() => {
+        throw new Error(providerErrorMessage);
+      });
+
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      await client.exec(
+        `ALTER TABLE conversation_logs ADD CONSTRAINT ${constraintName} CHECK (content <> '${question}')`,
+      );
+
+      try {
+        const res = await httpCall<HttpTrpcErrorBody>(
+          "chatCooking",
+          {
+            sessionId,
+            messages: [{ role: "user", content: question }],
+          },
+          { method: "POST", headers: headersA },
+        );
+
+        expect(res.status).toBe(500);
+        expect(res.body.error.data.code).toBe("INTERNAL_SERVER_ERROR");
+        expect(res.body.error.message).toBe(providerErrorMessage);
+        expect(JSON.stringify(res.body)).not.toContain(constraintName);
+
+        expect(errSpy).toHaveBeenCalledWith(
+          expect.stringContaining("could not store the question"),
+          expect.anything(),
+        );
+
+        const rows = await db
+          .select()
+          .from(conversationLogs)
+          .where(
+            and(
+              eq(conversationLogs.kitchenId, kitchenA.id),
+              eq(conversationLogs.sessionId, sessionId),
+            ),
+          );
+        expect(rows).toEqual([]);
+      } finally {
+        errSpy.mockRestore();
+        await client.exec(
+          `ALTER TABLE conversation_logs DROP CONSTRAINT IF EXISTS ${constraintName}`,
+        );
+      }
     });
   });
 });
