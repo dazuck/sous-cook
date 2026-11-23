@@ -1,6 +1,6 @@
 # Sous
 
-A calm cook-mode web app for a kitchen tablet. You queue a recipe, prop the tablet on the counter, and it takes you through the cook one screen at a time: what to get out, what to do now, and what is on a timer.
+Sous is a cooking assistant that lets you be present and creative in the kitchen. It runs as a web app on a kitchen tablet: you queue a recipe, prop the tablet on the counter, and it takes you through the cook one screen at a time, showing what to get out, what to do now, and what is on a timer.
 
 ![The kitchen home screen](docs/screenshots/home.png)
 
@@ -8,7 +8,7 @@ A calm cook-mode web app for a kitchen tablet. You queue a recipe, prop the tabl
 
 ## Status
 
-This is a frozen snapshot of the app I cook from, shared as-is. The snapshot was taken in November 2026 and is not kept in step with my own copy. Issues and forks are welcome, but I can't promise support.
+This is a snapshot of the app I cook from, shared as-is and updated now and then, not kept in step with my own copy. Issues and forks are welcome, but I can't promise support.
 
 ## What works
 
