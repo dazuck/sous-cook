@@ -6,7 +6,7 @@
  * kitchen's sweep, and a cook's next start.
  */
 
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 
 const scheduled: (() => unknown)[] = [];
@@ -29,13 +29,9 @@ vi.mock("./hooks/registry", async () => {
   return { hook: () => scriptedCookLog((url, init) => mockFetch(url, init)) };
 });
 
-vi.mock("./db", async () => {
-  const { PGlite } = await import("@electric-sql/pglite");
-  const { drizzle } = await import("drizzle-orm/pglite");
-  const schema = await import("../../drizzle/schema");
-  const client = new PGlite();
-  return { ...schema, db: drizzle(client, { schema }), client };
-});
+vi.mock("@/lib/db", async () =>
+  (await import("./__tests__/test-db")).mockDbModule(),
+);
 
 import * as dbModule from "./db";
 import { db, kitchenQueue } from "./db";
@@ -56,13 +52,6 @@ import { POST as sweepPost } from "../app/api/kitchen-queue/sweep/route";
 const client = (dbModule as unknown as { client: PGlite }).client;
 /** The Cook Log's transport: every request the grid makes goes through it. */
 const mockFetch = vi.fn();
-
-beforeAll(async () => {
-  const { generateDrizzleJson, generateMigration } = await import("drizzle-kit/api");
-  const statements = await generateMigration(generateDrizzleJson({}), generateDrizzleJson({ kitchenQueue }));
-  for (const statement of statements) await client.exec(statement);
-  // drizzle-kit's cold import takes seconds, more on a busy machine.
-}, 60_000);
 
 beforeEach(async () => {
   mockFetch.mockReset();

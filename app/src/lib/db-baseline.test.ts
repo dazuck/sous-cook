@@ -14,7 +14,11 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { describe, expect, it } from "vitest";
 import * as schema from "../../drizzle/schema";
-import { MIGRATIONS_DIR, migratedTestDb } from "./__tests__/test-db";
+import {
+  MIGRATIONS_DIR,
+  migratedTestDb,
+  migrationsUpTo,
+} from "./__tests__/test-db";
 import {
   BaselineRefusalError,
   baselineDatabase,
@@ -66,8 +70,13 @@ async function createFixtureWithLaterTable(): Promise<{
   dir: string;
   cleanup: () => void;
 }> {
+  const cut = migrationsUpTo(0);
   const dir = mkdtempSync(path.join(os.tmpdir(), "sous-baseline-fixture-"));
-  cpSync(MIGRATIONS_DIR, dir, { recursive: true });
+  try {
+    cpSync(cut.dir, dir, { recursive: true });
+  } finally {
+    cut.cleanup();
+  }
 
   const kitchens = pgTable("kitchens", {
     id: uuid("id").primaryKey().defaultRandom(),
@@ -76,7 +85,17 @@ async function createFixtureWithLaterTable(): Promise<{
   }).enableRLS();
 
   const { generateDrizzleJson } = await import("drizzle-kit/api");
-  const snapshot0001 = generateDrizzleJson({ ...schema, kitchens });
+  const baselineSnapshot = JSON.parse(
+    readFileSync(path.join(dir, "meta", "0000_snapshot.json"), "utf8"),
+  ) as { tables: Record<string, unknown> };
+  const kitchensSnapshot = generateDrizzleJson({ kitchens });
+  const snapshot0001 = {
+    ...baselineSnapshot,
+    tables: {
+      ...baselineSnapshot.tables,
+      ...kitchensSnapshot.tables,
+    },
+  };
 
   const journalPath = path.join(dir, "meta", "_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8")) as JournalFile;
@@ -282,9 +301,15 @@ describe("Database baseline", () => {
         const { generateDrizzleJson, generateMigration } = await import(
           "drizzle-kit/api"
         );
+        const baselineSnapshot = JSON.parse(
+          readFileSync(
+            path.join(MIGRATIONS_DIR, "meta", "0000_snapshot.json"),
+            "utf8",
+          ),
+        );
         const statements = await generateMigration(
           generateDrizzleJson({}),
-          generateDrizzleJson(schema),
+          baselineSnapshot,
         );
         for (const statement of statements) {
           await client.exec(statement);
@@ -377,6 +402,58 @@ describe("Database baseline", () => {
       } finally {
         await client.close();
         fixture.cleanup();
+      }
+    }, 15_000);
+
+    it("refuses when a table created by a later migration (kitchens) already exists, against the real migrations folder", async () => {
+      const client = new PGlite();
+      try {
+        await execBaselineSqlDirectly(client);
+        await client.exec(
+          `CREATE TABLE "kitchens" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL, "slug" text NOT NULL)`,
+        );
+        const db = drizzle(client, { schema });
+
+        const err = await expectRefusal(() =>
+          baselineDatabase(db, MIGRATIONS_DIR),
+        );
+        expect(err.message).toMatch(/kitchens/);
+      } finally {
+        await client.close();
+      }
+    }, 15_000);
+
+    it("refuses when a table created by a later migration (kitchen_webhook_tokens) already exists, against the real migrations folder", async () => {
+      const client = new PGlite();
+      try {
+        await execBaselineSqlDirectly(client);
+        await client.exec(
+          `CREATE TABLE "kitchen_webhook_tokens" ("id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL)`,
+        );
+        const db = drizzle(client, { schema });
+
+        const err = await expectRefusal(() =>
+          baselineDatabase(db, MIGRATIONS_DIR),
+        );
+        expect(err.message).toMatch(/kitchen_webhook_tokens/);
+      } finally {
+        await client.close();
+      }
+    }, 15_000);
+
+    it("refuses when a view with the name of a later-migration table (kitchens) already exists, against the real migrations folder", async () => {
+      const client = new PGlite();
+      try {
+        await execBaselineSqlDirectly(client);
+        await client.exec(`CREATE VIEW "kitchens" AS SELECT 1 AS id`);
+        const db = drizzle(client, { schema });
+
+        const err = await expectRefusal(() =>
+          baselineDatabase(db, MIGRATIONS_DIR),
+        );
+        expect(err.message).toMatch(/kitchens/);
+      } finally {
+        await client.close();
       }
     }, 15_000);
   });

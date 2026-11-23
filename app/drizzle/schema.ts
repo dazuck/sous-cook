@@ -5,6 +5,7 @@ import {
   uuid,
   jsonb,
   integer,
+  bigint,
   boolean,
   index,
   check,
@@ -19,15 +20,85 @@ import type { CookReportInput } from "../src/lib/cook-reports";
 // `anon` role could otherwise read and write the table. The app connects as
 // the tables' owner, which RLS doesn't bind unless forced.
 
+// =============================================================================
+// Kitchens and webhook tokens
+// =============================================================================
+
+/**
+ * A household's space. Its queue, recipes, Ask history, reports, webhook tokens
+ * and AI spend belong to it.
+ */
+export const kitchens = pgTable(
+  "kitchens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull().unique(),
+    name: text("name").notNull(),
+    /** Optional per-kitchen monthly AI cap in micro-dollars; null uses the deployment default. */
+    aiMonthlyCapMicros: bigint("ai_monthly_cap_micros", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    check(
+      "kitchens_slug_shape",
+      sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and length(${t.slug}) <= 40`,
+    ),
+    check("kitchens_name_length", sql`length(${t.name}) between 1 and 80`),
+    check(
+      "kitchens_cap_nonnegative",
+      sql`${t.aiMonthlyCapMicros} is null or ${t.aiMonthlyCapMicros} >= 0`,
+    ),
+  ],
+).enableRLS();
+
+/**
+ * Per-kitchen bearer tokens for the webhook endpoints, stored only as their
+ * SHA-256 hex digest.
+ */
+export const kitchenWebhookTokens = pgTable(
+  "kitchen_webhook_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kitchenId: uuid("kitchen_id")
+      .notNull()
+      .references(() => kitchens.id, { onDelete: "restrict" }),
+    tokenSha256: text("token_sha256").notNull().unique(),
+    label: text("label").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      "kitchen_webhook_tokens_sha256_shape",
+      sql`${t.tokenSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    index("kitchen_webhook_tokens_kitchen_idx").on(t.kitchenId),
+  ],
+).enableRLS();
+
 // AI conversation logs - for debugging and learning
-export const conversationLogs = pgTable("conversation_logs", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  sessionId: text("session_id").notNull(),
-  role: text("role").notNull(), // 'user' | 'assistant' | 'system'
-  content: text("content").notNull(),
-  context: jsonb("context"), // Notion data snapshot used in this message
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}).enableRLS();
+export const conversationLogs = pgTable(
+  "conversation_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kitchenId: uuid("kitchen_id").references(() => kitchens.id, {
+      onDelete: "restrict",
+    }),
+    sessionId: text("session_id").notNull(),
+    role: text("role").notNull(), // 'user' | 'assistant' | 'system'
+    content: text("content").notNull(),
+    context: jsonb("context"), // Notion data snapshot used in this message
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("conversation_logs_kitchen_session_idx").on(t.kitchenId, t.sessionId),
+  ],
+).enableRLS();
 
 // =============================================================================
 // Chat Persistence (F1)
@@ -121,6 +192,9 @@ function servesEstimateChecks(
  */
 export const kitchenQueue = pgTable("kitchen_queue", {
   id: uuid("id").primaryKey().defaultRandom(),
+  kitchenId: uuid("kitchen_id").references(() => kitchens.id, {
+    onDelete: "restrict",
+  }),
   recipeNotionId: text("recipe_notion_id"), // Reference to Notion recipe (optional)
   recipeData: jsonb("recipe_data").$type<KitchenQueueRecipeData>(), // Full recipe data if no Notion ID
   targetUser: text("target_user").notNull(), // a cook's slug (`src/lib/cook-id.ts`)
@@ -225,6 +299,11 @@ export const kitchenQueue = pgTable("kitchen_queue", {
     "kitchen_queue_finished_by_known",
     sql`${t.finishedBy} in ('pressed', 'auto')`,
   ),
+  index("kitchen_queue_kitchen_status_idx").on(
+    t.kitchenId,
+    t.status,
+    t.createdAt,
+  ),
 ]).enableRLS();
 
 /** A queue item's row in the Cook Log, as last written or re-found. */
@@ -259,6 +338,9 @@ export type CookLogRef = {
  */
 export const docRecipes = pgTable("doc_recipes", {
   id: uuid("id").primaryKey().defaultRandom(),
+  kitchenId: uuid("kitchen_id").references(() => kitchens.id, {
+    onDelete: "restrict",
+  }),
   docSlug: text("doc_slug").notNull().unique(),
   name: text("name").notNull(),
   category: text("category"), // cuisine divider it fell under, e.g. "indian"
@@ -331,6 +413,9 @@ export const docRecipes = pgTable("doc_recipes", {
  */
 export const recipeIdeasCache = pgTable("recipe_ideas_cache", {
   id: uuid("id").primaryKey().defaultRandom(),
+  kitchenId: uuid("kitchen_id").references(() => kitchens.id, {
+    onDelete: "restrict",
+  }),
   text: text("text").notNull(),
   syncedAt: timestamp("synced_at").defaultNow().notNull(),
 }).enableRLS();
@@ -356,6 +441,9 @@ export const cookReports = pgTable(
   "cook_reports",
   {
     id: uuid("id").primaryKey(),
+    kitchenId: uuid("kitchen_id").references(() => kitchens.id, {
+      onDelete: "restrict",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -378,5 +466,8 @@ export const cookReports = pgTable(
     note: text("note").default("").notNull(),
     noteAt: timestamp("note_at", { withTimezone: true }),
   },
-  (t) => [index("cook_reports_created_at_idx").on(t.createdAt.desc())],
+  (t) => [
+    index("cook_reports_created_at_idx").on(t.createdAt.desc()),
+    index("cook_reports_kitchen_created_idx").on(t.kitchenId, t.createdAt),
+  ],
 ).enableRLS();

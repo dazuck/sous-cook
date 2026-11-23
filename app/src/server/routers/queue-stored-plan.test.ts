@@ -37,16 +37,12 @@ vi.mock("../../lib/shelf/load", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/shelf/load")>()),
   PACK_PLANS_DIR: plansDir,
 }));
-vi.mock("../../lib/db", async () => {
-  const { PGlite } = await import("@electric-sql/pglite");
-  const { drizzle } = await import("drizzle-orm/pglite");
-  const schema = await import("../../../drizzle/schema");
-  const client = new PGlite();
-  return { ...schema, db: drizzle(client, { schema }), client };
-});
+vi.mock("@/lib/db", async () =>
+  (await import("../../lib/__tests__/test-db")).mockDbModule(),
+);
 
 import * as dbModule from "../../lib/db";
-import { conversationLogs, db, docRecipes, kitchenQueue } from "../../lib/db";
+import { db, docRecipes, kitchenQueue } from "../../lib/db";
 import { chat } from "../../lib/ai";
 import { cookPlanStamp, planSourceHash } from "../../lib/kitchen/cook-plan-stamp";
 import { chainPlan } from "../../lib/kitchen/__tests__/chain-plan";
@@ -59,15 +55,6 @@ const mockChat = chat as Mock;
 const caller = appRouter.createCaller({ db: {} as never });
 const HASH = planSourceHash(ZUCCHINI_RECIPE);
 const SETTLED = "rejected (uncovered-step): step 4 is in no task";
-
-beforeAll(async () => {
-  const { generateDrizzleJson, generateMigration } = await import("drizzle-kit/api");
-  const statements = await generateMigration(
-    generateDrizzleJson({}),
-    generateDrizzleJson({ docRecipes, kitchenQueue, conversationLogs }),
-  );
-  for (const statement of statements) await client.exec(statement);
-});
 
 let info: MockInstance<typeof console.info>;
 let error: MockInstance<typeof console.error>;

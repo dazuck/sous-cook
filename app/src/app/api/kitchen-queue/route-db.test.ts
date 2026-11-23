@@ -7,7 +7,7 @@
  * branches with the queue mocked.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import type { KitchenQueueRecipeData } from "../../../../drizzle/schema";
 import { ZUCCHINI_PLAN, ZUCCHINI_RECIPE, zucchiniRaw } from "@/lib/kitchen/__tests__/zucchini-wraps";
@@ -21,16 +21,11 @@ vi.mock("@/lib/ai", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ai")>()),
   chat: vi.fn(),
 }));
-vi.mock("@/lib/db", async () => {
-  const { PGlite } = await import("@electric-sql/pglite");
-  const { drizzle } = await import("drizzle-orm/pglite");
-  const schema = await import("../../../../drizzle/schema");
-  const client = new PGlite();
-  return { ...schema, db: drizzle(client, { schema }), client };
-});
+vi.mock("@/lib/db", async () =>
+  (await import("../../../lib/__tests__/test-db")).mockDbModule(),
+);
 
 import * as dbModule from "@/lib/db";
-import { conversationLogs, kitchenQueue } from "@/lib/db";
 import { chat } from "@/lib/ai";
 import { appRouter } from "@/server/routers/_app";
 import { POST } from "./route";
@@ -51,15 +46,6 @@ const CUT: KitchenQueueRecipeData = {
 interface ChatCall {
   systemPrompt?: string;
 }
-
-beforeAll(async () => {
-  const { generateDrizzleJson, generateMigration } = await import("drizzle-kit/api");
-  const statements = await generateMigration(
-    generateDrizzleJson({}),
-    generateDrizzleJson({ kitchenQueue, conversationLogs }),
-  );
-  for (const statement of statements) await client.exec(statement);
-});
 
 beforeEach(async () => {
   mockChat.mockReset();

@@ -5,28 +5,18 @@
  * query builder.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 
-vi.mock("./db", async () => {
-  const { PGlite } = await import("@electric-sql/pglite");
-  const { drizzle } = await import("drizzle-orm/pglite");
-  const schema = await import("../../drizzle/schema");
-  const client = new PGlite();
-  return { ...schema, db: drizzle(client, { schema }), client };
-});
+vi.mock("@/lib/db", async () =>
+  (await import("./__tests__/test-db")).mockDbModule(),
+);
 
 import * as dbModule from "./db";
 import { db, docRecipes } from "./db";
 import { readFamilyLibrary, writeDocOrder, type RecipeChunk } from "./recipe-sync";
 
 const client = (dbModule as unknown as { client: PGlite }).client;
-
-beforeAll(async () => {
-  const { generateDrizzleJson, generateMigration } = await import("drizzle-kit/api");
-  const statements = await generateMigration(generateDrizzleJson({}), generateDrizzleJson({ docRecipes }));
-  for (const statement of statements) await client.exec(statement);
-});
 
 beforeEach(async () => {
   await client.exec("delete from doc_recipes");

@@ -6,7 +6,7 @@
  * the sync, the derivation, the validator and every query are real.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import { eq } from "drizzle-orm";
 import type { PGlite } from "@electric-sql/pglite";
@@ -20,16 +20,12 @@ vi.mock("./ai", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./ai")>()),
   chat: vi.fn(),
 }));
-vi.mock("./db", async () => {
-  const { PGlite } = await import("@electric-sql/pglite");
-  const { drizzle } = await import("drizzle-orm/pglite");
-  const schema = await import("../../drizzle/schema");
-  const client = new PGlite();
-  return { ...schema, db: drizzle(client, { schema }), client };
-});
+vi.mock("@/lib/db", async () =>
+  (await import("./__tests__/test-db")).mockDbModule(),
+);
 
 import * as dbModule from "./db";
-import { conversationLogs, db, docRecipes } from "./db";
+import { db, docRecipes } from "./db";
 import { chat } from "./ai";
 import { extractRecipeFromText, type ImportedRecipe } from "./recipe-import";
 import type { LibraryTab } from "./hooks/types";
@@ -41,15 +37,6 @@ import { CostLedger, callCostUsd } from "./cook-plan-cost";
 const client = (dbModule as unknown as { client: PGlite }).client;
 const mockChat = chat as Mock;
 const mockExtract = extractRecipeFromText as Mock;
-
-beforeAll(async () => {
-  const { generateDrizzleJson, generateMigration } = await import("drizzle-kit/api");
-  const statements = await generateMigration(
-    generateDrizzleJson({}),
-    generateDrizzleJson({ docRecipes, conversationLogs }),
-  );
-  for (const statement of statements) await client.exec(statement);
-});
 
 beforeEach(async () => {
   mockChat.mockReset();

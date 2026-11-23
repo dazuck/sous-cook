@@ -5,7 +5,7 @@
  * derivation, validation and hashing are real.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import { eq } from "drizzle-orm";
 import type { PGlite } from "@electric-sql/pglite";
@@ -15,13 +15,9 @@ import { ZUCCHINI_PLAN, ZUCCHINI_RECIPE, zucchiniRaw } from "./kitchen/__tests__
 
 vi.mock("./ai", () => ({ chat: vi.fn() }));
 
-vi.mock("./db", async () => {
-  const { PGlite } = await import("@electric-sql/pglite");
-  const { drizzle } = await import("drizzle-orm/pglite");
-  const schema = await import("../../drizzle/schema");
-  const client = new PGlite();
-  return { ...schema, db: drizzle(client, { schema }), client };
-});
+vi.mock("@/lib/db", async () =>
+  (await import("./__tests__/test-db")).mockDbModule(),
+);
 
 import * as dbModule from "./db";
 import { conversationLogs, db, docRecipes } from "./db";
@@ -50,15 +46,6 @@ import {
 
 const client = (dbModule as unknown as { client: PGlite }).client;
 const mockChat = chat as Mock;
-
-beforeAll(async () => {
-  const { generateDrizzleJson, generateMigration } = await import("drizzle-kit/api");
-  const statements = await generateMigration(
-    generateDrizzleJson({}),
-    generateDrizzleJson({ docRecipes, conversationLogs }),
-  );
-  for (const statement of statements) await client.exec(statement);
-});
 
 beforeEach(async () => {
   mockChat.mockReset();

@@ -6,17 +6,13 @@
  * That guarantee lives in SQL, so these run the real queries.
  */
 
-import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import type { PGlite } from "@electric-sql/pglite";
 
-vi.mock("./db", async () => {
-  const { PGlite } = await import("@electric-sql/pglite");
-  const { drizzle } = await import("drizzle-orm/pglite");
-  const schema = await import("../../drizzle/schema");
-  const client = new PGlite();
-  return { ...schema, db: drizzle(client, { schema }), client };
-});
+vi.mock("@/lib/db", async () =>
+  (await import("./__tests__/test-db")).mockDbModule(),
+);
 
 import * as dbModule from "./db";
 import { db, kitchenQueue } from "./db";
@@ -24,17 +20,6 @@ import { getQueueItem, updateQueueStatus } from "./kitchen-queue";
 import { ACTIVITY_SLACK_MS, REOPEN_WINDOW_MS } from "./kitchen/auto-finish";
 
 const client = (dbModule as unknown as { client: PGlite }).client;
-
-beforeAll(async () => {
-  const { generateDrizzleJson, generateMigration } = await import(
-    "drizzle-kit/api"
-  );
-  const statements = await generateMigration(
-    generateDrizzleJson({}),
-    generateDrizzleJson({ kitchenQueue }),
-  );
-  for (const statement of statements) await client.exec(statement);
-});
 
 beforeEach(async () => {
   await client.exec("delete from kitchen_queue");

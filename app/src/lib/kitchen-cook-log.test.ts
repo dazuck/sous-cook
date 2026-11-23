@@ -10,7 +10,6 @@ import {
   describe,
   it,
   expect,
-  beforeAll,
   beforeEach,
   afterEach,
   vi,
@@ -36,13 +35,9 @@ vi.mock("./hooks/registry", async () => {
   return { hook: () => scriptedCookLog((url, init) => mockFetch(url, init)) };
 });
 
-vi.mock("./db", async () => {
-  const { PGlite } = await import("@electric-sql/pglite");
-  const { drizzle } = await import("drizzle-orm/pglite");
-  const schema = await import("../../drizzle/schema");
-  const client = new PGlite();
-  return { ...schema, db: drizzle(client, { schema }), client };
-});
+vi.mock("@/lib/db", async () =>
+  (await import("./__tests__/test-db")).mockDbModule(),
+);
 
 vi.mock("./kitchen-queue", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./kitchen-queue")>();
@@ -70,17 +65,6 @@ const client = (dbModule as unknown as { client: PGlite }).client;
 
 /** The Cook Log's transport: every request the grid makes goes through it. */
 const mockFetch = vi.fn();
-
-beforeAll(async () => {
-  const { generateDrizzleJson, generateMigration } = await import(
-    "drizzle-kit/api"
-  );
-  const statements = await generateMigration(
-    generateDrizzleJson({}),
-    generateDrizzleJson({ kitchenQueue }),
-  );
-  for (const statement of statements) await client.exec(statement);
-});
 
 beforeEach(async () => {
   mockFetch.mockReset();

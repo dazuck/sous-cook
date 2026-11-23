@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   cpSync,
   mkdtempSync,
@@ -8,10 +9,18 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { describe, expect, it } from "vitest";
 import * as schema from "../../drizzle/schema";
+import {
+  homeKitchen,
+  mintToken,
+  seedKitchen,
+  seedQueueRow,
+  snapshotRow,
+} from "./__tests__/kitchens";
 import {
   MIGRATIONS_DIR,
   migratedTestDb,
@@ -67,6 +76,86 @@ describe("Database migrations", () => {
     } finally {
       await migrated.client.close();
       await pushedClient.close();
+    }
+  }, 15_000);
+
+  it("MIG-2: backfills existing rows in all five owned tables onto the home kitchen", async () => {
+    const cut = migrationsUpTo(0);
+    const { client, db } = await migratedTestDb(cut.dir);
+    try {
+      const reportId = "0f8fad5b-d9cb-469f-a165-70867728950e";
+      await client.exec(`
+        INSERT INTO "kitchen_queue" ("recipe_data", "target_user", "status")
+        VALUES
+          ('{"name":"Dal"}'::jsonb, 'cook', 'pending'),
+          ('{"name":"Tacos"}'::jsonb, 'someone-else', 'pending');
+
+        INSERT INTO "doc_recipes" ("doc_slug", "name", "raw_doc_text")
+        VALUES ('dal', 'Dal', 'Dal recipe');
+
+        INSERT INTO "recipe_ideas_cache" ("text")
+        VALUES ('Weeknight stir-fry');
+
+        INSERT INTO "conversation_logs" ("session_id", "role", "content")
+        VALUES ('session-1', 'user', 'How hot should the pan be?');
+
+        INSERT INTO "cook_reports" (
+          "id", "captured_at", "build", "path", "screen", "recipe_name",
+          "state", "context", "events", "dom"
+        ) VALUES (
+          '${reportId}',
+          '2026-10-09T10:00:00.000Z',
+          'test-build-1',
+          '/kitchen/queue/1',
+          'step',
+          'Dal',
+          '{"mode":"first"}'::jsonb,
+          '{"online":true}'::jsonb,
+          '[]'::jsonb,
+          '<div>step</div>'
+        );
+      `);
+
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+
+      const home = await homeKitchen(db);
+      expect(home.slug).toBe("home");
+      expect(home.name).toBe("Home");
+
+      const queueRows = await client.query<{
+        target_user: string;
+        kitchen_id: string | null;
+      }>(
+        `SELECT target_user, kitchen_id FROM "kitchen_queue" ORDER BY target_user`,
+      );
+      expect(queueRows.rows).toEqual([
+        { target_user: "cook", kitchen_id: home.id },
+        { target_user: "someone-else", kitchen_id: home.id },
+      ]);
+
+      const docRows = await client.query<{ kitchen_id: string | null }>(
+        `SELECT kitchen_id FROM "doc_recipes"`,
+      );
+      expect(docRows.rows).toEqual([{ kitchen_id: home.id }]);
+
+      const ideasRows = await client.query<{ kitchen_id: string | null }>(
+        `SELECT kitchen_id FROM "recipe_ideas_cache"`,
+      );
+      expect(ideasRows.rows).toEqual([{ kitchen_id: home.id }]);
+
+      const logRows = await client.query<{ kitchen_id: string | null }>(
+        `SELECT kitchen_id FROM "conversation_logs"`,
+      );
+      expect(logRows.rows).toEqual([{ kitchen_id: home.id }]);
+
+      const reportRows = await client.query<{
+        id: string;
+        kitchen_id: string | null;
+      }>(`SELECT id, kitchen_id FROM "cook_reports"`);
+      expect(reportRows.rows).toEqual([{ id: reportId, kitchen_id: home.id }]);
+    } finally {
+      await client.close();
+      cut.cleanup();
     }
   }, 15_000);
 
@@ -161,40 +250,69 @@ describe("Database migrations", () => {
   }, 15_000);
 
   it("test helpers: migrationsUpTo cuts later entries and mockDbModule provides a migrated database", async () => {
-    const tmpDir = mkdtempSync(path.join(os.tmpdir(), "sous-upto-src-"));
+    const cut = migrationsUpTo(0);
+    const mocked = await mockDbModule(cut.dir);
     try {
-      cpSync(MIGRATIONS_DIR, tmpDir, { recursive: true });
-      const journalPath = path.join(tmpDir, "meta", "_journal.json");
-      const journal = JSON.parse(
-        readFileSync(journalPath, "utf8"),
-      ) as JournalFile;
-      journal.entries.push({
-        idx: 1,
-        version: "7",
-        when: (journal.entries[0]?.when ?? 0) + 1000,
-        tag: "0001_extra",
-        breakpoints: true,
-      });
-      writeFileSync(
-        path.join(tmpDir, "0001_extra.sql"),
-        `CREATE TABLE "extra_only_in_0001" ("id" integer PRIMARY KEY);`,
+      const catalog = await readCatalog(mocked.db);
+      expect(catalog.tables.map((t) => t.table)).not.toContain("kitchens");
+      expect(catalog.tables.map((t) => t.table)).not.toContain(
+        "kitchen_webhook_tokens",
       );
-      writeFileSync(journalPath, JSON.stringify(journal, null, 2));
-
-      const cut = migrationsUpTo(0, tmpDir);
-      const mocked = await mockDbModule(cut.dir);
-      try {
-        const catalog = await readCatalog(mocked.db);
-        expect(catalog.tables.map((t) => t.table)).not.toContain(
-          "extra_only_in_0001",
-        );
-        expect(catalog.tables.map((t) => t.table)).toContain("kitchen_queue");
-      } finally {
-        await mocked.client.close();
-        cut.cleanup();
-      }
+      expect(catalog.tables.map((t) => t.table)).toContain("kitchen_queue");
     } finally {
-      rmSync(tmpDir, { recursive: true, force: true });
+      await mocked.client.close();
+      cut.cleanup();
+    }
+  }, 15_000);
+
+  it("test helpers: kitchens helpers seed kitchens, queue rows, hashed tokens, and row snapshots", async () => {
+    const { client, db } = await migratedTestDb();
+    try {
+      const home = await homeKitchen(db);
+      expect(home.slug).toBe("home");
+
+      const { kitchen } = await seedKitchen(db, {
+        slug: "north-house",
+        name: "North House",
+        aiMonthlyCapMicros: 2_000_000,
+      });
+      expect(kitchen.slug).toBe("north-house");
+      expect(kitchen.aiMonthlyCapMicros).toBe(2_000_000);
+
+      const queueRow = await seedQueueRow(db, kitchen.id, {
+        recipeData: { name: "Roast Chicken" },
+      });
+      expect(queueRow.kitchenId).toBe(kitchen.id);
+      expect(await snapshotRow(db, schema.kitchenQueue, queueRow.id)).toEqual(
+        queueRow,
+      );
+
+      const plaintext = await mintToken(db, kitchen.id, "agent");
+      expect(plaintext).toMatch(/^sous_[A-Za-z0-9_-]+$/);
+      const expectedHash = createHash("sha256").update(plaintext).digest("hex");
+      const [storedToken] = await db
+        .select()
+        .from(schema.kitchenWebhookTokens)
+        .where(eq(schema.kitchenWebhookTokens.kitchenId, kitchen.id));
+      expect(storedToken?.tokenSha256).toBe(expectedHash);
+      expect(storedToken?.label).toBe("agent");
+
+      // Check constraints and restrict foreign key hold.
+      await expect(
+        seedKitchen(db, { slug: "Bad Slug", name: "Bad" }),
+      ).rejects.toThrow();
+      await expect(
+        seedKitchen(db, {
+          slug: "neg-cap",
+          name: "Negative",
+          aiMonthlyCapMicros: -1,
+        }),
+      ).rejects.toThrow();
+      await expect(
+        db.delete(schema.kitchens).where(eq(schema.kitchens.id, kitchen.id)),
+      ).rejects.toThrow();
+    } finally {
+      await client.close();
     }
   }, 15_000);
 });
