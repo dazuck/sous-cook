@@ -50,6 +50,24 @@ async function main(): Promise<void> {
   }
 }
 
+/**
+ * The lines that say why an error happened. A connection that fails on every
+ * address of a host name (for example `localhost` with the server down) is an
+ * AggregateError with an empty message: its reasons are in `errors`, and its
+ * `code` (ECONNREFUSED) is the fallback.
+ */
+function reasonLines(err: Error): string[] {
+  if (err instanceof AggregateError) {
+    const inner = err.errors
+      .filter((e): e is Error => e instanceof Error)
+      .flatMap((e) => reasonLines(e));
+    if (inner.length > 0) return inner;
+  }
+  if (err.message) return [err.message];
+  const code = (err as { code?: unknown }).code;
+  return [typeof code === "string" ? code : err.name];
+}
+
 main().catch((err) => {
   if (err instanceof Error) {
     console.error(err.message);
@@ -57,7 +75,7 @@ main().catch((err) => {
     let cause: unknown = err.cause;
     while (cause instanceof Error && !seen.has(cause)) {
       seen.add(cause);
-      console.error(cause.message);
+      for (const line of reasonLines(cause)) console.error(line);
       cause = cause.cause;
     }
     if (err instanceof BaselineRefusalError) {
