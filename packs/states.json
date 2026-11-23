@@ -1,0 +1,355 @@
+[
+  {
+    "id": "state:batter-smooth",
+    "name": "Batter smooth",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Pourable and evenly coloured, with no dry flour caught at the bottom of the bowl and no lumps riding up on the spoon.",
+      "sound": "The spoon moves freely with a soft slosh; none of the dry scrape of unwetted flour against the bowl.",
+      "smell": "Plain and milky, faintly of raw flour."
+    }
+  },
+  {
+    "id": "state:butter-melted-and-bubbling",
+    "name": "Butter melted and bubbling",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Fully liquid and still pale yellow, with a fine foam of small bubbles covering the surface and no brown flecks settling at the bottom of the pan.",
+      "sound": "A steady fine sizzle as the water in the butter cooks off; it quietens as the foam thins.",
+      "smell": "Warm and creamy, with nothing nutty or toasted about it yet."
+    }
+  },
+  {
+    "id": "state:creamed-butter",
+    "name": "Creamed butter",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Pale, smooth, and visibly lightened, spreading against the bowl with no firm lumps left and no shine of melted fat.",
+      "sound": "A soft slapping against the side of the bowl rather than the hard scrape of cold butter.",
+      "smell": "Faintly sweet and milky, no more than that."
+    }
+  },
+  {
+    "id": "state:custard-chilled",
+    "name": "Custard chilled",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Cold through and a little thicker than it was warm, pouring in a smooth stream, the surface unbroken with no skin on top.",
+      "sound": "A soft heavy pour, with no steam or ticking left in the bowl.",
+      "smell": "Faint — cold sweet milk and egg; the smell only comes forward as it warms in the mouth."
+    }
+  },
+  {
+    "id": "state:custard-coats-the-spoon",
+    "name": "Custard coats the spoon",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "An even opaque film clings to the back of the spoon instead of running off it, and a finger drawn through leaves a clean line that does not close up.",
+      "sound": "The stirring has gone quiet and heavy — the spoon meets resistance where it used to move freely.",
+      "smell": "Warm sweet milk and egg, with nothing scorched about it."
+    }
+  },
+  {
+    "id": "state:custard-curdled",
+    "name": "Custard curdled",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Grainy — fine specks and threads of set egg suspended in a thin watery liquid that has lost both its gloss and its body.",
+      "sound": "The drag on the spoon slackens off again after having thickened; it sloshes rather than pours.",
+      "smell": "Faintly of scrambled egg, sometimes with a scorched edge underneath."
+    }
+  },
+  {
+    "id": "state:dough-risen-light",
+    "name": "Dough risen and light",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Doubled and domed, holding a dent for a moment when pressed with a fingertip rather than springing straight back.",
+      "sound": "Deflates with a soft exhale when you press it down.",
+      "smell": "Yeasty and slightly winey, stronger than after the first rise."
+    }
+  },
+  {
+    "id": "state:dough-smooth-and-elastic",
+    "name": "Dough smooth and elastic",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "The surface has gone from ragged and patchy to smooth and faintly satiny; it stretches without tearing and pulls back when released.",
+      "sound": "A soft slap on the board with each fold, no tacky sticking as you turn it.",
+      "smell": "Warm, yeasty, and clean."
+    }
+  },
+  {
+    "id": "state:dough-stiff-enough-to-knead",
+    "name": "Dough stiff enough to knead",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Gathered into one mass that pulls away from the sides of the bowl, matte rather than wet-shiny, soft but no longer smearing on your fingers.",
+      "sound": "Comes away from the bowl cleanly, without the sticky suck of a wet dough.",
+      "smell": "Yeasty and faintly sweet from the milk and sugar."
+    }
+  },
+  {
+    "id": "state:dough-stiff-enough-to-roll",
+    "name": "Dough stiff enough to roll",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Gathers into one mass and pulls away from the bowl, matte rather than wet-shiny, holding the shape of your hand when pressed.",
+      "sound": "Lifts away silently — no sticky suck against the bowl.",
+      "smell": "Sweet and warm with the cinnamon and nutmeg coming forward."
+    }
+  },
+  {
+    "id": "state:doughnut-risen-to-surface",
+    "name": "Doughnut risen to the surface",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Comes quickly to the top of the fat within a few seconds and floats there, visibly puffed and swelling at the edges.",
+      "sound": "An immediate steady ring of bubbling around each one.",
+      "smell": "Sweet frying dough and warm spice."
+    }
+  },
+  {
+    "id": "state:egg-whites-beaten-stiff",
+    "name": "Egg whites beaten stiff",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "White, dense, and still glossy; a peak pulled up by the beater stands without folding over, and the mass stays where it is when the bowl is tipped.",
+      "sound": "The beater works through a heavy foam with a dull whisper instead of splashing through liquid.",
+      "smell": "Almost nothing — clean and neutral; a sulphurous note means the eggs are old."
+    }
+  },
+  {
+    "id": "state:eggs-beaten-light",
+    "name": "Eggs beaten light",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Pale yellow, foamed and thickened, falling from the beater in a wide ribbon that sits on the surface a moment before sinking.",
+      "sound": "The beater moves through with an airy swish instead of the slosh of raw egg.",
+      "smell": "Clean and barely eggy."
+    }
+  },
+  {
+    "id": "state:eggs-beaten-slightly",
+    "name": "Eggs beaten slightly",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Yolks broken up and evenly gold with no lighter streaks left, still thick and liquid, the surface flat with no foam or bubbles on it.",
+      "sound": "A quiet heavy drag as the fork goes through — none of the airy swish of eggs being beaten light.",
+      "smell": "Plainly eggy, unchanged from raw."
+    }
+  },
+  {
+    "id": "state:fat-at-frying-temperature",
+    "name": "Fat at frying temperature",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "The surface shimmers and moves faintly with no smoke rising; a one-inch cube of bread dropped in browns in about a minute.",
+      "sound": "A lively steady sizzle the instant dough touches it — silence means too cold, a violent spitting crackle means too hot.",
+      "smell": "Clean and hot, with nothing acrid or scorched about it."
+    }
+  },
+  {
+    "id": "state:fried-golden-brown",
+    "name": "Fried golden brown",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "An even brown across the submerged face, with a paler band left around the middle where the doughnut sat at the fat line.",
+      "sound": "The bubbling slows and quiets as the moisture cooks out.",
+      "smell": "Toasted and sweet with the spice, well short of anything scorched."
+    }
+  },
+  {
+    "id": "state:milk-scalded",
+    "name": "Milk scalded",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Steam lifting off the surface and a ring of small bubbles around the edge of the pan, with no rolling boil in the middle; a thin skin may start to form.",
+      "sound": "A faint ticking against the pan bottom — no churning or bubbling up the sides.",
+      "smell": "Warm and faintly sweet, like cooked milk; any hint of scorch means it has caught and should be started again."
+    }
+  },
+  {
+    "id": "state:mixture-lukewarm",
+    "name": "Milk mixture lukewarm",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "No steam rising from the surface; the melted butter sits as a thin unbroken film rather than re-hardening into flecks.",
+      "sound": "Silent — nothing ticking or settling in the pan.",
+      "smell": "Mildly milky and sweet, no longer sharp with heat."
+    }
+  },
+  {
+    "id": "state:oven-hot",
+    "name": "Oven hot",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "An oven thermometer steady at 400–425°F (205–220°C); a pinch of flour thrown on the oven floor browns within about a minute.",
+      "sound": "The element or burner cycling off rather than running continuously.",
+      "smell": "Clean and dry, with nothing burning off the racks."
+    }
+  },
+  {
+    "id": "state:rolls-baked-golden",
+    "name": "Rolls baked golden",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Tops a deep even gold, the sides where the rolls nearly touch a paler gold, the parted crease showing a lighter seam.",
+      "sound": "A hollow knock when a roll is lifted and tapped underneath.",
+      "smell": "Toasted bread and warm butter, well short of anything scorched."
+    }
+  },
+  {
+    "id": "state:rolls-risen-and-parted",
+    "name": "Rolls risen and parted",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Visibly puffed and softened, the fold opened a little way along the crease — a slight parting, not a flop wide open — and dough that fills back slowly when pressed.",
+      "sound": "Silent; nothing to hear at this stage.",
+      "smell": "Yeasty with a butter note from the brushed halves."
+    }
+  },
+  {
+    "id": "state:roux-thoroughly-blended",
+    "name": "Roux thoroughly blended",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "One smooth pale paste, no dry flour visible anywhere and no grainy patches at the edge of the pan; it holds together on the spoon rather than falling apart.",
+      "sound": "A quiet even sizzle, softer than the bare butter made a moment before.",
+      "smell": "Faintly toasty, like warm biscuit dough, with no scorched edge to it."
+    }
+  },
+  {
+    "id": "state:sauce-smooth-and-glossy",
+    "name": "Sauce smooth and glossy",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Even and lump-free with a satin shine, coating the back of a spoon in a thin translucent film that runs off rather than clinging thickly.",
+      "sound": "A gentle bubbling around the edge of the pan and a smooth even sweep of the spoon with no lumps knocking against it.",
+      "smell": "Sweet warm milk and butter, with the raw-flour smell gone."
+    }
+  },
+  {
+    "id": "state:sauce-well-mixed",
+    "name": "Sauce well mixed",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "One uniform, slightly thickened liquid — no pale streaks of unmixed milk and no lumps of paste riding on the spoon — before the next addition goes in.",
+      "sound": "The stirring loosens off: the drag of the paste gives way to a fluid slosh as each addition goes through.",
+      "smell": "Warm milk over a faint scent of raw flour."
+    }
+  },
+  {
+    "id": "state:sponge-beaten-smooth",
+    "name": "Sponge beaten smooth",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Glossy and uniform with no dry streaks of flour, pulling off the spoon in a sheet rather than dropping in lumps.",
+      "sound": "A heavy rhythmic slap against the side of the bowl as the batter thickens and grabs the spoon.",
+      "smell": "Sweet and yeasty, with the warm milk still coming through."
+    }
+  },
+  {
+    "id": "state:sponge-risen-light",
+    "name": "Sponge risen until light",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Roughly doubled and domed, the surface puffed with bubbles visible just under the skin.",
+      "sound": "A soft sigh as it settles when you first cut it down.",
+      "smell": "Yeasty with a faint sourness, like the inside of a bakery."
+    }
+  },
+  {
+    "id": "state:waffle-baked-golden",
+    "name": "Waffle baked golden",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "An even brown across the raised pattern with paler wells between, edges crisp and set, and the waffle releasing from the grid without pulling or tearing.",
+      "sound": "The hiss of steam escaping at the seam has died down to almost nothing.",
+      "smell": "Toasted and buttery, well short of anything scorched."
+    }
+  },
+  {
+    "id": "state:waffle-iron-hot",
+    "name": "Waffle-iron hot",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Both faces dry and clean-looking with no smoke lifting off them; a drop of water flicked onto the pattern skitters and vanishes at once instead of sitting and steaming, and fat brushed on runs thin and clear rather than pooling.",
+      "sound": "A sharp immediate hiss the moment fat or batter meets the grid — silence means the iron has gone cold.",
+      "smell": "Hot metal and just-melted fat, with nothing acrid or scorched about it."
+    }
+  },
+  {
+    "id": "state:whites-folded-in",
+    "name": "Whites folded in",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "No streaks or islands of white left anywhere in the bowl, the batter visibly lighter and puffier than it was, holding a soft mound for a moment where the spoon lifted out.",
+      "sound": "Quiet — a soft cutting stroke through the batter, with none of the slap of beating.",
+      "smell": "Milky and faintly eggy."
+    }
+  },
+  {
+    "id": "state:yeast-dissolved",
+    "name": "Yeast dissolved",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "The cake broken up completely, the water clouded a milky tan with no grains or lumps left on the bottom.",
+      "sound": "Nothing — the spoon moves through it freely, with no grit against the bowl.",
+      "smell": "Distinctly yeasty and bready, faintly beery."
+    }
+  },
+  {
+    "id": "state:creamy-not-scrambled",
+    "name": "Creamy, not scrambled",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Glossy sauce clinging to every strand; no white curds, no watery puddle collecting at the bottom of the pan.",
+      "sound": "A soft slip as you toss — nothing sticks or squeaks.",
+      "smell": "Cheese and pork fat, no sulfurous cooked-egg edge."
+    }
+  },
+  {
+    "id": "state:translucent-rice-edge",
+    "name": "Translucent rice edge",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "The outer edge of each kernel turns glassy while the center stays a chalky white dot.",
+      "sound": "Kernels click faintly against the pan when stirred — drier than they went in."
+    }
+  },
+  {
+    "id": "state:the-wave",
+    "name": "The wave",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "Shake the pan: loose rice rolls in a wave across it. When the wave stops rolling and the rice starts sticking to itself, it has drunk that addition.",
+      "sound": "The wet slosh dries out to a heavier, tackier shuffle."
+    }
+  },
+  {
+    "id": "state:mantecatura",
+    "name": "Mantecatura",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "After the rest, the risotto is a single glossy body — it spreads on a tilted plate in a slow wave rather than standing in a mound."
+    }
+  },
+  {
+    "id": "state:toothpick-clean",
+    "name": "Toothpick comes out clean",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "A toothpick pushed to the center comes out with no wet batter — dry, or carrying a few moist crumbs at most."
+    }
+  },
+  {
+    "id": "state:crust-pulling-away",
+    "name": "Crust pulling away",
+    "visual_ref": null,
+    "sensory_notes": {
+      "look": "The crust is an even brown and the edges have shrunk back from the sides of the pan, leaving a visible gap.",
+      "smell": "Deep banana and caramel — the sugars at the edge have browned."
+    }
+  }
+]

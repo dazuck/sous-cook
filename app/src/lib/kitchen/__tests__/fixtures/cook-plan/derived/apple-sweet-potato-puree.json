@@ -1,0 +1,95 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "965a3c74dd8692b6",
+  "recipeHash": "c2d8d9f91206881e",
+  "ms": 2633,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "prep-sweet-potato",
+        "kind": "mise",
+        "text": "Peel and dice the sweet potato.",
+        "label": "prep sweet potato",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "prep-apple",
+        "kind": "mise",
+        "text": "Core and chop the apple.",
+        "label": "prep apple",
+        "ingredientIdx": [
+          1
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "steam-ingredients",
+        "kind": "cook",
+        "text": "Steam the sweet potato and apple until soft, about 15 minutes.",
+        "label": "steam sweet potato and apple",
+        "ingredientIdx": [
+          0,
+          1
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "prep-sweet-potato",
+          "prep-apple"
+        ],
+        "minutes": {
+          "est": 15,
+          "handsOff": true
+        },
+        "cue": "until soft",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "blend-puree",
+        "kind": "cook",
+        "text": "Blend with the water and a pinch of cinnamon until smooth.",
+        "label": "blend puree",
+        "ingredientIdx": [
+          2,
+          3
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "steam-ingredients"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": "until smooth",
+        "lead": null,
+        "branch": "Cook"
+      }
+    ]
+  }
+}

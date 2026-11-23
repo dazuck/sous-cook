@@ -1,0 +1,1699 @@
+{
+ "_about": "Golden timetable model outputs across six fixture recipes, pinned so timetable-model.test.ts matches the reference layout behavior.",
+ "recipes": {
+  "skillet-eggs-potatoes-greens": {
+   "first": {
+    "lanes": [
+     "Board",
+     "Stove"
+    ],
+    "total": 40,
+    "prepEnd": 18,
+    "span": 40,
+    "drawnTotal": 40,
+    "chapters": [
+     {
+      "n": 1,
+      "kind": "prep",
+      "name": "Prep",
+      "start": 0,
+      "end": 18,
+      "pot": null
+     },
+     {
+      "n": 2,
+      "kind": "wait",
+      "name": "Potatoes cook",
+      "start": 18,
+      "end": 30,
+      "pot": "p:Stove:cook-potatoes"
+     },
+     {
+      "n": 3,
+      "kind": "finish",
+      "name": "Finish and plate",
+      "start": 30,
+      "end": 40,
+      "pot": null
+     }
+    ],
+    "blocks": [
+     {
+      "key": "k:Stove:saute-aromatics",
+      "lane": "Stove",
+      "name": "wilt greens",
+      "short": "wilt",
+      "start": 30,
+      "end": 35,
+      "sand": false,
+      "touch": false,
+      "work": 5
+     },
+     {
+      "key": "k:Stove:cook-eggs",
+      "lane": "Stove",
+      "name": "cook eggs",
+      "short": "eggs",
+      "start": 35,
+      "end": 40,
+      "sand": false,
+      "touch": false,
+      "work": 5
+     }
+    ],
+    "pots": [
+     {
+      "key": "p:Stove:cook-potatoes",
+      "lane": "Stove",
+      "words": "potatoes cook",
+      "short": "cooks",
+      "start": 18,
+      "end": 30,
+      "equipment": false,
+      "lead": "cook-potatoes",
+      "namesChapter": true
+     }
+    ],
+    "breaks": [],
+    "ahead": []
+   },
+   "go": {
+    "lanes": [
+     "Board",
+     "Stove"
+    ],
+    "total": 30,
+    "prepEnd": 8,
+    "span": 40,
+    "drawnTotal": 30,
+    "chapters": [
+     {
+      "n": 1,
+      "kind": "prep",
+      "name": "Prep",
+      "start": 0,
+      "end": 8,
+      "pot": null
+     },
+     {
+      "n": 2,
+      "kind": "wait",
+      "name": "Potatoes cook",
+      "start": 8,
+      "end": 20,
+      "pot": "p:Stove:cook-potatoes"
+     },
+     {
+      "n": 3,
+      "kind": "finish",
+      "name": "Finish and plate",
+      "start": 20,
+      "end": 30,
+      "pot": null
+     }
+    ],
+    "blocks": [
+     {
+      "key": "s:Board:slice-garlic",
+      "lane": "Board",
+      "name": "prep",
+      "short": "prep",
+      "start": 10,
+      "end": 20,
+      "sand": true,
+      "touch": false,
+      "work": 10
+     },
+     {
+      "key": "k:Stove:saute-aromatics",
+      "lane": "Stove",
+      "name": "wilt greens",
+      "short": "wilt",
+      "start": 20,
+      "end": 25,
+      "sand": false,
+      "touch": false,
+      "work": 5
+     },
+     {
+      "key": "k:Stove:cook-eggs",
+      "lane": "Stove",
+      "name": "cook eggs",
+      "short": "eggs",
+      "start": 25,
+      "end": 30,
+      "sand": false,
+      "touch": false,
+      "work": 5
+     }
+    ],
+    "pots": [
+     {
+      "key": "p:Stove:cook-potatoes",
+      "lane": "Stove",
+      "words": "potatoes cook",
+      "short": "cooks",
+      "start": 8,
+      "end": 20,
+      "equipment": false,
+      "lead": "cook-potatoes",
+      "namesChapter": true
+     }
+    ],
+    "breaks": [],
+    "ahead": []
+   }
+  },
+  "butternut-chickpea-salad": {
+   "first": {
+    "lanes": [
+     "Squash",
+     "Garbanzos",
+     "Salad",
+     "Dressing"
+    ],
+    "total": 59,
+    "prepEnd": 22,
+    "span": 59,
+    "drawnTotal": 59,
+    "chapters": [
+     {
+      "n": 1,
+      "kind": "prep",
+      "name": "Prep",
+      "start": 0,
+      "end": 22,
+      "pot": null
+     },
+     {
+      "n": 2,
+      "kind": "wait",
+      "name": "Squash air-fries",
+      "start": 22,
+      "end": 54,
+      "pot": "p:Squash:air-fry-squash"
+     },
+     {
+      "n": 3,
+      "kind": "finish",
+      "name": "Finish and plate",
+      "start": 54,
+      "end": 59,
+      "pot": null
+     }
+    ],
+    "blocks": [
+     {
+      "key": "k:Salad:assemble-salad",
+      "lane": "Salad",
+      "name": "assemble",
+      "short": "assemble",
+      "start": 54,
+      "end": 59,
+      "sand": false,
+      "touch": false,
+      "work": 5
+     }
+    ],
+    "pots": [
+     {
+      "key": "p:Squash:air-fry-squash",
+      "lane": "Squash",
+      "words": "air-fries",
+      "short": "air-fries",
+      "start": 22,
+      "end": 54,
+      "equipment": false,
+      "lead": "air-fry-squash",
+      "namesChapter": true
+     },
+     {
+      "key": "p:Garbanzos:air-fry-garbanzos",
+      "lane": "Garbanzos",
+      "words": "air-fries",
+      "short": "air-fries",
+      "start": 42,
+      "end": 54,
+      "equipment": false,
+      "lead": "air-fry-garbanzos",
+      "namesChapter": false
+     }
+    ],
+    "breaks": [],
+    "ahead": []
+   },
+   "go": {
+    "lanes": [
+     "Squash",
+     "Garbanzos",
+     "Salad",
+     "Dressing"
+    ],
+    "total": 45,
+    "prepEnd": 8,
+    "span": 59,
+    "drawnTotal": 45,
+    "chapters": [
+     {
+      "n": 1,
+      "kind": "prep",
+      "name": "Prep",
+      "start": 0,
+      "end": 8,
+      "pot": null
+     },
+     {
+      "n": 2,
+      "kind": "wait",
+      "name": "Squash air-fries",
+      "start": 8,
+      "end": 40,
+      "pot": "p:Squash:air-fry-squash"
+     },
+     {
+      "n": 3,
+      "kind": "finish",
+      "name": "Finish and plate",
+      "start": 40,
+      "end": 45,
+      "pot": null
+     }
+    ],
+    "blocks": [
+     {
+      "key": "s:Garbanzos:prep-garbanzos",
+      "lane": "Garbanzos",
+      "name": "prep",
+      "short": "prep",
+      "start": 25,
+      "end": 28,
+      "sand": true,
+      "touch": false,
+      "work": 3
+     },
+     {
+      "key": "k:Salad:assemble-salad",
+      "lane": "Salad",
+      "name": "assemble",
+      "short": "assemble",
+      "start": 40,
+      "end": 45,
+      "sand": false,
+      "touch": false,
+      "work": 5
+     },
+     {
+      "key": "s:Salad:slice-onion",
+      "lane": "Salad",
+      "name": "slice onion",
+      "short": "slice",
+      "start": 28,
+      "end": 30,
+      "sand": true,
+      "touch": true,
+      "work": 2
+     },
+     {
+      "key": "s:Salad:slice-apple",
+      "lane": "Salad",
+      "name": "slice",
+      "short": "slice",
+      "start": 34,
+      "end": 40,
+      "sand": true,
+      "touch": false,
+      "work": 6
+     },
+     {
+      "key": "s:Dressing:make-dressing",
+      "lane": "Dressing",
+      "name": "make",
+      "short": "make",
+      "start": 31,
+      "end": 34,
+      "sand": true,
+      "touch": false,
+      "work": 3
+     }
+    ],
+    "pots": [
+     {
+      "key": "p:Squash:air-fry-squash",
+      "lane": "Squash",
+      "words": "air-fries",
+      "short": "air-fries",
+      "start": 8,
+      "end": 40,
+      "equipment": false,
+      "lead": "air-fry-squash",
+      "namesChapter": true
+     },
+     {
+      "key": "p:Garbanzos:air-fry-garbanzos",
+      "lane": "Garbanzos",
+      "words": "air-fries",
+      "short": "air-fries",
+      "start": 28,
+      "end": 40,
+      "equipment": false,
+      "lead": "air-fry-garbanzos",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Salad:soak-onion",
+      "lane": "Salad",
+      "words": "onion soaks",
+      "short": "soaks",
+      "start": 30,
+      "end": 40,
+      "equipment": false,
+      "lead": "soak-onion",
+      "namesChapter": false
+     }
+    ],
+    "breaks": [],
+    "ahead": []
+   }
+  },
+  "tomato-beans-greens": {
+   "first": {
+    "lanes": [
+     "Panko",
+     "Beans",
+     "Salad",
+     "Cook",
+     "Serving"
+    ],
+    "total": 37,
+    "prepEnd": 14,
+    "span": 37,
+    "drawnTotal": 37,
+    "chapters": [
+     {
+      "n": 1,
+      "kind": "prep",
+      "name": "Prep",
+      "start": 0,
+      "end": 14,
+      "pot": null
+     },
+     {
+      "n": 2,
+      "kind": "finish",
+      "name": "Cook and plate",
+      "start": 14,
+      "end": 37,
+      "pot": null
+     }
+    ],
+    "blocks": [
+     {
+      "key": "k:Panko:heat-oil-panko",
+      "lane": "Panko",
+      "name": "toast",
+      "short": "toast",
+      "start": 14,
+      "end": 20,
+      "sand": false,
+      "touch": false,
+      "work": 6
+     },
+     {
+      "key": "k:Beans:heat-oil-beans",
+      "lane": "Beans",
+      "name": "cook aromatics",
+      "short": "aromatics",
+      "start": 20,
+      "end": 29,
+      "sand": false,
+      "touch": false,
+      "work": 9
+     },
+     {
+      "key": "k:Beans:finish-beans",
+      "lane": "Beans",
+      "name": "finish",
+      "short": "finish",
+      "start": 34,
+      "end": 35,
+      "sand": false,
+      "touch": true,
+      "work": 1
+     },
+     {
+      "key": "k:Salad:toss-salad",
+      "lane": "Salad",
+      "name": "toss",
+      "short": "toss",
+      "start": 31,
+      "end": 34,
+      "sand": false,
+      "touch": false,
+      "work": 3
+     },
+     {
+      "key": "k:Cook:assemble",
+      "lane": "Cook",
+      "name": "pile greens",
+      "short": "pile",
+      "start": 35,
+      "end": 37,
+      "sand": false,
+      "touch": true,
+      "work": 2
+     }
+    ],
+    "pots": [
+     {
+      "key": "p:Beans:simmer-beans",
+      "lane": "Beans",
+      "words": "simmers",
+      "short": "simmers",
+      "start": 29,
+      "end": 34,
+      "equipment": false,
+      "lead": "simmer-beans",
+      "namesChapter": false
+     }
+    ],
+    "breaks": [],
+    "ahead": []
+   },
+   "go": {
+    "lanes": [
+     "Panko",
+     "Beans",
+     "Salad",
+     "Cook",
+     "Serving"
+    ],
+    "total": 35,
+    "prepEnd": 11,
+    "span": 37,
+    "drawnTotal": 35,
+    "chapters": [
+     {
+      "n": 1,
+      "kind": "prep",
+      "name": "Prep",
+      "start": 0,
+      "end": 11,
+      "pot": null
+     },
+     {
+      "n": 2,
+      "kind": "finish",
+      "name": "Cook and plate",
+      "start": 11,
+      "end": 35,
+      "pot": null
+     }
+    ],
+    "blocks": [
+     {
+      "key": "k:Panko:heat-oil-panko",
+      "lane": "Panko",
+      "name": "toast",
+      "short": "toast",
+      "start": 11,
+      "end": 17,
+      "sand": false,
+      "touch": false,
+      "work": 6
+     },
+     {
+      "key": "k:Beans:heat-oil-beans",
+      "lane": "Beans",
+      "name": "cook aromatics",
+      "short": "aromatics",
+      "start": 17,
+      "end": 26,
+      "sand": false,
+      "touch": false,
+      "work": 9
+     },
+     {
+      "key": "k:Beans:finish-beans",
+      "lane": "Beans",
+      "name": "finish",
+      "short": "finish",
+      "start": 32,
+      "end": 33,
+      "sand": false,
+      "touch": true,
+      "work": 1
+     },
+     {
+      "key": "k:Salad:toss-salad",
+      "lane": "Salad",
+      "name": "toss",
+      "short": "toss",
+      "start": 29,
+      "end": 32,
+      "sand": false,
+      "touch": false,
+      "work": 3
+     },
+     {
+      "key": "k:Cook:assemble",
+      "lane": "Cook",
+      "name": "pile greens",
+      "short": "pile",
+      "start": 33,
+      "end": 35,
+      "sand": false,
+      "touch": true,
+      "work": 2
+     },
+     {
+      "key": "s:Serving:toast-bread",
+      "lane": "Serving",
+      "name": "toast bread",
+      "short": "toast",
+      "start": 26,
+      "end": 29,
+      "sand": true,
+      "touch": false,
+      "work": 3
+     }
+    ],
+    "pots": [
+     {
+      "key": "p:Beans:simmer-beans",
+      "lane": "Beans",
+      "words": "simmers",
+      "short": "simmers",
+      "start": 27,
+      "end": 32,
+      "equipment": false,
+      "lead": "simmer-beans",
+      "namesChapter": false
+     }
+    ],
+    "breaks": [],
+    "ahead": []
+   }
+  },
+  "chicken-pita-wraps": {
+   "first": {
+    "lanes": [
+     "Chicken",
+     "Hummus",
+     "Assembly",
+     "Cabbage Slaw",
+     "Cucumber Pickles"
+    ],
+    "total": 100,
+    "prepEnd": 8,
+    "span": 100,
+    "drawnTotal": 100,
+    "chapters": [
+     {
+      "n": 1,
+      "kind": "prep",
+      "name": "Prep",
+      "start": 0,
+      "end": 8,
+      "pot": null
+     },
+     {
+      "n": 2,
+      "kind": "wait",
+      "name": "Thighs roast",
+      "start": 8,
+      "end": 57,
+      "pot": "p:Chicken:roast-chicken"
+     },
+     {
+      "n": 3,
+      "kind": "finish",
+      "name": "Finish and plate",
+      "start": 57,
+      "end": 100,
+      "pot": null
+     }
+    ],
+    "blocks": [
+     {
+      "key": "k:Chicken:arrange-chicken-pans",
+      "lane": "Chicken",
+      "name": "arrange",
+      "short": "arrange",
+      "start": 23,
+      "end": 26,
+      "sand": false,
+      "touch": false,
+      "work": 3
+     },
+     {
+      "key": "k:Chicken:turn-on-broiler",
+      "lane": "Chicken",
+      "name": "turn on broiler",
+      "short": "broiler",
+      "start": 64,
+      "end": 68,
+      "sand": false,
+      "touch": true,
+      "work": 2
+     },
+     {
+      "key": "k:Chicken:pull-and-slice-chicken",
+      "lane": "Chicken",
+      "name": "slice meat",
+      "short": "slice",
+      "start": 83,
+      "end": 95,
+      "sand": false,
+      "touch": false,
+      "work": 10
+     },
+     {
+      "key": "k:Hummus:place-chickpeas-saucepan",
+      "lane": "Hummus",
+      "name": "place chickpeas",
+      "short": "chickpeas",
+      "start": 11,
+      "end": 13,
+      "sand": false,
+      "touch": true,
+      "work": 2
+     },
+     {
+      "key": "k:Hummus:drain-chickpeas",
+      "lane": "Hummus",
+      "name": "drain",
+      "short": "drain",
+      "start": 41,
+      "end": 46,
+      "sand": false,
+      "touch": false,
+      "work": 5
+     },
+     {
+      "key": "k:Hummus:blend-tahini",
+      "lane": "Hummus",
+      "name": "blend",
+      "short": "blend",
+      "start": 57,
+      "end": 70,
+      "sand": false,
+      "touch": false,
+      "work": 11
+     },
+     {
+      "key": "k:Hummus:plate-hummus",
+      "lane": "Hummus",
+      "name": "plate",
+      "short": "plate",
+      "start": 76,
+      "end": 83,
+      "sand": false,
+      "touch": false,
+      "work": 3
+     },
+     {
+      "key": "k:Assembly:prep-pita",
+      "lane": "Assembly",
+      "name": "prep pita bread",
+      "short": "pita bread",
+      "start": 70,
+      "end": 71,
+      "sand": false,
+      "touch": true,
+      "work": 1
+     },
+     {
+      "key": "k:Assembly:slice-tomatoes-herbs",
+      "lane": "Assembly",
+      "name": "slice tomatoes",
+      "short": "slice",
+      "start": 78,
+      "end": 82,
+      "sand": false,
+      "touch": false,
+      "work": 4
+     },
+     {
+      "key": "k:Assembly:garnish-hummus",
+      "lane": "Assembly",
+      "name": "assemble",
+      "short": "assemble",
+      "start": 91,
+      "end": 100,
+      "sand": false,
+      "touch": false,
+      "work": 7
+     },
+     {
+      "key": "k:Cabbage Slaw:toss-cabbage-slaw",
+      "lane": "Cabbage Slaw",
+      "name": "toss",
+      "short": "toss",
+      "start": 71,
+      "end": 74,
+      "sand": false,
+      "touch": false,
+      "work": 3
+     },
+     {
+      "key": "k:Cucumber Pickles:toss-cucumber-pickles",
+      "lane": "Cucumber Pickles",
+      "name": "toss",
+      "short": "toss",
+      "start": 74,
+      "end": 76,
+      "sand": false,
+      "touch": true,
+      "work": 2
+     }
+    ],
+    "pots": [
+     {
+      "key": "p:Chicken:preheat-oven",
+      "lane": "Chicken",
+      "words": "oven heats",
+      "short": "heats",
+      "start": 8,
+      "end": 23,
+      "equipment": true,
+      "lead": "preheat-oven",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Chicken:roast-chicken",
+      "lane": "Chicken",
+      "words": "thighs roast",
+      "short": "roasts",
+      "start": 26,
+      "end": 64,
+      "equipment": false,
+      "lead": "roast-chicken",
+      "namesChapter": true
+     },
+     {
+      "key": "p:Chicken:broil-chicken",
+      "lane": "Chicken",
+      "words": "rests",
+      "short": "rests",
+      "start": 68,
+      "end": 83,
+      "equipment": false,
+      "lead": "rest-chicken",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Hummus:boil-chickpeas",
+      "lane": "Hummus",
+      "words": "chickpeas simmer",
+      "short": "simmers",
+      "start": 13,
+      "end": 41,
+      "equipment": false,
+      "lead": "simmer-chickpeas",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Hummus:process-and-rest-garlic",
+      "lane": "Hummus",
+      "words": "garlic mixture rests",
+      "short": "rests",
+      "start": 46,
+      "end": 57,
+      "equipment": false,
+      "lead": "process-and-rest-garlic",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Cabbage Slaw:rest-cabbage-slaw",
+      "lane": "Cabbage Slaw",
+      "words": "rests",
+      "short": "rests",
+      "start": 80,
+      "end": 95,
+      "equipment": false,
+      "lead": "rest-cabbage-slaw",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Cucumber Pickles:rest-cucumber-pickles",
+      "lane": "Cucumber Pickles",
+      "words": "rests",
+      "short": "rests",
+      "start": 80,
+      "end": 95,
+      "equipment": false,
+      "lead": "rest-cucumber-pickles",
+      "namesChapter": false
+     }
+    ],
+    "breaks": [],
+    "ahead": [
+     {
+      "lead": "2–6 hours before",
+      "name": "marinate"
+     }
+    ]
+   },
+   "go": {
+    "lanes": [
+     "Chicken",
+     "Hummus",
+     "Assembly",
+     "Cabbage Slaw",
+     "Cucumber Pickles"
+    ],
+    "total": 92,
+    "prepEnd": 0,
+    "span": 100,
+    "drawnTotal": 92,
+    "chapters": [
+     {
+      "n": 1,
+      "kind": "wait",
+      "name": "Thighs roast",
+      "start": 0,
+      "end": 49,
+      "pot": "p:Chicken:roast-chicken"
+     },
+     {
+      "n": 2,
+      "kind": "finish",
+      "name": "Finish and plate",
+      "start": 49,
+      "end": 92,
+      "pot": null
+     }
+    ],
+    "blocks": [
+     {
+      "key": "k:Chicken:arrange-chicken-pans",
+      "lane": "Chicken",
+      "name": "arrange",
+      "short": "arrange",
+      "start": 15,
+      "end": 18,
+      "sand": false,
+      "touch": false,
+      "work": 3
+     },
+     {
+      "key": "k:Chicken:turn-on-broiler",
+      "lane": "Chicken",
+      "name": "turn on broiler",
+      "short": "broiler",
+      "start": 56,
+      "end": 60,
+      "sand": false,
+      "touch": true,
+      "work": 2
+     },
+     {
+      "key": "k:Chicken:pull-and-slice-chicken",
+      "lane": "Chicken",
+      "name": "slice meat",
+      "short": "slice",
+      "start": 75,
+      "end": 87,
+      "sand": false,
+      "touch": false,
+      "work": 10
+     },
+     {
+      "key": "k:Hummus:place-chickpeas-saucepan",
+      "lane": "Hummus",
+      "name": "place chickpeas",
+      "short": "chickpeas",
+      "start": 3,
+      "end": 5,
+      "sand": false,
+      "touch": true,
+      "work": 2
+     },
+     {
+      "key": "k:Hummus:drain-chickpeas",
+      "lane": "Hummus",
+      "name": "drain",
+      "short": "drain",
+      "start": 33,
+      "end": 38,
+      "sand": false,
+      "touch": false,
+      "work": 5
+     },
+     {
+      "key": "k:Hummus:blend-tahini",
+      "lane": "Hummus",
+      "name": "blend",
+      "short": "blend",
+      "start": 49,
+      "end": 62,
+      "sand": false,
+      "touch": false,
+      "work": 11
+     },
+     {
+      "key": "k:Hummus:plate-hummus",
+      "lane": "Hummus",
+      "name": "plate",
+      "short": "plate",
+      "start": 68,
+      "end": 75,
+      "sand": false,
+      "touch": false,
+      "work": 3
+     },
+     {
+      "key": "s:Hummus:chop-garlic-hummus",
+      "lane": "Hummus",
+      "name": "chop garlic",
+      "short": "chop",
+      "start": 32,
+      "end": 33,
+      "sand": true,
+      "touch": true,
+      "work": 1
+     },
+     {
+      "key": "k:Assembly:prep-pita",
+      "lane": "Assembly",
+      "name": "prep pita bread",
+      "short": "pita bread",
+      "start": 62,
+      "end": 63,
+      "sand": false,
+      "touch": true,
+      "work": 1
+     },
+     {
+      "key": "k:Assembly:slice-tomatoes-herbs",
+      "lane": "Assembly",
+      "name": "slice tomatoes",
+      "short": "slice",
+      "start": 70,
+      "end": 74,
+      "sand": false,
+      "touch": false,
+      "work": 4
+     },
+     {
+      "key": "k:Assembly:garnish-hummus",
+      "lane": "Assembly",
+      "name": "assemble",
+      "short": "assemble",
+      "start": 83,
+      "end": 92,
+      "sand": false,
+      "touch": false,
+      "work": 7
+     },
+     {
+      "key": "k:Cabbage Slaw:toss-cabbage-slaw",
+      "lane": "Cabbage Slaw",
+      "name": "toss",
+      "short": "toss",
+      "start": 65,
+      "end": 68,
+      "sand": false,
+      "touch": false,
+      "work": 3
+     },
+     {
+      "key": "s:Cabbage Slaw:slice-cabbage",
+      "lane": "Cabbage Slaw",
+      "name": "slice",
+      "short": "slice",
+      "start": 45,
+      "end": 49,
+      "sand": true,
+      "touch": false,
+      "work": 4
+     },
+     {
+      "key": "k:Cucumber Pickles:toss-cucumber-pickles",
+      "lane": "Cucumber Pickles",
+      "name": "toss",
+      "short": "toss",
+      "start": 63,
+      "end": 65,
+      "sand": false,
+      "touch": true,
+      "work": 2
+     },
+     {
+      "key": "s:Cucumber Pickles:slice-cucumbers",
+      "lane": "Cucumber Pickles",
+      "name": "slice",
+      "short": "slice",
+      "start": 42,
+      "end": 45,
+      "sand": true,
+      "touch": false,
+      "work": 3
+     }
+    ],
+    "pots": [
+     {
+      "key": "p:Chicken:preheat-oven",
+      "lane": "Chicken",
+      "words": "oven heats",
+      "short": "heats",
+      "start": 0,
+      "end": 15,
+      "equipment": true,
+      "lead": "preheat-oven",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Chicken:roast-chicken",
+      "lane": "Chicken",
+      "words": "thighs roast",
+      "short": "roasts",
+      "start": 18,
+      "end": 56,
+      "equipment": false,
+      "lead": "roast-chicken",
+      "namesChapter": true
+     },
+     {
+      "key": "p:Chicken:broil-chicken",
+      "lane": "Chicken",
+      "words": "rests",
+      "short": "rests",
+      "start": 60,
+      "end": 75,
+      "equipment": false,
+      "lead": "rest-chicken",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Hummus:boil-chickpeas",
+      "lane": "Hummus",
+      "words": "chickpeas simmer",
+      "short": "simmers",
+      "start": 5,
+      "end": 33,
+      "equipment": false,
+      "lead": "simmer-chickpeas",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Hummus:process-and-rest-garlic",
+      "lane": "Hummus",
+      "words": "garlic mixture rests",
+      "short": "rests",
+      "start": 38,
+      "end": 49,
+      "equipment": false,
+      "lead": "process-and-rest-garlic",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Cabbage Slaw:rest-cabbage-slaw",
+      "lane": "Cabbage Slaw",
+      "words": "rests",
+      "short": "rests",
+      "start": 72,
+      "end": 87,
+      "equipment": false,
+      "lead": "rest-cabbage-slaw",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Cucumber Pickles:rest-cucumber-pickles",
+      "lane": "Cucumber Pickles",
+      "words": "rests",
+      "short": "rests",
+      "start": 72,
+      "end": 87,
+      "equipment": false,
+      "lead": "rest-cucumber-pickles",
+      "namesChapter": false
+     }
+    ],
+    "breaks": [],
+    "ahead": [
+     {
+      "lead": "2–6 hours before",
+      "name": "marinate"
+     }
+    ]
+   }
+  },
+  "crispy-skin-salmon": {
+   "first": {
+    "lanes": [
+     "Salmon",
+     "Salad"
+    ],
+    "total": 22,
+    "prepEnd": 10,
+    "span": 22,
+    "drawnTotal": 22,
+    "chapters": [
+     {
+      "n": 1,
+      "kind": "prep",
+      "name": "Prep",
+      "start": 0,
+      "end": 10,
+      "pot": null
+     },
+     {
+      "n": 2,
+      "kind": "finish",
+      "name": "Cook and plate",
+      "start": 10,
+      "end": 22,
+      "pot": null
+     }
+    ],
+    "blocks": [
+     {
+      "key": "k:Salmon:season-salmon",
+      "lane": "Salmon",
+      "name": "heat oil",
+      "short": "oil",
+      "start": 10,
+      "end": 14,
+      "sand": false,
+      "touch": false,
+      "work": 4
+     },
+     {
+      "key": "k:Salad:assemble-salad",
+      "lane": "Salad",
+      "name": "assemble",
+      "short": "assemble",
+      "start": 18,
+      "end": 22,
+      "sand": false,
+      "touch": false,
+      "work": 4
+     }
+    ],
+    "pots": [
+     {
+      "key": "p:Salmon:cook-salmon",
+      "lane": "Salmon",
+      "words": "cooks",
+      "short": "cooks",
+      "start": 14,
+      "end": 22,
+      "equipment": false,
+      "lead": "cook-salmon",
+      "namesChapter": false
+     }
+    ],
+    "breaks": [],
+    "ahead": []
+   },
+   "go": {
+    "lanes": [
+     "Salmon",
+     "Salad"
+    ],
+    "total": 18,
+    "prepEnd": 4,
+    "span": 22,
+    "drawnTotal": 18,
+    "chapters": [
+     {
+      "n": 1,
+      "kind": "prep",
+      "name": "Prep",
+      "start": 0,
+      "end": 4,
+      "pot": null
+     },
+     {
+      "n": 2,
+      "kind": "finish",
+      "name": "Cook and plate",
+      "start": 4,
+      "end": 18,
+      "pot": null
+     }
+    ],
+    "blocks": [
+     {
+      "key": "k:Salmon:season-salmon",
+      "lane": "Salmon",
+      "name": "heat oil",
+      "short": "oil",
+      "start": 4,
+      "end": 8,
+      "sand": false,
+      "touch": false,
+      "work": 4
+     },
+     {
+      "key": "k:Salad:assemble-salad",
+      "lane": "Salad",
+      "name": "assemble",
+      "short": "assemble",
+      "start": 14,
+      "end": 18,
+      "sand": false,
+      "touch": false,
+      "work": 4
+     },
+     {
+      "key": "s:Salad:prep-salad-veg",
+      "lane": "Salad",
+      "name": "prep veg",
+      "short": "veg",
+      "start": 8,
+      "end": 14,
+      "sand": true,
+      "touch": false,
+      "work": 6
+     }
+    ],
+    "pots": [
+     {
+      "key": "p:Salmon:cook-salmon",
+      "lane": "Salmon",
+      "words": "cooks",
+      "short": "cooks",
+      "start": 10,
+      "end": 18,
+      "equipment": false,
+      "lead": "cook-salmon",
+      "namesChapter": false
+     }
+    ],
+    "breaks": [],
+    "ahead": []
+   }
+  },
+  "sunday-roast-dinner": {
+   "first": {
+    "lanes": [
+     "Chicken",
+     "Potatoes",
+     "Gravy",
+     "Beans"
+    ],
+    "total": 133,
+    "prepEnd": 21,
+    "span": 95,
+    "drawnTotal": 95,
+    "chapters": [
+     {
+      "n": 1,
+      "kind": "prep",
+      "name": "Prep",
+      "start": 0,
+      "end": 21,
+      "pot": null
+     },
+     {
+      "n": 2,
+      "kind": "wait",
+      "name": "Chicken roasts",
+      "start": 21,
+      "end": 106,
+      "pot": "p:Chicken:roast-chicken-initial"
+     },
+     {
+      "n": 3,
+      "kind": "finish",
+      "name": "Finish and plate",
+      "start": 106,
+      "end": 133,
+      "pot": null
+     }
+    ],
+    "blocks": [
+     {
+      "key": "k:Chicken:stuff-chicken",
+      "lane": "Chicken",
+      "name": "stuff",
+      "short": "stuff",
+      "start": 31,
+      "end": 36,
+      "sand": false,
+      "touch": false,
+      "work": 5
+     },
+     {
+      "key": "k:Chicken:check-chicken",
+      "lane": "Chicken",
+      "name": "check",
+      "short": "check",
+      "start": 106,
+      "end": 108,
+      "sand": false,
+      "touch": true,
+      "work": 2
+     },
+     {
+      "key": "k:Chicken:carve-and-serve",
+      "lane": "Chicken",
+      "name": "carve",
+      "short": "carve",
+      "start": 123,
+      "end": 133,
+      "sand": false,
+      "touch": false,
+      "work": 10
+     },
+     {
+      "key": "k:Potatoes:rough-potatoes",
+      "lane": "Potatoes",
+      "name": "rough",
+      "short": "rough",
+      "start": 50,
+      "end": 56,
+      "sand": false,
+      "touch": false,
+      "work": 6
+     },
+     {
+      "key": "k:Gravy:skim-fat",
+      "lane": "Gravy",
+      "name": "deglaze",
+      "short": "deglaze",
+      "start": 108,
+      "end": 118,
+      "sand": false,
+      "touch": false,
+      "work": 10
+     }
+    ],
+    "pots": [
+     {
+      "key": "p:Chicken:preheat-oven",
+      "lane": "Chicken",
+      "words": "oven heats",
+      "short": "heats",
+      "start": 21,
+      "end": 36,
+      "equipment": true,
+      "lead": "preheat-oven",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Chicken:roast-chicken-initial",
+      "lane": "Chicken",
+      "words": "roasts",
+      "short": "roasts",
+      "start": 36,
+      "end": 106,
+      "equipment": false,
+      "lead": "roast-chicken-and-potatoes",
+      "namesChapter": true
+     },
+     {
+      "key": "p:Chicken:rest-chicken",
+      "lane": "Chicken",
+      "words": "rests",
+      "short": "rests",
+      "start": 108,
+      "end": 123,
+      "equipment": false,
+      "lead": "rest-chicken",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Potatoes:simmer-potatoes",
+      "lane": "Potatoes",
+      "words": "simmers",
+      "short": "simmers",
+      "start": 32,
+      "end": 54,
+      "equipment": false,
+      "lead": "simmer-potatoes",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Potatoes:crisp-potatoes",
+      "lane": "Potatoes",
+      "words": "crisps",
+      "short": "crisps",
+      "start": 113,
+      "end": 123,
+      "equipment": false,
+      "lead": "crisp-potatoes",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Gravy:simmer-gravy",
+      "lane": "Gravy",
+      "words": "simmers",
+      "short": "simmers",
+      "start": 118,
+      "end": 123,
+      "equipment": false,
+      "lead": "simmer-gravy",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Beans:cook-beans",
+      "lane": "Beans",
+      "words": "cooks",
+      "short": "cooks",
+      "start": 115,
+      "end": 123,
+      "equipment": false,
+      "lead": "cook-beans",
+      "namesChapter": false
+     }
+    ],
+    "breaks": [
+     {
+      "start": 56,
+      "end": 106,
+      "minutes": 50
+     }
+    ],
+    "ahead": [
+     {
+      "lead": "overnight",
+      "name": "dry-brine"
+     },
+     {
+      "lead": "1 hour before",
+      "name": "temper"
+     }
+    ]
+   },
+   "go": {
+    "lanes": [
+     "Chicken",
+     "Potatoes",
+     "Gravy",
+     "Beans"
+    ],
+    "total": 115,
+    "prepEnd": 3,
+    "span": 95,
+    "drawnTotal": 85,
+    "chapters": [
+     {
+      "n": 1,
+      "kind": "wait",
+      "name": "Chicken roasts",
+      "start": 0,
+      "end": 88,
+      "pot": "p:Chicken:roast-chicken-initial"
+     },
+     {
+      "n": 2,
+      "kind": "finish",
+      "name": "Finish and plate",
+      "start": 88,
+      "end": 115,
+      "pot": null
+     }
+    ],
+    "blocks": [
+     {
+      "key": "k:Chicken:stuff-chicken",
+      "lane": "Chicken",
+      "name": "stuff",
+      "short": "stuff",
+      "start": 13,
+      "end": 18,
+      "sand": false,
+      "touch": false,
+      "work": 5
+     },
+     {
+      "key": "k:Chicken:check-chicken",
+      "lane": "Chicken",
+      "name": "check",
+      "short": "check",
+      "start": 88,
+      "end": 90,
+      "sand": false,
+      "touch": true,
+      "work": 2
+     },
+     {
+      "key": "k:Chicken:carve-and-serve",
+      "lane": "Chicken",
+      "name": "carve",
+      "short": "carve",
+      "start": 105,
+      "end": 115,
+      "sand": false,
+      "touch": false,
+      "work": 10
+     },
+     {
+      "key": "k:Potatoes:rough-potatoes",
+      "lane": "Potatoes",
+      "name": "rough",
+      "short": "rough",
+      "start": 32,
+      "end": 38,
+      "sand": false,
+      "touch": false,
+      "work": 6
+     },
+     {
+      "key": "s:Potatoes:prep-potatoes",
+      "lane": "Potatoes",
+      "name": "prep",
+      "short": "prep",
+      "start": 3,
+      "end": 13,
+      "sand": true,
+      "touch": false,
+      "work": 10
+     },
+     {
+      "key": "k:Gravy:skim-fat",
+      "lane": "Gravy",
+      "name": "deglaze",
+      "short": "deglaze",
+      "start": 90,
+      "end": 100,
+      "sand": false,
+      "touch": false,
+      "work": 10
+     },
+     {
+      "key": "s:Gravy:chop-shallot",
+      "lane": "Gravy",
+      "name": "chop shallot",
+      "short": "chop",
+      "start": 80,
+      "end": 83,
+      "sand": true,
+      "touch": false,
+      "work": 3
+     },
+     {
+      "key": "s:Beans:trim-beans",
+      "lane": "Beans",
+      "name": "trim",
+      "short": "trim",
+      "start": 83,
+      "end": 88,
+      "sand": true,
+      "touch": false,
+      "work": 5
+     }
+    ],
+    "pots": [
+     {
+      "key": "p:Chicken:preheat-oven",
+      "lane": "Chicken",
+      "words": "oven heats",
+      "short": "heats",
+      "start": 3,
+      "end": 18,
+      "equipment": true,
+      "lead": "preheat-oven",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Chicken:roast-chicken-initial",
+      "lane": "Chicken",
+      "words": "roasts",
+      "short": "roasts",
+      "start": 18,
+      "end": 88,
+      "equipment": false,
+      "lead": "roast-chicken-and-potatoes",
+      "namesChapter": true
+     },
+     {
+      "key": "p:Chicken:rest-chicken",
+      "lane": "Chicken",
+      "words": "rests",
+      "short": "rests",
+      "start": 90,
+      "end": 105,
+      "equipment": false,
+      "lead": "rest-chicken",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Potatoes:simmer-potatoes",
+      "lane": "Potatoes",
+      "words": "simmers",
+      "short": "simmers",
+      "start": 14,
+      "end": 36,
+      "equipment": false,
+      "lead": "simmer-potatoes",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Potatoes:crisp-potatoes",
+      "lane": "Potatoes",
+      "words": "crisps",
+      "short": "crisps",
+      "start": 95,
+      "end": 105,
+      "equipment": false,
+      "lead": "crisp-potatoes",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Gravy:simmer-gravy",
+      "lane": "Gravy",
+      "words": "simmers",
+      "short": "simmers",
+      "start": 100,
+      "end": 105,
+      "equipment": false,
+      "lead": "simmer-gravy",
+      "namesChapter": false
+     },
+     {
+      "key": "p:Beans:cook-beans",
+      "lane": "Beans",
+      "words": "cooks",
+      "short": "cooks",
+      "start": 97,
+      "end": 105,
+      "equipment": false,
+      "lead": "cook-beans",
+      "namesChapter": false
+     }
+    ],
+    "breaks": [
+     {
+      "start": 38,
+      "end": 80,
+      "minutes": 42
+     }
+    ],
+    "ahead": [
+     {
+      "lead": "overnight",
+      "name": "dry-brine"
+     },
+     {
+      "lead": "1 hour before",
+      "name": "temper"
+     }
+    ]
+   }
+  }
+ }
+}

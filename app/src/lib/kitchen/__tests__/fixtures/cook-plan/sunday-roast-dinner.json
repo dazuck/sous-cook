@@ -1,0 +1,152 @@
+{
+  "description": "A 23-step, four-component roast: a stated day-before dry brine and a 1-hour temper (both ahead), front-loaded and inline mise, and many overlapping hands-off windows.",
+  "prepStyles": [
+    "front-loaded",
+    "inline"
+  ],
+  "recipe": {
+    "ingredients": [
+      {
+        "amount": "1",
+        "item": "whole chicken (about 1.8 kg / 4 lb)"
+      },
+      {
+        "amount": "1",
+        "unit": "tbsp",
+        "item": "flaky salt"
+      },
+      {
+        "amount": "1",
+        "item": "lemon"
+      },
+      {
+        "amount": "1",
+        "unit": "head",
+        "item": "garlic"
+      },
+      {
+        "amount": "4",
+        "unit": "sprigs",
+        "item": "thyme"
+      },
+      {
+        "amount": "3",
+        "unit": "tbsp",
+        "item": "olive oil"
+      },
+      {
+        "amount": "1.2",
+        "unit": "kg (2 1/2 lb)",
+        "item": "floury potatoes"
+      },
+      {
+        "amount": "4",
+        "unit": "tbsp",
+        "item": "duck fat"
+      },
+      {
+        "amount": "2",
+        "unit": "sprigs",
+        "item": "rosemary"
+      },
+      {
+        "amount": "300",
+        "unit": "g (10 oz)",
+        "item": "green beans"
+      },
+      {
+        "amount": "1",
+        "unit": "tbsp",
+        "item": "butter"
+      },
+      {
+        "amount": "1",
+        "item": "shallot"
+      },
+      {
+        "amount": "1",
+        "unit": "tbsp",
+        "item": "plain flour"
+      },
+      {
+        "amount": "1/2",
+        "unit": "cup",
+        "item": "dry white wine"
+      },
+      {
+        "amount": "1 1/2",
+        "unit": "cups",
+        "item": "chicken stock"
+      },
+      {
+        "item": "salt and pepper"
+      }
+    ],
+    "steps": [
+      "The day before, pat the chicken dry, rub the flaky salt all over it, and refrigerate it uncovered overnight.",
+      "Take the chicken out of the fridge 1 hour before roasting.",
+      "Heat the oven to 220C (425F).",
+      "Peel the potatoes and cut them into large chunks.",
+      "Put the potatoes in a pot of cold salted water, bring to a boil, and simmer for 8 minutes.",
+      "Meanwhile, halve the lemon and cut the head of garlic in half across the middle.",
+      "Stuff the lemon, garlic, and thyme into the chicken, rub it with the olive oil, and set it in a roasting pan.",
+      "Roast the chicken for 20 minutes.",
+      "While the chicken roasts, put the duck fat in a second roasting tin and heat it in the oven for 5 minutes.",
+      "Drain the potatoes, let them steam dry for 2 minutes, then shake them in the pot to rough up the edges.",
+      "Tip the potatoes into the hot fat, turn to coat, and add the rosemary.",
+      "Turn the oven down to 190C (375F) and roast the chicken and potatoes together for 50 minutes more, turning the potatoes once.",
+      "Trim the green beans.",
+      "Finely chop the shallot.",
+      "Check the chicken: the juices at the thigh should run clear, or a thermometer should read 74C (165F).",
+      "Lift the chicken onto a board and rest it, loosely covered, for 15 minutes.",
+      "Turn the oven up to 220C (425F) and give the potatoes a final 10 minutes to crisp.",
+      "Spoon off all but 1 tablespoon of fat from the chicken pan and set the pan over medium heat.",
+      "Add the shallot and cook for 2 minutes, then stir in the flour and cook for 1 minute more.",
+      "Pour in the wine and let it bubble, scraping up the browned bits, until almost gone.",
+      "Whisk in the stock and simmer for 5 minutes, until the gravy coats a spoon.",
+      "Meanwhile, boil the green beans in salted water for 5 minutes, then drain and toss with the butter.",
+      "Carve the chicken and serve with the potatoes, beans, and gravy."
+    ]
+  },
+  "gold": {
+    "ahead": [
+      {
+        "what": "dry-brine the chicken",
+        "ingredients": [
+          0,
+          1
+        ],
+        "steps": [
+          0
+        ]
+      },
+      {
+        "what": "take the chicken out of the fridge",
+        "ingredients": [],
+        "steps": [
+          1
+        ]
+      }
+    ],
+    "mise": [
+      2,
+      3,
+      6,
+      9,
+      11
+    ],
+    "handsOffSteps": [
+      0,
+      1,
+      2,
+      4,
+      7,
+      8,
+      11,
+      15,
+      16,
+      20,
+      21
+    ]
+  }
+}

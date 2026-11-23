@@ -1,0 +1,115 @@
+{
+  "description": "A chilled dough (all dough work is ahead) plus two ahead tasks implied only by ingredient lines: softened butter and room-temperature eggs. No mise on the day.",
+  "prepStyles": [
+    "implied"
+  ],
+  "recipe": {
+    "ingredients": [
+      {
+        "amount": "1",
+        "unit": "cup (225 g)",
+        "item": "unsalted butter, softened"
+      },
+      {
+        "amount": "1",
+        "unit": "cup",
+        "item": "brown sugar"
+      },
+      {
+        "amount": "1/2",
+        "unit": "cup",
+        "item": "white sugar"
+      },
+      {
+        "amount": "2",
+        "item": "eggs, at room temperature"
+      },
+      {
+        "amount": "2",
+        "unit": "tsp",
+        "item": "vanilla extract"
+      },
+      {
+        "amount": "1 1/2",
+        "unit": "cups",
+        "item": "all-purpose flour"
+      },
+      {
+        "amount": "1",
+        "unit": "tsp",
+        "item": "baking soda"
+      },
+      {
+        "amount": "1",
+        "unit": "tsp",
+        "item": "salt"
+      },
+      {
+        "amount": "3",
+        "unit": "cups",
+        "item": "rolled oats"
+      },
+      {
+        "amount": "1",
+        "unit": "cup",
+        "item": "raisins"
+      }
+    ],
+    "steps": [
+      "Whisk the flour, baking soda, and salt in a bowl.",
+      "Beat the butter with both sugars for 3 minutes, until pale and fluffy.",
+      "Beat in the eggs one at a time, then the vanilla.",
+      "Stir in the flour mixture, then the oats and raisins.",
+      "Cover the dough and chill it for at least 2 hours, or up to 3 days.",
+      "Heat the oven to 350F and line two baking sheets with parchment.",
+      "Scoop the dough into 2-tablespoon balls and space them 2 inches apart.",
+      "Bake for 11 to 13 minutes, until golden at the edges but still soft in the middle.",
+      "Cool on the sheets for 5 minutes, then move to a rack."
+    ]
+  },
+  "gold": {
+    "ahead": [
+      {
+        "what": "soften the butter",
+        "ingredients": [
+          0
+        ],
+        "steps": []
+      },
+      {
+        "what": "bring the eggs to room temperature",
+        "ingredients": [
+          3
+        ],
+        "steps": []
+      },
+      {
+        "what": "make and chill the dough",
+        "ingredients": [
+          1,
+          2,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "steps": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    ],
+    "mise": [],
+    "handsOffSteps": [
+      4,
+      5,
+      7,
+      8
+    ]
+  }
+}

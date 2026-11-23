@@ -1,0 +1,108 @@
+{
+  "description": "An overnight marinade (ahead, including the marinade mix that feeds it) and a raita written inline while the chicken roasts.",
+  "prepStyles": [
+    "inline"
+  ],
+  "recipe": {
+    "ingredients": [
+      {
+        "amount": "8",
+        "item": "bone-in chicken thighs"
+      },
+      {
+        "amount": "1",
+        "unit": "cup",
+        "item": "plain yogurt"
+      },
+      {
+        "amount": "4",
+        "unit": "cloves",
+        "item": "garlic, grated"
+      },
+      {
+        "amount": "1",
+        "unit": "tbsp",
+        "item": "garam masala"
+      },
+      {
+        "amount": "1",
+        "unit": "tsp",
+        "item": "ground turmeric"
+      },
+      {
+        "amount": "1",
+        "item": "lemon"
+      },
+      {
+        "amount": "1",
+        "unit": "tsp",
+        "item": "salt"
+      },
+      {
+        "amount": "1",
+        "item": "cucumber"
+      },
+      {
+        "amount": "1",
+        "unit": "cup",
+        "item": "Greek yogurt"
+      },
+      {
+        "amount": "2",
+        "unit": "tbsp",
+        "item": "mint leaves"
+      },
+      {
+        "amount": "1",
+        "item": "red onion"
+      },
+      {
+        "amount": "2",
+        "unit": "tbsp",
+        "item": "oil"
+      }
+    ],
+    "steps": [
+      "Stir the yogurt, grated garlic, garam masala, turmeric, the juice of the lemon, and most of the salt together in a large bowl.",
+      "Slash each chicken thigh twice to the bone, add to the bowl, and turn to coat. Cover and marinate in the fridge for at least 4 hours, or overnight.",
+      "Heat the oven to 220C (425F) and line a roasting tray with foil.",
+      "Lay the chicken skin-side up on the tray, drizzle with the oil, and roast for 35 to 40 minutes, until charred at the edges.",
+      "While the chicken roasts, grate the cucumber and squeeze out the liquid.",
+      "Finely chop the mint and stir it into the Greek yogurt with the cucumber and the rest of the salt.",
+      "Slice the red onion into thin rings.",
+      "Rest the chicken for 5 minutes, then serve with the raita and onion."
+    ]
+  },
+  "gold": {
+    "ahead": [
+      {
+        "what": "marinate the chicken",
+        "ingredients": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "steps": [
+          0,
+          1
+        ]
+      }
+    ],
+    "mise": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "handsOffSteps": [
+      1,
+      2,
+      3,
+      7
+    ]
+  }
+}

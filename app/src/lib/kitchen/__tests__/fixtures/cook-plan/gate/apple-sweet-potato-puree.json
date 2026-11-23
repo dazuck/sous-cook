@@ -1,0 +1,100 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "34ff405c9b3efb1d",
+  "recipeHash": "4c66e7ea2bc0bee7",
+  "ms": 2183,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "prep-sweet-potato",
+        "kind": "mise",
+        "text": "Peel and dice the sweet potato.",
+        "label": "prep sweet potato",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "prep-apple",
+        "kind": "mise",
+        "text": "Core and chop the apple.",
+        "label": "prep apple",
+        "ingredientIdx": [
+          1
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "steam-sweet-potato-apple",
+        "kind": "cook",
+        "text": "Steam the sweet potato and apple until soft, about 15 minutes.",
+        "label": "steam potato and apple",
+        "ingredientIdx": [
+          0,
+          1
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "prep-sweet-potato",
+          "prep-apple"
+        ],
+        "minutes": {
+          "est": 15,
+          "handsOff": true
+        },
+        "cue": "until soft, about 15 minutes",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "blend",
+        "kind": "cook",
+        "text": "Blend with the water and a pinch of cinnamon until smooth.",
+        "label": "blend ingredients",
+        "ingredientIdx": [
+          2,
+          3
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "steam-sweet-potato-apple"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": "until smooth",
+        "lead": null,
+        "branch": "Cook"
+      }
+    ]
+  },
+  "usage": {
+    "calls": 1,
+    "inputTokens": 2514,
+    "outputTokens": 317
+  }
+}

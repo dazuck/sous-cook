@@ -1,0 +1,2570 @@
+{
+  "source": "Hand-built proof set (slice B4 step 3): the 15 cook-plan eval fixtures (app/src/lib/kitchen/__tests__/fixtures/cook-plan, with the step-ingredient golden mapping where that fixture's steps and ingredients match), app/src/lib/kitchen/__tests__/zucchini-wraps.ts, and a synthetic herb salt.",
+  "seed": null,
+  "expectedBy": "A separate agent that read only the recipes' source text (this file's `recipe` fields) and never the converter or the shared reader; written 2026-10-05.; serves is each fixture's estimate (src/lib/kitchen/__tests__/fixtures/serves-estimates.json, slice B4b), marked as Sous's",
+  "recipes": [
+    {
+      "id": "apple-sweet-potato-puree",
+      "recipe": {
+        "name": "apple-sweet-potato-puree",
+        "ingredients": [
+          {
+            "item": "sweet potato",
+            "amount": "1"
+          },
+          {
+            "item": "apple",
+            "amount": "1"
+          },
+          {
+            "item": "cinnamon",
+            "amount": "1/4",
+            "unit": "tsp"
+          },
+          {
+            "item": "water",
+            "amount": "1/2",
+            "unit": "cup"
+          }
+        ],
+        "steps": [
+          "Peel and dice the sweet potato.",
+          "Core and chop the apple.",
+          "Steam the sweet potato and apple until soft, about 15 minutes.",
+          "Blend with the water and a pinch of cinnamon until smooth."
+        ],
+        "stepIngredients": [
+          [
+            0
+          ],
+          [
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            2,
+            3
+          ]
+        ]
+      },
+      "servesEstimate": {
+        "count": 4,
+        "basis": "1 sweet potato and 1 apple: about 4 small portions."
+      },
+      "expected": {
+        "serves": 4,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "count": 1
+          },
+          {
+            "count": 1
+          },
+          {
+            "amount": 0.25,
+            "unit": "tsp"
+          },
+          {
+            "amount": 0.5,
+            "unit": "cup"
+          }
+        ],
+        "steps": [
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 900
+          },
+          {
+            "timer_sec": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "baking-chocolate-cake",
+      "recipe": {
+        "name": "baking-chocolate-cake",
+        "ingredients": [
+          {
+            "item": "all-purpose flour",
+            "amount": "2",
+            "unit": "cups"
+          },
+          {
+            "item": "sugar",
+            "amount": "2",
+            "unit": "cups"
+          },
+          {
+            "item": "cocoa powder",
+            "amount": "3/4",
+            "unit": "cup"
+          },
+          {
+            "item": "baking soda",
+            "amount": "2",
+            "unit": "tsp"
+          },
+          {
+            "item": "salt",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "eggs",
+            "amount": "2"
+          },
+          {
+            "item": "buttermilk",
+            "amount": "1",
+            "unit": "cup"
+          },
+          {
+            "item": "vegetable oil",
+            "amount": "1/2",
+            "unit": "cup"
+          },
+          {
+            "item": "vanilla extract",
+            "amount": "2",
+            "unit": "tsp"
+          },
+          {
+            "item": "hot coffee",
+            "amount": "1",
+            "unit": "cup"
+          }
+        ],
+        "steps": [
+          "Preheat the oven to 350F and grease two cake pans.",
+          "In a large bowl, whisk together the dry ingredients.",
+          "In another bowl, beat the eggs, then add the buttermilk, oil, and vanilla.",
+          "Pour the wet mixture into the dry and stir until just combined.",
+          "Stir in the hot coffee until the batter is smooth and pourable.",
+          "Divide the batter between the pans and bake for 30 minutes."
+        ],
+        "stepIngredients": [
+          [],
+          [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          [
+            5,
+            6,
+            7,
+            8
+          ],
+          [],
+          [
+            9
+          ],
+          []
+        ]
+      },
+      "servesEstimate": {
+        "count": 12,
+        "basis": "2 cups all-purpose flour, 2 cups sugar, and 2 eggs: about 12 cake slices."
+      },
+      "expected": {
+        "serves": 12,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "amount": 2,
+            "unit": "cups"
+          },
+          {
+            "amount": 2,
+            "unit": "cups"
+          },
+          {
+            "amount": 0.75,
+            "unit": "cup"
+          },
+          {
+            "amount": 2,
+            "unit": "tsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "count": 2
+          },
+          {
+            "amount": 1,
+            "unit": "cup"
+          },
+          {
+            "amount": 0.5,
+            "unit": "cup"
+          },
+          {
+            "amount": 2,
+            "unit": "tsp"
+          },
+          {
+            "amount": 1,
+            "unit": "cup"
+          }
+        ],
+        "steps": [
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 1800
+          }
+        ]
+      }
+    },
+    {
+      "id": "chewy-oat-cookies",
+      "recipe": {
+        "name": "chewy-oat-cookies",
+        "ingredients": [
+          {
+            "item": "unsalted butter, softened",
+            "amount": "1",
+            "unit": "cup (225 g)"
+          },
+          {
+            "item": "brown sugar",
+            "amount": "1",
+            "unit": "cup"
+          },
+          {
+            "item": "white sugar",
+            "amount": "1/2",
+            "unit": "cup"
+          },
+          {
+            "item": "eggs, at room temperature",
+            "amount": "2"
+          },
+          {
+            "item": "vanilla extract",
+            "amount": "2",
+            "unit": "tsp"
+          },
+          {
+            "item": "all-purpose flour",
+            "amount": "1 1/2",
+            "unit": "cups"
+          },
+          {
+            "item": "baking soda",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "salt",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "rolled oats",
+            "amount": "3",
+            "unit": "cups"
+          },
+          {
+            "item": "raisins",
+            "amount": "1",
+            "unit": "cup"
+          }
+        ],
+        "steps": [
+          "Whisk the flour, baking soda, and salt in a bowl.",
+          "Beat the butter with both sugars for 3 minutes, until pale and fluffy.",
+          "Beat in the eggs one at a time, then the vanilla.",
+          "Stir in the flour mixture, then the oats and raisins.",
+          "Cover the dough and chill it for at least 2 hours, or up to 3 days.",
+          "Heat the oven to 350F and line two baking sheets with parchment.",
+          "Scoop the dough into 2-tablespoon balls and space them 2 inches apart.",
+          "Bake for 11 to 13 minutes, until golden at the edges but still soft in the middle.",
+          "Cool on the sheets for 5 minutes, then move to a rack."
+        ]
+      },
+      "servesEstimate": {
+        "count": 12,
+        "basis": "3 cups rolled oats, 1 cup raisins, and 1 1/2 cups all-purpose flour: about 12 portions."
+      },
+      "expected": {
+        "serves": 12,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "amount": 1,
+            "unit": "cup"
+          },
+          {
+            "amount": 1,
+            "unit": "cup"
+          },
+          {
+            "amount": 0.5,
+            "unit": "cup"
+          },
+          {
+            "count": 2
+          },
+          {
+            "amount": 2,
+            "unit": "tsp"
+          },
+          {
+            "amount": 1.5,
+            "unit": "cups"
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "amount": 3,
+            "unit": "cups"
+          },
+          {
+            "amount": 1,
+            "unit": "cup"
+          }
+        ],
+        "steps": [
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 180
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 7200
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 660
+          },
+          {
+            "timer_sec": 300
+          }
+        ]
+      }
+    },
+    {
+      "id": "crispy-skin-salmon",
+      "recipe": {
+        "name": "crispy-skin-salmon",
+        "ingredients": [
+          {
+            "item": "skin-on salmon fillets",
+            "amount": "4"
+          },
+          {
+            "item": "neutral oil",
+            "amount": "2",
+            "unit": "tbsp"
+          },
+          {
+            "item": "flaky sea salt"
+          },
+          {
+            "item": "little gem lettuce",
+            "amount": "1",
+            "unit": "head"
+          },
+          {
+            "item": "watermelon radish",
+            "amount": "1"
+          },
+          {
+            "item": "avocado",
+            "amount": "1"
+          },
+          {
+            "item": "Base B Vinaigrette",
+            "amount": "2",
+            "unit": "tbsp"
+          },
+          {
+            "item": "lemon",
+            "amount": "1"
+          }
+        ],
+        "steps": [
+          "Score the skin of the salmon fillets and pat completely dry.",
+          "Season the skin generously with flaky sea salt.",
+          "Heat the neutral oil in a stainless pan until shimmering.",
+          "Lay the salmon skin-side down and press gently; cook until the skin is crisp.",
+          "Meanwhile, tear the little gem lettuce and thinly slice the watermelon radish.",
+          "Slice the avocado and arrange it with the greens.",
+          "Dress the salad with the dressing and finish with a squeeze of lemon."
+        ],
+        "stepIngredients": [
+          [
+            0
+          ],
+          [
+            2
+          ],
+          [
+            1
+          ],
+          [
+            0
+          ],
+          [
+            3,
+            4
+          ],
+          [
+            5
+          ],
+          [
+            6,
+            7
+          ]
+        ]
+      },
+      "servesEstimate": {
+        "count": 4,
+        "basis": "4 skin-on salmon fillets with 1 head little gem lettuce, 1 watermelon radish, and 1 avocado: 4 portions."
+      },
+      "expected": {
+        "serves": 4,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "count": 4
+          },
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          },
+          "unstated",
+          {
+            "count": 1
+          },
+          {
+            "count": 1
+          },
+          {
+            "count": 1
+          },
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          },
+          {
+            "count": 1
+          }
+        ],
+        "steps": [
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "day-old-fried-rice",
+      "recipe": {
+        "name": "day-old-fried-rice",
+        "ingredients": [
+          {
+            "item": "cooked jasmine rice, chilled overnight",
+            "amount": "3",
+            "unit": "cups"
+          },
+          {
+            "item": "neutral oil",
+            "amount": "3",
+            "unit": "tbsp"
+          },
+          {
+            "item": "eggs",
+            "amount": "3"
+          },
+          {
+            "item": "green onions",
+            "amount": "4"
+          },
+          {
+            "item": "garlic",
+            "amount": "2",
+            "unit": "cloves"
+          },
+          {
+            "item": "frozen peas",
+            "amount": "1",
+            "unit": "cup"
+          },
+          {
+            "item": "carrot",
+            "amount": "1"
+          },
+          {
+            "item": "soy sauce",
+            "amount": "2",
+            "unit": "tbsp"
+          },
+          {
+            "item": "sesame oil",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "white pepper",
+            "amount": "1/4",
+            "unit": "tsp"
+          },
+          {
+            "item": "char siu or ham",
+            "amount": "4",
+            "unit": "oz"
+          }
+        ],
+        "steps": [
+          "Break up any clumps in the cold rice with your fingers.",
+          "Beat the eggs.",
+          "Heat 1 tablespoon of the oil in a wok over high heat, scramble the eggs until just set, and tip them onto a plate.",
+          "Dice the carrot and the char siu, and thinly slice the green onions, keeping the whites and greens apart.",
+          "Mince the garlic.",
+          "Add the remaining oil to the wok, then the carrot and the green onion whites, and stir-fry for 2 minutes.",
+          "Add the garlic and char siu and stir-fry for 30 seconds.",
+          "Add the rice and press it against the wok, tossing, for 3 minutes, until hot and starting to crisp.",
+          "Add the peas straight from the freezer and toss for 1 minute.",
+          "Season with the soy sauce, sesame oil, and white pepper, fold the eggs back in, and scatter over the green onion greens."
+        ]
+      },
+      "servesEstimate": {
+        "count": 3,
+        "basis": "3 cups cooked jasmine rice, 3 eggs, and 4 oz char siu or ham: about 3 portions."
+      },
+      "expected": {
+        "serves": 3,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "amount": 3,
+            "unit": "cups"
+          },
+          {
+            "amount": 3,
+            "unit": "tbsp"
+          },
+          {
+            "count": 3
+          },
+          {
+            "count": 4
+          },
+          {
+            "count": 2
+          },
+          {
+            "amount": 1,
+            "unit": "cup"
+          },
+          {
+            "count": 1
+          },
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "amount": 0.25,
+            "unit": "tsp"
+          },
+          {
+            "amount": 4,
+            "unit": "oz"
+          }
+        ],
+        "steps": [
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 120
+          },
+          {
+            "timer_sec": 30
+          },
+          {
+            "timer_sec": 180
+          },
+          {
+            "timer_sec": 60
+          },
+          {
+            "timer_sec": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "indian-dal-tadka",
+      "recipe": {
+        "name": "indian-dal-tadka",
+        "ingredients": [
+          {
+            "item": "toor dal",
+            "amount": "1",
+            "unit": "cup"
+          },
+          {
+            "item": "water",
+            "amount": "3",
+            "unit": "cups"
+          },
+          {
+            "item": "turmeric",
+            "amount": "1/2",
+            "unit": "tsp"
+          },
+          {
+            "item": "ghee",
+            "amount": "2",
+            "unit": "tbsp"
+          },
+          {
+            "item": "mustard seeds",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "cumin seeds",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "dried red chiles",
+            "amount": "2"
+          },
+          {
+            "item": "garlic, minced",
+            "amount": "4",
+            "unit": "cloves"
+          },
+          {
+            "item": "ginger, grated",
+            "amount": "1",
+            "unit": "inch"
+          },
+          {
+            "item": "onion, finely chopped",
+            "amount": "1"
+          },
+          {
+            "item": "tomatoes, chopped",
+            "amount": "2"
+          },
+          {
+            "item": "red chili powder",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "salt to taste"
+          },
+          {
+            "item": "cilantro, chopped",
+            "amount": "2",
+            "unit": "tbsp"
+          }
+        ],
+        "steps": [
+          "Rinse the toor dal and pressure cook with water and turmeric until soft.",
+          "Heat the ghee in a small pan for the tempering.",
+          "Temper the whole spices until they crackle and become fragrant.",
+          "Add the dried red chiles, garlic, and ginger, and saute until golden.",
+          "Add the onion and cook until translucent, then stir in the tomatoes and chili powder.",
+          "Pour the tempering into the cooked dal, add salt, and simmer for 5 minutes.",
+          "Garnish with fresh cilantro and serve with rice."
+        ],
+        "stepIngredients": [
+          [
+            0,
+            1,
+            2
+          ],
+          [
+            3
+          ],
+          [
+            4,
+            5
+          ],
+          [
+            6,
+            7,
+            8
+          ],
+          [
+            9,
+            10,
+            11
+          ],
+          [
+            0,
+            12
+          ],
+          [
+            13
+          ]
+        ]
+      },
+      "servesEstimate": {
+        "count": 4,
+        "basis": "1 cup toor dal with 3 cups water, 1 onion, and 2 tomatoes: about 4 portions."
+      },
+      "expected": {
+        "serves": 4,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "amount": 1,
+            "unit": "cup"
+          },
+          {
+            "amount": 3,
+            "unit": "cups"
+          },
+          {
+            "amount": 0.5,
+            "unit": "tsp"
+          },
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "count": 2
+          },
+          {
+            "count": 4
+          },
+          {
+            "count": 1
+          },
+          {
+            "count": 1
+          },
+          {
+            "count": 2
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          "to taste",
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          }
+        ],
+        "steps": [
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 300
+          },
+          {
+            "timer_sec": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "lime-shrimp-tacos",
+      "recipe": {
+        "name": "lime-shrimp-tacos",
+        "ingredients": [
+          {
+            "item": "shrimp, peeled and deveined",
+            "amount": "1",
+            "unit": "lb"
+          },
+          {
+            "item": "limes",
+            "amount": "2"
+          },
+          {
+            "item": "olive oil",
+            "amount": "2",
+            "unit": "tbsp"
+          },
+          {
+            "item": "chili powder",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "garlic",
+            "amount": "2",
+            "unit": "cloves"
+          },
+          {
+            "item": "red onion",
+            "amount": "1"
+          },
+          {
+            "item": "cider vinegar",
+            "amount": "1/2",
+            "unit": "cup"
+          },
+          {
+            "item": "sugar",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "salt",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "shredded cabbage",
+            "amount": "2",
+            "unit": "cups"
+          },
+          {
+            "item": "avocado",
+            "amount": "1"
+          },
+          {
+            "item": "corn tortillas",
+            "amount": "8"
+          },
+          {
+            "item": "cilantro leaves",
+            "amount": "1/4",
+            "unit": "cup"
+          }
+        ],
+        "steps": [
+          "Thinly slice the red onion and put it in a jar with the vinegar, sugar, and a pinch of the salt. Let it stand for 20 minutes.",
+          "Mince the garlic, zest and juice one lime, and cut the other into wedges.",
+          "Toss the shrimp with the lime zest and juice, the garlic, chili powder, half the oil, and the rest of the salt, and leave to marinate for 15 minutes.",
+          "Slice the avocado.",
+          "Heat the remaining oil in a large skillet over high heat and cook the shrimp for 2 minutes per side, until pink.",
+          "Warm the tortillas in a dry pan for 30 seconds a side.",
+          "Fill the tortillas with cabbage, shrimp, avocado, pickled onion, and cilantro, and serve with the lime wedges."
+        ]
+      },
+      "servesEstimate": {
+        "count": 4,
+        "basis": "1 lb shrimp and 8 corn tortillas: about 4 dinner portions."
+      },
+      "expected": {
+        "serves": 4,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "amount": 1,
+            "unit": "lb"
+          },
+          {
+            "count": 2
+          },
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "count": 2
+          },
+          {
+            "count": 1
+          },
+          {
+            "amount": 0.5,
+            "unit": "cup"
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "amount": 2,
+            "unit": "cups"
+          },
+          {
+            "count": 1
+          },
+          {
+            "count": 8
+          },
+          {
+            "amount": 0.25,
+            "unit": "cup"
+          }
+        ],
+        "steps": [
+          {
+            "timer_sec": 1200
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 900
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 120
+          },
+          {
+            "timer_sec": 30
+          },
+          {
+            "timer_sec": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "multi-component-mole",
+      "recipe": {
+        "name": "multi-component-mole",
+        "ingredients": [
+          {
+            "item": "dried ancho chiles",
+            "amount": "4"
+          },
+          {
+            "item": "dried pasilla chiles",
+            "amount": "2"
+          },
+          {
+            "item": "dried guajillo chiles",
+            "amount": "3"
+          },
+          {
+            "item": "sesame seeds",
+            "amount": "1/4",
+            "unit": "cup"
+          },
+          {
+            "item": "pumpkin seeds",
+            "amount": "1/4",
+            "unit": "cup"
+          },
+          {
+            "item": "almonds",
+            "amount": "1/2",
+            "unit": "cup"
+          },
+          {
+            "item": "raisins",
+            "amount": "1/3",
+            "unit": "cup"
+          },
+          {
+            "item": "corn tortillas",
+            "amount": "2"
+          },
+          {
+            "item": "roma tomatoes",
+            "amount": "3"
+          },
+          {
+            "item": "white onion",
+            "amount": "1/2"
+          },
+          {
+            "item": "garlic",
+            "amount": "4",
+            "unit": "cloves"
+          },
+          {
+            "item": "cinnamon",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "ground cloves",
+            "amount": "1/2",
+            "unit": "tsp"
+          },
+          {
+            "item": "ground cumin",
+            "amount": "1/2",
+            "unit": "tsp"
+          },
+          {
+            "item": "Mexican chocolate",
+            "amount": "2",
+            "unit": "oz"
+          },
+          {
+            "item": "chicken broth",
+            "amount": "3",
+            "unit": "cups"
+          },
+          {
+            "item": "lard",
+            "amount": "2",
+            "unit": "tbsp"
+          },
+          {
+            "item": "salt to taste"
+          },
+          {
+            "item": "bone-in chicken thighs",
+            "amount": "6"
+          },
+          {
+            "item": "white onion, quartered",
+            "amount": "1"
+          },
+          {
+            "item": "bay leaves",
+            "amount": "2"
+          }
+        ],
+        "steps": [
+          "For the chicken: place the chicken thighs in a pot with the quartered onion and bay leaves, cover with water, and simmer for 30 minutes.",
+          "Remove the chicken and reserve the poaching liquid.",
+          "For the mole: toast the ancho, pasilla, and guajillo chiles in a dry skillet until fragrant, then soak in hot water.",
+          "In the same skillet, toast the sesame seeds, pumpkin seeds, and almonds.",
+          "Fry the tortillas and raisins until the tortillas are crisp.",
+          "Char the tomatoes, onion, and garlic under the broiler.",
+          "Blend the soaked chiles, toasted seeds, nuts, tortillas, raisins, charred vegetables, cinnamon, cloves, and cumin with some chicken broth into a smooth paste.",
+          "Heat the lard in a Dutch oven, fry the mole paste, then add the Mexican chocolate and remaining chicken broth.",
+          "Return the chicken to the pot, simmer in the mole for 20 minutes, and season with salt."
+        ],
+        "stepIngredients": [
+          [
+            18,
+            19,
+            20
+          ],
+          [],
+          [
+            0,
+            1,
+            2
+          ],
+          [
+            3,
+            4,
+            5
+          ],
+          [
+            6,
+            7
+          ],
+          [
+            8,
+            9,
+            10
+          ],
+          [
+            11,
+            12,
+            13,
+            15
+          ],
+          [
+            14,
+            16
+          ],
+          [
+            17,
+            18
+          ]
+        ]
+      },
+      "servesEstimate": {
+        "count": 6,
+        "basis": "6 bone-in chicken thighs: about 6 dinner portions."
+      },
+      "expected": {
+        "serves": 6,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "count": 4
+          },
+          {
+            "count": 2
+          },
+          {
+            "count": 3
+          },
+          {
+            "amount": 0.25,
+            "unit": "cup"
+          },
+          {
+            "amount": 0.25,
+            "unit": "cup"
+          },
+          {
+            "amount": 0.5,
+            "unit": "cup"
+          },
+          {
+            "amount": 0.3333333333,
+            "unit": "cup"
+          },
+          {
+            "count": 2
+          },
+          {
+            "count": 3
+          },
+          {
+            "count": 0.5,
+            "note": "white onion 1/2: fractional bare count, kept as count 0.5"
+          },
+          {
+            "count": 4
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "amount": 0.5,
+            "unit": "tsp"
+          },
+          {
+            "amount": 0.5,
+            "unit": "tsp"
+          },
+          {
+            "amount": 2,
+            "unit": "oz"
+          },
+          {
+            "amount": 3,
+            "unit": "cups"
+          },
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          },
+          "to taste",
+          {
+            "count": 6
+          },
+          {
+            "count": 1
+          },
+          {
+            "count": 2
+          }
+        ],
+        "steps": [
+          {
+            "timer_sec": 1800
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 1200
+          }
+        ]
+      }
+    },
+    {
+      "id": "overnight-chickpea-stew",
+      "recipe": {
+        "name": "overnight-chickpea-stew",
+        "ingredients": [
+          {
+            "item": "dried chickpeas",
+            "amount": "1",
+            "unit": "cup"
+          },
+          {
+            "item": "olive oil",
+            "amount": "2",
+            "unit": "tbsp"
+          },
+          {
+            "item": "onion",
+            "amount": "1"
+          },
+          {
+            "item": "garlic",
+            "amount": "3",
+            "unit": "cloves"
+          },
+          {
+            "item": "carrot",
+            "amount": "1"
+          },
+          {
+            "item": "ground cumin",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "smoked paprika",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "crushed tomatoes",
+            "amount": "1",
+            "unit": "can (14 oz)"
+          },
+          {
+            "item": "vegetable stock",
+            "amount": "4",
+            "unit": "cups"
+          },
+          {
+            "item": "spinach",
+            "amount": "2",
+            "unit": "cups"
+          },
+          {
+            "item": "salt"
+          }
+        ],
+        "steps": [
+          "The night before, cover the chickpeas with plenty of cold water and leave them to soak for at least 8 hours.",
+          "Drain and rinse the soaked chickpeas.",
+          "Dice the onion and carrot and slice the garlic.",
+          "Warm the olive oil in a heavy pot over medium heat and cook the onion and carrot for 8 minutes, stirring now and then, until soft.",
+          "Add the garlic, cumin, and paprika and stir for 1 minute.",
+          "Add the chickpeas, crushed tomatoes, and stock, bring to a boil, then cover and simmer gently for 1 hour, until the chickpeas are tender.",
+          "Stir in the spinach until it wilts and season with salt."
+        ]
+      },
+      "servesEstimate": {
+        "count": 4,
+        "basis": "1 cup dried chickpeas, 1 onion, 1 carrot, 1 can (14 oz) crushed tomatoes, and 4 cups vegetable stock: about 4 portions."
+      },
+      "expected": {
+        "serves": 4,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "amount": 1,
+            "unit": "cup"
+          },
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          },
+          {
+            "count": 1
+          },
+          {
+            "count": 3
+          },
+          {
+            "count": 1
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "count": 1,
+            "note": "unit 'can (14 oz)': one can; the 14 oz is the can's size, not an equivalent measure of the quantity"
+          },
+          {
+            "amount": 4,
+            "unit": "cups"
+          },
+          {
+            "amount": 2,
+            "unit": "cups"
+          },
+          "unstated"
+        ],
+        "steps": [
+          {
+            "timer_sec": 28800
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 480
+          },
+          {
+            "timer_sec": 60
+          },
+          {
+            "timer_sec": 3600
+          },
+          {
+            "timer_sec": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "simple-weeknight-salmon",
+      "recipe": {
+        "name": "simple-weeknight-salmon",
+        "ingredients": [
+          {
+            "item": "center-cut salmon fillets",
+            "amount": "2"
+          },
+          {
+            "item": "olive oil",
+            "amount": "1",
+            "unit": "tbsp"
+          },
+          {
+            "item": "garlic, minced",
+            "amount": "2",
+            "unit": "cloves"
+          },
+          {
+            "item": "lemon",
+            "amount": "1"
+          },
+          {
+            "item": "salt and pepper to taste"
+          },
+          {
+            "item": "chopped parsley",
+            "amount": "1",
+            "unit": "tbsp"
+          }
+        ],
+        "steps": [
+          "Pat the salmon fillets dry and season both sides with salt and pepper.",
+          "Heat the olive oil in a cast iron skillet over medium-high heat.",
+          "Add the garlic and saute for 30 seconds until fragrant.",
+          "Place the salmon skin-side down and cook for 4 minutes per side.",
+          "Squeeze the lemon over the fish and garnish with parsley before serving."
+        ],
+        "stepIngredients": [
+          [
+            0,
+            4
+          ],
+          [
+            1
+          ],
+          [
+            2
+          ],
+          [
+            0
+          ],
+          [
+            3,
+            5
+          ]
+        ]
+      },
+      "servesEstimate": {
+        "count": 2,
+        "basis": "2 center-cut salmon fillets: 2 portions."
+      },
+      "expected": {
+        "serves": 2,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "count": 2
+          },
+          {
+            "amount": 1,
+            "unit": "tbsp"
+          },
+          {
+            "count": 2
+          },
+          {
+            "count": 1
+          },
+          "to taste",
+          {
+            "amount": 1,
+            "unit": "tbsp"
+          }
+        ],
+        "steps": [
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 30
+          },
+          {
+            "timer_sec": 240
+          },
+          {
+            "timer_sec": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "spicy-harissa-pasta",
+      "recipe": {
+        "name": "spicy-harissa-pasta",
+        "ingredients": [
+          {
+            "item": "rigatoni",
+            "amount": "12",
+            "unit": "oz"
+          },
+          {
+            "item": "harissa olive oil",
+            "amount": "3",
+            "unit": "tbsp"
+          },
+          {
+            "item": "tomato paste",
+            "amount": "2",
+            "unit": "tbsp"
+          },
+          {
+            "item": "garlic, thinly sliced",
+            "amount": "4",
+            "unit": "cloves"
+          },
+          {
+            "item": "red-pepper flakes",
+            "amount": "1/2",
+            "unit": "tsp"
+          },
+          {
+            "item": "heavy cream",
+            "amount": "1/4",
+            "unit": "cup"
+          },
+          {
+            "item": "grated Parmesan",
+            "amount": "1/2",
+            "unit": "cup"
+          },
+          {
+            "item": "salt to taste"
+          },
+          {
+            "item": "chopped basil",
+            "amount": "2",
+            "unit": "tbsp"
+          }
+        ],
+        "steps": [
+          "Bring a large pot of salted water to a boil and cook the rigatoni until al dente.",
+          "Meanwhile, warm the harissa oil in a skillet and stir in the tomato paste.",
+          "Add the sliced garlic and red pepper flakes and cook until fragrant.",
+          "Add the heavy cream and a splash of pasta water, then toss in the drained rigatoni.",
+          "Remove from heat and stir in the Parmesan until melted.",
+          "Season with salt, garnish with torn basil, and serve."
+        ],
+        "stepIngredients": [
+          [
+            0,
+            7
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            4
+          ],
+          [
+            0,
+            5
+          ],
+          [
+            6
+          ],
+          [
+            8
+          ]
+        ]
+      },
+      "servesEstimate": {
+        "count": 4,
+        "basis": "12 oz rigatoni with 3 tbsp harissa olive oil, 2 tbsp tomato paste, and 1/4 cup heavy cream: about 4 dinner portions."
+      },
+      "expected": {
+        "serves": 4,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "amount": 12,
+            "unit": "oz"
+          },
+          {
+            "amount": 3,
+            "unit": "tbsp"
+          },
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          },
+          {
+            "count": 4
+          },
+          {
+            "amount": 0.5,
+            "unit": "tsp"
+          },
+          {
+            "amount": 0.25,
+            "unit": "cup"
+          },
+          {
+            "amount": 0.5,
+            "unit": "cup"
+          },
+          "to taste",
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          }
+        ],
+        "steps": [
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "sunday-roast-dinner",
+      "recipe": {
+        "name": "sunday-roast-dinner",
+        "ingredients": [
+          {
+            "item": "whole chicken (about 1.8 kg / 4 lb)",
+            "amount": "1"
+          },
+          {
+            "item": "flaky salt",
+            "amount": "1",
+            "unit": "tbsp"
+          },
+          {
+            "item": "lemon",
+            "amount": "1"
+          },
+          {
+            "item": "garlic",
+            "amount": "1",
+            "unit": "head"
+          },
+          {
+            "item": "thyme",
+            "amount": "4",
+            "unit": "sprigs"
+          },
+          {
+            "item": "olive oil",
+            "amount": "3",
+            "unit": "tbsp"
+          },
+          {
+            "item": "floury potatoes",
+            "amount": "1.2",
+            "unit": "kg (2 1/2 lb)"
+          },
+          {
+            "item": "duck fat",
+            "amount": "4",
+            "unit": "tbsp"
+          },
+          {
+            "item": "rosemary",
+            "amount": "2",
+            "unit": "sprigs"
+          },
+          {
+            "item": "green beans",
+            "amount": "300",
+            "unit": "g (10 oz)"
+          },
+          {
+            "item": "butter",
+            "amount": "1",
+            "unit": "tbsp"
+          },
+          {
+            "item": "shallot",
+            "amount": "1"
+          },
+          {
+            "item": "plain flour",
+            "amount": "1",
+            "unit": "tbsp"
+          },
+          {
+            "item": "dry white wine",
+            "amount": "1/2",
+            "unit": "cup"
+          },
+          {
+            "item": "chicken stock",
+            "amount": "1 1/2",
+            "unit": "cups"
+          },
+          {
+            "item": "salt and pepper"
+          }
+        ],
+        "steps": [
+          "The day before, pat the chicken dry, rub the flaky salt all over it, and refrigerate it uncovered overnight.",
+          "Take the chicken out of the fridge 1 hour before roasting.",
+          "Heat the oven to 220C (425F).",
+          "Peel the potatoes and cut them into large chunks.",
+          "Put the potatoes in a pot of cold salted water, bring to a boil, and simmer for 8 minutes.",
+          "Meanwhile, halve the lemon and cut the head of garlic in half across the middle.",
+          "Stuff the lemon, garlic, and thyme into the chicken, rub it with the olive oil, and set it in a roasting pan.",
+          "Roast the chicken for 20 minutes.",
+          "While the chicken roasts, put the duck fat in a second roasting tin and heat it in the oven for 5 minutes.",
+          "Drain the potatoes, let them steam dry for 2 minutes, then shake them in the pot to rough up the edges.",
+          "Tip the potatoes into the hot fat, turn to coat, and add the rosemary.",
+          "Turn the oven down to 190C (375F) and roast the chicken and potatoes together for 50 minutes more, turning the potatoes once.",
+          "Trim the green beans.",
+          "Finely chop the shallot.",
+          "Check the chicken: the juices at the thigh should run clear, or a thermometer should read 74C (165F).",
+          "Lift the chicken onto a board and rest it, loosely covered, for 15 minutes.",
+          "Turn the oven up to 220C (425F) and give the potatoes a final 10 minutes to crisp.",
+          "Spoon off all but 1 tablespoon of fat from the chicken pan and set the pan over medium heat.",
+          "Add the shallot and cook for 2 minutes, then stir in the flour and cook for 1 minute more.",
+          "Pour in the wine and let it bubble, scraping up the browned bits, until almost gone.",
+          "Whisk in the stock and simmer for 5 minutes, until the gravy coats a spoon.",
+          "Meanwhile, boil the green beans in salted water for 5 minutes, then drain and toss with the butter.",
+          "Carve the chicken and serve with the potatoes, beans, and gravy."
+        ]
+      },
+      "servesEstimate": {
+        "count": 4,
+        "basis": "1 whole chicken (about 1.8 kg / 4 lb) with 1.2 kg (2 1/2 lb) floury potatoes and 300 g (10 oz) green beans: about 4 dinner portions."
+      },
+      "expected": {
+        "serves": 4,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "count": 1,
+            "note": "item text carries '(about 1.8 kg / 4 lb)' as a size description; the line's amount is a bare 1"
+          },
+          {
+            "amount": 1,
+            "unit": "tbsp"
+          },
+          {
+            "count": 1
+          },
+          {
+            "count": 1
+          },
+          {
+            "count": 4
+          },
+          {
+            "amount": 3,
+            "unit": "tbsp"
+          },
+          {
+            "amount": 2.5,
+            "unit": "lb"
+          },
+          {
+            "amount": 4,
+            "unit": "tbsp"
+          },
+          {
+            "count": 2
+          },
+          {
+            "amount": 10,
+            "unit": "oz"
+          },
+          {
+            "amount": 1,
+            "unit": "tbsp"
+          },
+          {
+            "count": 1
+          },
+          {
+            "amount": 1,
+            "unit": "tbsp"
+          },
+          {
+            "amount": 0.5,
+            "unit": "cup"
+          },
+          {
+            "amount": 1.5,
+            "unit": "cups"
+          },
+          "unstated"
+        ],
+        "steps": [
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 3600
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 480
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 1200
+          },
+          {
+            "timer_sec": 300
+          },
+          {
+            "timer_sec": 120
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 3000
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 900
+          },
+          {
+            "timer_sec": 600
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 120
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 300
+          },
+          {
+            "timer_sec": 300
+          },
+          {
+            "timer_sec": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "weeknight-shakshuka",
+      "recipe": {
+        "name": "weeknight-shakshuka",
+        "ingredients": [
+          {
+            "item": "olive oil",
+            "amount": "2",
+            "unit": "tbsp"
+          },
+          {
+            "item": "onion",
+            "amount": "1"
+          },
+          {
+            "item": "red bell peppers",
+            "amount": "2"
+          },
+          {
+            "item": "garlic",
+            "amount": "3",
+            "unit": "cloves"
+          },
+          {
+            "item": "ground cumin",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "sweet paprika",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "cayenne",
+            "amount": "1/4",
+            "unit": "tsp"
+          },
+          {
+            "item": "whole tomatoes",
+            "amount": "1",
+            "unit": "can (28 oz)"
+          },
+          {
+            "item": "salt",
+            "amount": "1/2",
+            "unit": "tsp"
+          },
+          {
+            "item": "eggs",
+            "amount": "6"
+          },
+          {
+            "item": "crumbled feta",
+            "amount": "1/3",
+            "unit": "cup"
+          },
+          {
+            "item": "chopped parsley",
+            "amount": "2",
+            "unit": "tbsp"
+          },
+          {
+            "item": "crusty bread, to serve"
+          }
+        ],
+        "steps": [
+          "Get everything ready first: thinly slice the onion, seed and slice the peppers, slice the garlic, and crush the tomatoes by hand in their can.",
+          "Warm the oil in a 12-inch skillet over medium heat and cook the onion and peppers for 10 minutes, stirring now and then, until soft and sweet.",
+          "Add the garlic, cumin, paprika, and cayenne and cook for 1 minute.",
+          "Pour in the tomatoes, add the salt, and simmer for 10 minutes, until thickened.",
+          "Make 6 wells in the sauce and crack an egg into each.",
+          "Cover and cook for 5 to 8 minutes, until the whites are set and the yolks still runny.",
+          "Scatter the feta and parsley over the top and serve from the pan with bread."
+        ]
+      },
+      "servesEstimate": {
+        "count": 3,
+        "basis": "6 eggs in a sauce of 1 can (28 oz) whole tomatoes, 1 onion, and 2 red bell peppers: about 3 portions."
+      },
+      "expected": {
+        "serves": 3,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          },
+          {
+            "count": 1
+          },
+          {
+            "count": 2
+          },
+          {
+            "count": 3
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "amount": 0.25,
+            "unit": "tsp"
+          },
+          {
+            "count": 1,
+            "note": "unit 'can (28 oz)': one can; the 28 oz is the can's size, not an equivalent measure of the quantity"
+          },
+          {
+            "amount": 0.5,
+            "unit": "tsp"
+          },
+          {
+            "count": 6
+          },
+          {
+            "amount": 0.3333333333,
+            "unit": "cup"
+          },
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          },
+          "unstated"
+        ],
+        "steps": [
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 600
+          },
+          {
+            "timer_sec": 60
+          },
+          {
+            "timer_sec": 600
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 300
+          },
+          {
+            "timer_sec": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "weeknight-stir-fry",
+      "recipe": {
+        "name": "weeknight-stir-fry",
+        "ingredients": [
+          {
+            "item": "chicken thighs, sliced",
+            "amount": "1",
+            "unit": "lb"
+          },
+          {
+            "item": "soy sauce",
+            "amount": "2",
+            "unit": "tbsp"
+          },
+          {
+            "item": "fish sauce",
+            "amount": "1",
+            "unit": "tbsp"
+          },
+          {
+            "item": "chili oil",
+            "amount": "1",
+            "unit": "tbsp"
+          },
+          {
+            "item": "cornstarch",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "vegetable oil",
+            "amount": "1",
+            "unit": "tbsp"
+          },
+          {
+            "item": "red bell pepper, sliced",
+            "amount": "1"
+          },
+          {
+            "item": "snap peas",
+            "amount": "1",
+            "unit": "cup"
+          },
+          {
+            "item": "garlic, minced",
+            "amount": "3",
+            "unit": "cloves"
+          },
+          {
+            "item": "ginger, grated",
+            "amount": "1",
+            "unit": "inch"
+          },
+          {
+            "item": "green onions, sliced",
+            "amount": "2"
+          },
+          {
+            "item": "sesame oil",
+            "amount": "1",
+            "unit": "tsp"
+          }
+        ],
+        "steps": [
+          "Whisk the soy sauce, fish sauce, chili oil, and cornstarch in a bowl to make the sauce.",
+          "Heat the vegetable oil in a wok over high heat.",
+          "Add the chicken and stir-fry until browned, then remove.",
+          "Add the bell pepper and snap peas and stir-fry for 2 minutes.",
+          "Add the garlic and ginger and toss until fragrant.",
+          "Return the chicken, pour in the sauce, and toss until glossy.",
+          "Drizzle with sesame oil, top with green onions, and serve."
+        ],
+        "stepIngredients": [
+          [
+            1,
+            2,
+            3,
+            4
+          ],
+          [
+            5
+          ],
+          [
+            0
+          ],
+          [
+            6,
+            7
+          ],
+          [
+            8,
+            9
+          ],
+          [
+            0
+          ],
+          [
+            10,
+            11
+          ]
+        ]
+      },
+      "servesEstimate": {
+        "count": 3,
+        "basis": "1 lb chicken thighs, 1 red bell pepper, and 1 cup snap peas: about 3 dinner portions."
+      },
+      "expected": {
+        "serves": 3,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "amount": 1,
+            "unit": "lb"
+          },
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tbsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tbsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tbsp"
+          },
+          {
+            "count": 1
+          },
+          {
+            "amount": 1,
+            "unit": "cup"
+          },
+          {
+            "count": 3
+          },
+          {
+            "count": 1
+          },
+          {
+            "count": 2
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          }
+        ],
+        "steps": [
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 120
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "yogurt-marinated-chicken",
+      "recipe": {
+        "name": "yogurt-marinated-chicken",
+        "ingredients": [
+          {
+            "item": "bone-in chicken thighs",
+            "amount": "8"
+          },
+          {
+            "item": "plain yogurt",
+            "amount": "1",
+            "unit": "cup"
+          },
+          {
+            "item": "garlic, grated",
+            "amount": "4",
+            "unit": "cloves"
+          },
+          {
+            "item": "garam masala",
+            "amount": "1",
+            "unit": "tbsp"
+          },
+          {
+            "item": "ground turmeric",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "lemon",
+            "amount": "1"
+          },
+          {
+            "item": "salt",
+            "amount": "1",
+            "unit": "tsp"
+          },
+          {
+            "item": "cucumber",
+            "amount": "1"
+          },
+          {
+            "item": "Greek yogurt",
+            "amount": "1",
+            "unit": "cup"
+          },
+          {
+            "item": "mint leaves",
+            "amount": "2",
+            "unit": "tbsp"
+          },
+          {
+            "item": "red onion",
+            "amount": "1"
+          },
+          {
+            "item": "oil",
+            "amount": "2",
+            "unit": "tbsp"
+          }
+        ],
+        "steps": [
+          "Stir the yogurt, grated garlic, garam masala, turmeric, the juice of the lemon, and most of the salt together in a large bowl.",
+          "Slash each chicken thigh twice to the bone, add to the bowl, and turn to coat. Cover and marinate in the fridge for at least 4 hours, or overnight.",
+          "Heat the oven to 220C (425F) and line a roasting tray with foil.",
+          "Lay the chicken skin-side up on the tray, drizzle with the oil, and roast for 35 to 40 minutes, until charred at the edges.",
+          "While the chicken roasts, grate the cucumber and squeeze out the liquid.",
+          "Finely chop the mint and stir it into the Greek yogurt with the cucumber and the rest of the salt.",
+          "Slice the red onion into thin rings.",
+          "Rest the chicken for 5 minutes, then serve with the raita and onion."
+        ]
+      },
+      "servesEstimate": {
+        "count": 4,
+        "basis": "8 bone-in chicken thighs: about 4 dinner portions."
+      },
+      "expected": {
+        "serves": 4,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "count": 8
+          },
+          {
+            "amount": 1,
+            "unit": "cup"
+          },
+          {
+            "count": 4
+          },
+          {
+            "amount": 1,
+            "unit": "tbsp"
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "count": 1
+          },
+          {
+            "amount": 1,
+            "unit": "tsp"
+          },
+          {
+            "count": 1
+          },
+          {
+            "amount": 1,
+            "unit": "cup"
+          },
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          },
+          {
+            "count": 1
+          },
+          {
+            "amount": 2,
+            "unit": "tbsp"
+          }
+        ],
+        "steps": [
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 14400
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 2100
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": 300
+          }
+        ]
+      }
+    },
+    {
+      "id": "zucchini-wraps",
+      "recipe": {
+        "name": "Sweet Zucchini Wraps",
+        "ingredients": [
+          {
+            "amount": "2",
+            "item": "zucchini"
+          },
+          {
+            "amount": "1",
+            "item": "onion bulb"
+          },
+          {
+            "amount": "1",
+            "item": "garlic scape"
+          },
+          {
+            "amount": "a pinch of",
+            "item": "cumin or curry powder"
+          },
+          {
+            "amount": "a handful of",
+            "item": "onion greens"
+          },
+          {
+            "item": "frozen parathas"
+          },
+          {
+            "item": "chili oil or Calabrian chile"
+          }
+        ],
+        "steps": [
+          "Sauté the onion, garlic scape and zucchini with a pinch of cumin until sweet and caramelized, about 15 minutes.",
+          "Stir in the onion greens at the very end.",
+          "Fry the parathas in a dry skillet until crisp and flaky.",
+          "Stuff the hot wrappers with the spiced zucchini.",
+          "Add a drizzle of chili oil or Calabrian chile for anyone who wants heat."
+        ]
+      },
+      "servesEstimate": {
+        "count": 2,
+        "basis": "2 zucchini, 1 onion bulb, 1 garlic scape, and frozen parathas: about 2 portions."
+      },
+      "expected": {
+        "serves": 2,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "count": 2
+          },
+          {
+            "count": 1
+          },
+          {
+            "count": 1
+          },
+          "as written",
+          "as written",
+          "unstated",
+          "unstated"
+        ],
+        "steps": [
+          {
+            "timer_sec": 900
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          },
+          {
+            "timer_sec": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "herb-salt",
+      "recipe": {
+        "name": "Herb Salt",
+        "ingredients": [
+          {
+            "amount": "3",
+            "unit": "tbsp",
+            "item": "flaky sea salt"
+          },
+          {
+            "amount": "2",
+            "item": "sprigs rosemary, leaves picked"
+          },
+          {
+            "amount": "1",
+            "item": "lemon, zested"
+          },
+          {
+            "item": "black pepper, to taste"
+          }
+        ],
+        "steps": []
+      },
+      "servesEstimate": {
+        "count": 24,
+        "basis": "3 tbsp flaky sea salt, 2 sprigs rosemary, and 1 lemon: about 24 condiment portions."
+      },
+      "expected": {
+        "serves": 24,
+        "servesEstimated": true,
+        "ingredients": [
+          {
+            "amount": 3,
+            "unit": "tbsp"
+          },
+          {
+            "count": 2,
+            "note": "no unit field; 'sprigs' is the first word of the item text, so a bare count of 2"
+          },
+          {
+            "count": 1
+          },
+          "to taste"
+        ],
+        "steps": []
+      }
+    }
+  ],
+  "accepted": [
+    {
+      "recipe": "sunday-roast-dinner",
+      "where": "ingredients.0",
+      "kind": "class",
+      "reason": "B4 step 0, call 7: the name keeps a number, '(about 1.8 kg / 4 lb)', that would stand unscaled beside a scaled count ('2 whole chicken (about 1.8 kg / 4 lb)' at 2×), so the line shows as written: '1 whole chicken (about 1.8 kg / 4 lb)'."
+    },
+    {
+      "recipe": "indian-dal-tadka",
+      "where": "ingredients.8",
+      "kind": "class",
+      "reason": "B4 step 0, call 10: a length is how far, not how much. '1 inch' of ginger would scale, but the reader can't tell it from '3 inches' of water over a pot, which mustn't, so every length shows as written: '1 inch'."
+    },
+    {
+      "recipe": "weeknight-stir-fry",
+      "where": "ingredients.9",
+      "kind": "class",
+      "reason": "B4 step 0, call 10: a length is how far, not how much. '1 inch' of ginger would scale, but the reader can't tell it from '3 inches' of water over a pot, which mustn't, so every length shows as written: '1 inch'."
+    }
+  ]
+}

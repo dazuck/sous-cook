@@ -1,0 +1,140 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "34ff405c9b3efb1d",
+  "recipeHash": "9d15852f3adab2cc",
+  "ms": 2742,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "preheat-and-prep-pans",
+        "kind": "cook",
+        "text": "Preheat the oven to 350F and grease two cake pans.",
+        "label": "preheat oven",
+        "ingredientIdx": [],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 10,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "mix-dry-ingredients",
+        "kind": "mise",
+        "text": "In a large bowl, whisk together the dry ingredients.",
+        "label": "whisk dry ingredients",
+        "ingredientIdx": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "mix-wet-ingredients",
+        "kind": "mise",
+        "text": "In another bowl, beat the eggs, then add the buttermilk, oil, and vanilla.",
+        "label": "mix wet ingredients",
+        "ingredientIdx": [
+          5,
+          6,
+          7,
+          8
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "combine-wet-and-dry",
+        "kind": "cook",
+        "text": "Pour the wet mixture into the dry and stir until just combined.",
+        "label": "combine wet and dry",
+        "ingredientIdx": [],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "mix-dry-ingredients",
+          "mix-wet-ingredients"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "add-coffee",
+        "kind": "cook",
+        "text": "Stir in the hot coffee until the batter is smooth and pourable.",
+        "label": "stir in coffee",
+        "ingredientIdx": [
+          9
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "combine-wet-and-dry"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": "until the batter is smooth and pourable",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "bake-cakes",
+        "kind": "cook",
+        "text": "Divide the batter between the pans and bake for 30 minutes.",
+        "label": "bake cakes",
+        "ingredientIdx": [],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [
+          "preheat-and-prep-pans",
+          "add-coffee"
+        ],
+        "minutes": {
+          "est": 30,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      }
+    ]
+  },
+  "usage": {
+    "calls": 1,
+    "inputTokens": 2647,
+    "outputTokens": 515
+  }
+}

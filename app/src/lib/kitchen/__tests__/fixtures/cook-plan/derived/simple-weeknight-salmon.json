@@ -1,0 +1,156 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "965a3c74dd8692b6",
+  "recipeHash": "ae2f558d86579b1c",
+  "ms": 3720,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "mince-garlic",
+        "kind": "mise",
+        "text": "Mince the garlic.",
+        "label": "mince garlic",
+        "ingredientIdx": [
+          2
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "chop-parsley",
+        "kind": "mise",
+        "text": "Chopped parsley.",
+        "label": "chop parsley",
+        "ingredientIdx": [
+          5
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "prep-salmon",
+        "kind": "cook",
+        "text": "Pat the salmon fillets dry and season both sides with salt and pepper.",
+        "label": "season salmon",
+        "ingredientIdx": [
+          0,
+          4
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "heat-oil",
+        "kind": "cook",
+        "text": "Heat the olive oil in a cast iron skillet over medium-high heat.",
+        "label": "heat oil",
+        "ingredientIdx": [
+          1
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "saute-garlic",
+        "kind": "cook",
+        "text": "Add the garlic and saute for 30 seconds until fragrant.",
+        "label": "saute garlic",
+        "ingredientIdx": [
+          2
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "mince-garlic",
+          "heat-oil"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": "until fragrant",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "cook-salmon",
+        "kind": "cook",
+        "text": "Place the salmon skin-side down and cook for 4 minutes per side.",
+        "label": "cook salmon",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "prep-salmon",
+          "saute-garlic"
+        ],
+        "minutes": {
+          "est": 8,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "finish-salmon",
+        "kind": "cook",
+        "text": "Squeeze the lemon over the fish and garnish with parsley before serving.",
+        "label": "finish salmon",
+        "ingredientIdx": [
+          3,
+          5
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "chop-parsley",
+          "cook-salmon"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      }
+    ]
+  }
+}

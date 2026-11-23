@@ -1,0 +1,20 @@
+{
+  "description": "Salad prep written inline ('Meanwhile') while the salmon crisps; seasoning and the lemon squeeze are cook, not mise.",
+  "prepStyles": [
+    "front-loaded",
+    "inline"
+  ],
+  "recipeFrom": "crispy-skin-salmon",
+  "gold": {
+    "ahead": [],
+    "mise": [
+      0,
+      3,
+      4,
+      5
+    ],
+    "handsOffSteps": [
+      3
+    ]
+  }
+}

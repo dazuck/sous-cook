@@ -1,0 +1,290 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "34ff405c9b3efb1d",
+  "recipeHash": "fa3ae225bacf4f11",
+  "ms": 4381,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "mince-garlic",
+        "kind": "mise",
+        "text": "Mince the garlic.",
+        "label": "mince garlic",
+        "ingredientIdx": [
+          7
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Tempering"
+      },
+      {
+        "id": "grate-ginger",
+        "kind": "mise",
+        "text": "Grate the ginger.",
+        "label": "grate ginger",
+        "ingredientIdx": [
+          8
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Tempering"
+      },
+      {
+        "id": "chop-onion",
+        "kind": "mise",
+        "text": "Finely chop the onion.",
+        "label": "chop onion",
+        "ingredientIdx": [
+          9
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Tempering"
+      },
+      {
+        "id": "chop-tomatoes",
+        "kind": "mise",
+        "text": "Chop the tomatoes.",
+        "label": "chop tomatoes",
+        "ingredientIdx": [
+          10
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Tempering"
+      },
+      {
+        "id": "chop-cilantro",
+        "kind": "mise",
+        "text": "Chop the cilantro.",
+        "label": "chop cilantro",
+        "ingredientIdx": [
+          13
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Dal"
+      },
+      {
+        "id": "rinse-dal",
+        "kind": "mise",
+        "text": "Rinse the toor dal.",
+        "label": "rinse dal",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Dal"
+      },
+      {
+        "id": "pressure-cook-dal",
+        "kind": "cook",
+        "text": "Pressure cook with water and turmeric until soft.",
+        "label": "cook dal",
+        "ingredientIdx": [
+          0,
+          1,
+          2
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [
+          "rinse-dal"
+        ],
+        "minutes": {
+          "est": 20,
+          "handsOff": true
+        },
+        "cue": "until soft",
+        "lead": null,
+        "branch": "Dal"
+      },
+      {
+        "id": "heat-ghee",
+        "kind": "cook",
+        "text": "Heat the ghee in a small pan for the tempering.",
+        "label": "heat ghee",
+        "ingredientIdx": [
+          3
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Tempering"
+      },
+      {
+        "id": "temper-spices",
+        "kind": "cook",
+        "text": "Temper the whole spices until they crackle and become fragrant.",
+        "label": "temper spices",
+        "ingredientIdx": [
+          4,
+          5
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "heat-ghee"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": "until they crackle and become fragrant",
+        "lead": null,
+        "branch": "Tempering"
+      },
+      {
+        "id": "saute-aromatics",
+        "kind": "cook",
+        "text": "Add the dried red chiles, garlic, and ginger, and saute until golden.",
+        "label": "saute aromatics",
+        "ingredientIdx": [
+          6,
+          7,
+          8
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "temper-spices",
+          "mince-garlic",
+          "grate-ginger"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": "until golden",
+        "lead": null,
+        "branch": "Tempering"
+      },
+      {
+        "id": "cook-onion-tomatoes",
+        "kind": "cook",
+        "text": "Add the onion and cook until translucent, then stir in the tomatoes and chili powder.",
+        "label": "cook onions and tomatoes",
+        "ingredientIdx": [
+          9,
+          10,
+          11
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "saute-aromatics",
+          "chop-onion",
+          "chop-tomatoes"
+        ],
+        "minutes": {
+          "est": 6,
+          "handsOff": true
+        },
+        "cue": "until translucent",
+        "lead": null,
+        "branch": "Tempering"
+      },
+      {
+        "id": "combine-dal-tempering",
+        "kind": "cook",
+        "text": "Pour the tempering into the cooked dal, add salt, and simmer for 5 minutes.",
+        "label": "simmer dal",
+        "ingredientIdx": [
+          0,
+          12
+        ],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [
+          "pressure-cook-dal",
+          "cook-onion-tomatoes"
+        ],
+        "minutes": {
+          "est": 6,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Dal"
+      },
+      {
+        "id": "finish",
+        "kind": "cook",
+        "text": "Garnish with fresh cilantro and serve with rice.",
+        "label": "garnish and serve",
+        "ingredientIdx": [
+          13
+        ],
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [
+          "combine-dal-tempering",
+          "chop-cilantro"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Dal"
+      }
+    ]
+  },
+  "usage": {
+    "calls": 1,
+    "inputTokens": 2725,
+    "outputTokens": 1026
+  }
+}

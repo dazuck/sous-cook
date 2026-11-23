@@ -1,0 +1,200 @@
+[
+  {
+    "id": "commons:adding-liquid-gradually",
+    "name": "Adding liquid gradually to dry ingredients",
+    "description": "Adding liquid in stages and working each addition smooth before the next goes in; mastery is a batter that never needs hard beating to clear its lumps, because it was never allowed to form them.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:beating-a-sauce-smooth",
+    "name": "Beating a sauce smooth",
+    "description": "Working a thickening sauce hard enough to break every lump and bring a gloss up on it; mastery is reading the finish off the shine rather than the clock, and stopping there instead of beating air into it.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:beating-a-sponge-batter",
+    "name": "Beating a sponge batter",
+    "description": "Beating a slack yeast batter until the gluten pulls together and the mixture is smooth and stringy; mastery is a batter that sheets off the spoon instead of dropping in lumps.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:beating-egg-whites-stiff",
+    "name": "Beating egg whites stiff",
+    "description": "Beating whites in a clean dry bowl until they hold a peak that stands on its own; mastery is stopping while they are stiff and still glossy, before they turn dry and break into curds that no amount of folding will smooth out.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:beating-eggs-slightly",
+    "name": "Beating eggs slightly",
+    "description": "Working yolks or whole eggs with a fork only until the streaks disappear and the colour is even, deliberately stopping before air goes in; mastery is a blended egg with no foam on it, which is what lets a custard set smooth and thick instead of frothy.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:beating-eggs-until-light",
+    "name": "Beating eggs until light",
+    "description": "Beating whole eggs until they pale, thicken, and fall from the beater in a ribbon; mastery is recognising the point where the foam holds air, before it thins and slackens again.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:blending-a-butter-flour-roux",
+    "name": "Blending a butter-and-flour roux",
+    "description": "Stirring flour into bubbling butter until the two become one smooth paste with no dry flour left in it; mastery is a paste that goes uniform in under a minute and never takes on colour, because colour in the roux is colour in the sauce.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:cooking-in-a-double-boiler",
+    "name": "Cooking in a double boiler",
+    "description": "Cooking a delicate mixture in a pan set over — never in — water held at a bare simmer, keeping it moving the whole time; mastery is holding that gentle heat long enough for the mixture to thicken without ever letting the lower water boil hard.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:creaming-butter-and-sugar",
+    "name": "Creaming butter and sugar",
+    "description": "Working softened butter — alone, then with sugar — until it is smooth, pale, and holding air; mastery looks like a uniformly light mixture with no cold lumps and no melted, greasy patches.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:cutting-doughnuts",
+    "name": "Cutting with a doughnut cutter",
+    "description": "Stamping rings from rolled dough with a single clean press, set close together to leave as little trimming as possible; mastery is sharp uncrushed edges and few scraps to re-roll.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:cutting-rounds-with-a-biscuit-cutter",
+    "name": "Cutting rounds with a biscuit-cutter",
+    "description": "Stamping rounds from rolled dough with a floured cutter pressed straight down and lifted straight up; mastery is clean uncrushed edges that rise evenly, cut close together to leave few scraps.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:deep-frying",
+    "name": "Deep frying",
+    "description": "Cooking food submerged in hot fat held at a steady temperature, in batches small enough not to cool it; mastery is an evenly browned crust over a cooked interior with little fat taken up.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:dissolving-cake-yeast",
+    "name": "Dissolving cake yeast",
+    "description": "Softening compressed yeast in lukewarm liquid until it disperses completely; mastery is liquid warm enough to break the cake down and never hot enough to kill it.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:filling-a-waffle-iron",
+    "name": "Filling a waffle-iron",
+    "description": "Dropping a spoonful of batter near the centre of each compartment and closing the lid so it spreads to the edges on its own; mastery is an iron filled right to the pattern with nothing forced out at the hinge.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:folding-in-beaten-whites",
+    "name": "Folding in beaten whites",
+    "description": "Cutting a spoon down through beaten whites and lifting the batter over them in slow strokes, turning the bowl between each; mastery is no white streaks left and nearly as much air still in the batter as when you started.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:greasing-a-waffle-iron",
+    "name": "Greasing a waffle-iron",
+    "description": "Working fat over both hot faces and into the corners of the pattern before every filling; mastery is a waffle that lifts away whole, and the patience to grease a new iron far more heavily than seems necessary until it seasons.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:heating-a-waffle-iron",
+    "name": "Heating a waffle-iron",
+    "description": "Bringing a waffle-iron up to heat on the range one face at a time — heated on one side, turned, heated on the other — before any batter goes near it; mastery is an iron hot enough through both halves that the first waffle comes out like the fourth.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:kneading-dough-lightly",
+    "name": "Kneading lightly",
+    "description": "A few gentle folds and presses to bring a soft chemically-leavened dough together without developing it; mastery is stopping while the dough is still tender and slightly rough rather than smooth and elastic.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:kneading-yeast-dough",
+    "name": "Kneading yeast dough",
+    "description": "Working a yeast dough with the heel of the hand, folding and turning it, until it turns from ragged to smooth and elastic; mastery is knowing by feel when the dough has stopped tearing and springs back against your palm.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:proofing-yeast-dough",
+    "name": "Proofing yeast dough",
+    "description": "Letting a covered dough rise and judging it by lift and feel rather than by the clock; mastery is catching it at full rise, before it slackens and falls back.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:rescuing-a-curdled-custard",
+    "name": "Rescuing a curdled custard",
+    "description": "Beating a custard that has broken with a rotary egg-beater until the specks of set egg break up and the body comes back together; mastery is catching it early enough to be worth doing and accepting that it returns smooth but never as thick.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:rolling-dough-to-thickness",
+    "name": "Rolling dough to an even thickness",
+    "description": "Rolling from the centre outward with even pressure to a stated thickness; mastery is a sheet of one depth edge to edge, so every piece cut from it cooks at the same rate.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:scalding-milk",
+    "name": "Scalding milk",
+    "description": "Heating milk to just below the boil, until it steams and small bubbles ring the pan, then taking it off before it catches; mastery is a scalded pan with no browned film stuck to the bottom and no boil-over.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:shaping-parker-house-fold",
+    "name": "Shaping the Parker House fold",
+    "description": "Creasing a round of dough through the middle, buttering one half, and folding it over into the hinged Parker House shape; mastery is a fold that holds through the rise and parts only slightly in the oven.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:sifting-dry-ingredients",
+    "name": "Mixing and sifting dry ingredients",
+    "description": "Combining flour with leavening, salt, and spices and passing them through a sieve together so the leavening is evenly dispersed; mastery looks like never biting a bitter pocket of baking powder in the finished crumb.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:straining-custard",
+    "name": "Straining a custard",
+    "description": "Pouring the finished custard through a fine sieve into a cold bowl the instant it is done; mastery is a strained custard with no threads of egg left in it and no further cooking going on in the hot pan.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:tempering-eggs",
+    "name": "Tempering eggs with hot liquid",
+    "description": "Bringing beaten eggs up to the heat of a hot liquid by adding the liquid gradually while stirring without pause; mastery is a mixture that warms through with no specks or threads of set egg anywhere in it.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:testing-fat-temperature",
+    "name": "Testing and holding fat temperature",
+    "description": "Judging frying fat by how quickly a test piece browns and by how the food behaves the moment it enters, then holding that heat across successive batches; mastery is a last batch indistinguishable from the first.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:testing-the-spoon-coating",
+    "name": "Testing the coating on the spoon",
+    "description": "Lifting the spoon clear and reading the film left on its back, drawing a finger through to see whether the line holds; mastery is calling the moment off that line rather than off the clock, and taking the pan away while the custard is still moving.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:temper-eggs",
+    "name": "Tempering eggs",
+    "description": "Eggs scramble when they hit heat all at once. Tempering raises their temperature gradually: stir a little warm liquid into the beaten eggs first, and the warmed, loosened mixture can then take a hot pan without seizing into curds.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:deglaze",
+    "name": "Deglazing",
+    "description": "Liquid poured into a hot pan dissolves the browned layer the sauté left stuck to it and pulls that flavor back into the dish. It also drops the pan's temperature, which stops toasting or browning at exactly the moment you choose.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:cream-butter",
+    "name": "Creaming butter and sugar",
+    "description": "Beating room-temperature butter with sugar dissolves the sugar and drives thousands of small air pockets into the fat. In the oven those pockets expand — creaming is where most of a quick bread's lift comes from, before any leavener acts.",
+    "media_ref": null
+  },
+  {
+    "id": "commons:fold",
+    "name": "Folding and alternate mixing",
+    "description": "Flour builds gluten the moment it is worked wet, and gluten makes tender batters tough. Folding — and adding flour and liquid alternately, a little at a time — combines everything with the least possible working, so the crumb stays tender.",
+    "media_ref": null
+  }
+]

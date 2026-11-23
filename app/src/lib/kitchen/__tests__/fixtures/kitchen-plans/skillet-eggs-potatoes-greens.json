@@ -1,0 +1,177 @@
+{
+  "description": "Skillet eggs with potatoes and greens fixture plan for timetable and cook-view tests. Plan only.",
+  "plan": {
+    "version": 4,
+    "tasks": [
+      {
+        "id": "dice-potatoes",
+        "kind": "mise",
+        "branch": "Cook",
+        "label": "dice potatoes",
+        "text": "dice potatoes",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "prep-spinach",
+        "kind": "mise",
+        "branch": "Cook",
+        "label": "prep spinach",
+        "text": "prep spinach",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "prep-escarole",
+        "kind": "mise",
+        "branch": "Cook",
+        "label": "prep escarole",
+        "text": "prep escarole",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "slice-onion",
+        "kind": "mise",
+        "branch": "Cook",
+        "label": "slice onion",
+        "text": "slice onion",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "slice-garlic",
+        "kind": "mise",
+        "branch": "Cook",
+        "label": "slice garlic",
+        "text": "slice garlic",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "slice-chile",
+        "kind": "mise",
+        "branch": "Cook",
+        "label": "slice chile",
+        "text": "slice chile",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "cook-potatoes",
+        "kind": "cook",
+        "branch": "Cook",
+        "label": "cook potatoes",
+        "text": "cook potatoes",
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [
+          "dice-potatoes"
+        ],
+        "minutes": {
+          "est": 12,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "saute-aromatics",
+        "kind": "cook",
+        "branch": "Cook",
+        "label": "saute aromatics",
+        "text": "saute aromatics",
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [
+          "cook-potatoes",
+          "slice-onion",
+          "slice-garlic",
+          "slice-chile"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "wilt-greens",
+        "kind": "cook",
+        "branch": "Cook",
+        "label": "wilt greens",
+        "text": "wilt greens",
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "saute-aromatics",
+          "prep-spinach",
+          "prep-escarole"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "cook-eggs",
+        "kind": "cook",
+        "branch": "Cook",
+        "label": "cook eggs",
+        "text": "cook eggs",
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "wilt-greens"
+        ],
+        "minutes": {
+          "est": 4,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "finish-dish",
+        "kind": "cook",
+        "branch": "Cook",
+        "label": "finish dish",
+        "text": "finish dish",
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "cook-eggs"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      }
+    ]
+  }
+}

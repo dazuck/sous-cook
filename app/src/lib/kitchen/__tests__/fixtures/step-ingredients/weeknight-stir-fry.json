@@ -1,0 +1,27 @@
+{
+  "description": "Chicken stir-fry. The sauce components (soy/fish sauce, chili oil, cornstarch) are attributed to the whisking step where they are measured; the later 'pour in the sauce' step does NOT re-list them (they are already combined in a bowl). Also stresses 'oil' false positives across three different oils.",
+  "ingredients": [
+    { "amount": "1", "unit": "lb", "item": "chicken thighs, sliced" },
+    { "amount": "2", "unit": "tbsp", "item": "soy sauce" },
+    { "amount": "1", "unit": "tbsp", "item": "fish sauce" },
+    { "amount": "1", "unit": "tbsp", "item": "chili oil" },
+    { "amount": "1", "unit": "tsp", "item": "cornstarch" },
+    { "amount": "1", "unit": "tbsp", "item": "vegetable oil" },
+    { "amount": "1", "item": "red bell pepper, sliced" },
+    { "amount": "1", "unit": "cup", "item": "snap peas" },
+    { "amount": "3", "unit": "cloves", "item": "garlic, minced" },
+    { "amount": "1", "unit": "inch", "item": "ginger, grated" },
+    { "amount": "2", "item": "green onions, sliced" },
+    { "amount": "1", "unit": "tsp", "item": "sesame oil" }
+  ],
+  "steps": [
+    "Whisk the soy sauce, fish sauce, chili oil, and cornstarch in a bowl to make the sauce.",
+    "Heat the vegetable oil in a wok over high heat.",
+    "Add the chicken and stir-fry until browned, then remove.",
+    "Add the bell pepper and snap peas and stir-fry for 2 minutes.",
+    "Add the garlic and ginger and toss until fragrant.",
+    "Return the chicken, pour in the sauce, and toss until glossy.",
+    "Drizzle with sesame oil, top with green onions, and serve."
+  ],
+  "golden": [[1, 2, 3, 4], [5], [0], [6, 7], [8, 9], [0], [10, 11]]
+}

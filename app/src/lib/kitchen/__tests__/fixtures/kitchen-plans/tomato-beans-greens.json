@@ -1,0 +1,274 @@
+{
+  "description": "Tomato beans and greens fixture plan for timetable and cook-view tests. Plan only.",
+  "plan": {
+    "version": 4,
+    "tasks": [
+      {
+        "id": "dice-onion",
+        "kind": "mise",
+        "branch": "Beans",
+        "label": "dice onion",
+        "text": "dice onion",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "mince-garlic",
+        "kind": "mise",
+        "branch": "Beans",
+        "label": "mince garlic",
+        "text": "mince garlic",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "rinse-beans",
+        "kind": "mise",
+        "branch": "Beans",
+        "label": "rinse beans",
+        "text": "rinse beans",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "grate-cheese",
+        "kind": "mise",
+        "branch": "Beans",
+        "label": "grate cheese",
+        "text": "grate cheese",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "zest-juice-lemon",
+        "kind": "mise",
+        "branch": "Salad",
+        "label": "zest and juice lemon",
+        "text": "zest and juice lemon",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "toast-bread",
+        "kind": "mise",
+        "branch": "Serving",
+        "label": "toast bread",
+        "text": "toast bread",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "heat-oil-panko",
+        "kind": "cook",
+        "branch": "Panko",
+        "label": "heat oil for panko",
+        "text": "heat oil for panko",
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "toast-panko",
+        "kind": "cook",
+        "branch": "Panko",
+        "label": "toast panko",
+        "text": "toast panko",
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [
+          "heat-oil-panko"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "transfer-panko",
+        "kind": "cook",
+        "branch": "Panko",
+        "label": "transfer panko",
+        "text": "transfer panko",
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "toast-panko"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "heat-oil-beans",
+        "kind": "cook",
+        "branch": "Beans",
+        "label": "heat oil for beans",
+        "text": "heat oil for beans",
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "transfer-panko"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "cook-aromatics",
+        "kind": "cook",
+        "branch": "Beans",
+        "label": "cook aromatics",
+        "text": "cook aromatics",
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "dice-onion",
+          "mince-garlic",
+          "heat-oil-beans"
+        ],
+        "minutes": {
+          "est": 4,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "cook-tomato-paste",
+        "kind": "cook",
+        "branch": "Beans",
+        "label": "cook tomato paste",
+        "text": "cook tomato paste",
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [
+          "cook-aromatics"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "simmer-beans",
+        "kind": "cook",
+        "branch": "Beans",
+        "label": "simmer beans",
+        "text": "simmer beans",
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [
+          "rinse-beans",
+          "cook-tomato-paste"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "finish-beans",
+        "kind": "cook",
+        "branch": "Beans",
+        "label": "finish beans",
+        "text": "finish beans",
+        "sourceStep": 7,
+        "implied": false,
+        "needs": [
+          "grate-cheese",
+          "simmer-beans"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "toss-salad",
+        "kind": "cook",
+        "branch": "Salad",
+        "label": "toss salad",
+        "text": "toss salad",
+        "sourceStep": 8,
+        "implied": false,
+        "needs": [
+          "transfer-panko",
+          "grate-cheese",
+          "zest-juice-lemon"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "assemble",
+        "kind": "cook",
+        "branch": "Cook",
+        "label": "pile greens on beans",
+        "text": "pile greens on beans",
+        "sourceStep": 9,
+        "implied": false,
+        "needs": [
+          "finish-beans",
+          "toss-salad"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "serve",
+        "kind": "cook",
+        "branch": "Cook",
+        "label": "serve",
+        "text": "serve",
+        "sourceStep": 10,
+        "implied": false,
+        "needs": [
+          "toast-bread",
+          "assemble"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      }
+    ]
+  }
+}

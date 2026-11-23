@@ -1,0 +1,239 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "34ff405c9b3efb1d",
+  "recipeHash": "50ae0510eadc3e15",
+  "ms": 9518,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "soften-butter",
+        "kind": "ahead",
+        "text": "Softened 1 cup (225 g) unsalted butter.",
+        "label": "soften butter",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 60,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": "at least 3 hours before",
+        "branch": "Cookies"
+      },
+      {
+        "id": "room-temp-eggs",
+        "kind": "ahead",
+        "text": "Bring 2 eggs to room temperature.",
+        "label": "room temp eggs",
+        "ingredientIdx": [
+          3
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 30,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": "at least 3 hours before",
+        "branch": "Cookies"
+      },
+      {
+        "id": "whisk-dry-mix",
+        "kind": "ahead",
+        "text": "Whisk the flour, baking soda, and salt in a bowl.",
+        "label": "whisk dry ingredients",
+        "ingredientIdx": [
+          5,
+          6,
+          7
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": "at least 2 hours before",
+        "branch": "Cookies"
+      },
+      {
+        "id": "cream-butter-sugars",
+        "kind": "ahead",
+        "text": "Beat the butter with both sugars for 3 minutes, until pale and fluffy.",
+        "label": "cream butter and sugars",
+        "ingredientIdx": [
+          0,
+          1,
+          2
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [
+          "soften-butter"
+        ],
+        "minutes": {
+          "est": 4,
+          "handsOff": false
+        },
+        "cue": "until pale and fluffy",
+        "lead": "at least 2 hours before",
+        "branch": "Cookies"
+      },
+      {
+        "id": "add-eggs-vanilla",
+        "kind": "ahead",
+        "text": "Beat in the eggs one at a time, then the vanilla.",
+        "label": "beat in eggs and vanilla",
+        "ingredientIdx": [
+          3,
+          4
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "room-temp-eggs",
+          "cream-butter-sugars"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": "at least 2 hours before",
+        "branch": "Cookies"
+      },
+      {
+        "id": "mix-dough",
+        "kind": "ahead",
+        "text": "Stir in the flour mixture, then the oats and raisins.",
+        "label": "stir in dry ingredients",
+        "ingredientIdx": [
+          8,
+          9
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "whisk-dry-mix",
+          "add-eggs-vanilla"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": "at least 2 hours before",
+        "branch": "Cookies"
+      },
+      {
+        "id": "chill-dough",
+        "kind": "ahead",
+        "text": "Chill for at least 2 hours: Cover the dough and chill it for at least 2 hours, or up to 3 days.",
+        "label": "chill dough",
+        "ingredientIdx": [],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "mix-dough"
+        ],
+        "minutes": {
+          "est": 120,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": "at least 2 hours before",
+        "branch": "Cookies"
+      },
+      {
+        "id": "heat-oven-prep-sheets",
+        "kind": "cook",
+        "text": "Heat the oven to 350F and line two baking sheets with parchment.",
+        "label": "heat oven and prep sheets",
+        "ingredientIdx": [],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 15,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cookies"
+      },
+      {
+        "id": "scoop-dough",
+        "kind": "cook",
+        "text": "Scoop the dough into 2-tablespoon balls and space them 2 inches apart.",
+        "label": "scoop dough",
+        "ingredientIdx": [],
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [
+          "chill-dough",
+          "heat-oven-prep-sheets"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cookies"
+      },
+      {
+        "id": "bake-cookies",
+        "kind": "cook",
+        "text": "Bake for 11 to 13 minutes, until golden at the edges but still soft in the middle.",
+        "label": "bake cookies",
+        "ingredientIdx": [],
+        "sourceStep": 7,
+        "implied": false,
+        "needs": [
+          "scoop-dough"
+        ],
+        "minutes": {
+          "est": 12,
+          "handsOff": true
+        },
+        "cue": "until golden at the edges but still soft in the middle",
+        "lead": null,
+        "branch": "Cookies"
+      },
+      {
+        "id": "cool-cookies",
+        "kind": "cook",
+        "text": "Cool on the sheets for 5 minutes, then move to a rack.",
+        "label": "cool cookies",
+        "ingredientIdx": [],
+        "sourceStep": 8,
+        "implied": false,
+        "needs": [
+          "bake-cookies"
+        ],
+        "minutes": {
+          "est": 7,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cookies"
+      }
+    ]
+  },
+  "usage": {
+    "calls": 2,
+    "inputTokens": 6605,
+    "outputTokens": 1955
+  }
+}

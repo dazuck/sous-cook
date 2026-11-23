@@ -1,0 +1,95 @@
+{
+  "description": "An ahead task implied only by the ingredient line (rice cooked and chilled overnight), mise written mid-cook after the eggs, and peas used straight from the freezer (not mise). No hands-off time.",
+  "prepStyles": [
+    "inline",
+    "implied"
+  ],
+  "recipe": {
+    "ingredients": [
+      {
+        "amount": "3",
+        "unit": "cups",
+        "item": "cooked jasmine rice, chilled overnight"
+      },
+      {
+        "amount": "3",
+        "unit": "tbsp",
+        "item": "neutral oil"
+      },
+      {
+        "amount": "3",
+        "item": "eggs"
+      },
+      {
+        "amount": "4",
+        "item": "green onions"
+      },
+      {
+        "amount": "2",
+        "unit": "cloves",
+        "item": "garlic"
+      },
+      {
+        "amount": "1",
+        "unit": "cup",
+        "item": "frozen peas"
+      },
+      {
+        "amount": "1",
+        "item": "carrot"
+      },
+      {
+        "amount": "2",
+        "unit": "tbsp",
+        "item": "soy sauce"
+      },
+      {
+        "amount": "1",
+        "unit": "tsp",
+        "item": "sesame oil"
+      },
+      {
+        "amount": "1/4",
+        "unit": "tsp",
+        "item": "white pepper"
+      },
+      {
+        "amount": "4",
+        "unit": "oz",
+        "item": "char siu or ham"
+      }
+    ],
+    "steps": [
+      "Break up any clumps in the cold rice with your fingers.",
+      "Beat the eggs.",
+      "Heat 1 tablespoon of the oil in a wok over high heat, scramble the eggs until just set, and tip them onto a plate.",
+      "Dice the carrot and the char siu, and thinly slice the green onions, keeping the whites and greens apart.",
+      "Mince the garlic.",
+      "Add the remaining oil to the wok, then the carrot and the green onion whites, and stir-fry for 2 minutes.",
+      "Add the garlic and char siu and stir-fry for 30 seconds.",
+      "Add the rice and press it against the wok, tossing, for 3 minutes, until hot and starting to crisp.",
+      "Add the peas straight from the freezer and toss for 1 minute.",
+      "Season with the soy sauce, sesame oil, and white pepper, fold the eggs back in, and scatter over the green onion greens."
+    ]
+  },
+  "gold": {
+    "ahead": [
+      {
+        "what": "cook and chill the rice",
+        "ingredients": [
+          0
+        ],
+        "steps": []
+      }
+    ],
+    "mise": [
+      0,
+      2,
+      3,
+      4,
+      6,
+      10
+    ],
+    "handsOffSteps": []
+  }
+}

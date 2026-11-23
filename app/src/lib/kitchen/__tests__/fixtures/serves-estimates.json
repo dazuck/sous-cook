@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "proposedAt": "2026-10-06T23:54:47.848Z",
+  "model": "gemini-3.5-flash",
+  "estimates": {
+    "apple-sweet-potato-puree": {
+      "count": 4,
+      "basis": "1 sweet potato and 1 apple: about 4 small portions.",
+      "hasAmounts": true
+    },
+    "baking-chocolate-cake": {
+      "count": 12,
+      "basis": "2 cups all-purpose flour, 2 cups sugar, and 2 eggs: about 12 cake slices.",
+      "hasAmounts": true
+    },
+    "chewy-oat-cookies": {
+      "count": 12,
+      "basis": "3 cups rolled oats, 1 cup raisins, and 1 1/2 cups all-purpose flour: about 12 portions.",
+      "hasAmounts": true
+    },
+    "crispy-skin-salmon": {
+      "count": 4,
+      "basis": "4 skin-on salmon fillets with 1 head little gem lettuce, 1 watermelon radish, and 1 avocado: 4 portions.",
+      "hasAmounts": true
+    },
+    "day-old-fried-rice": {
+      "count": 3,
+      "basis": "3 cups cooked jasmine rice, 3 eggs, and 4 oz char siu or ham: about 3 portions.",
+      "hasAmounts": true
+    },
+    "indian-dal-tadka": {
+      "count": 4,
+      "basis": "1 cup toor dal with 3 cups water, 1 onion, and 2 tomatoes: about 4 portions.",
+      "hasAmounts": true
+    },
+    "lime-shrimp-tacos": {
+      "count": 4,
+      "basis": "1 lb shrimp and 8 corn tortillas: about 4 dinner portions.",
+      "hasAmounts": true
+    },
+    "multi-component-mole": {
+      "count": 6,
+      "basis": "6 bone-in chicken thighs: about 6 dinner portions.",
+      "hasAmounts": true
+    },
+    "overnight-chickpea-stew": {
+      "count": 4,
+      "basis": "1 cup dried chickpeas, 1 onion, 1 carrot, 1 can (14 oz) crushed tomatoes, and 4 cups vegetable stock: about 4 portions.",
+      "hasAmounts": true
+    },
+    "simple-weeknight-salmon": {
+      "count": 2,
+      "basis": "2 center-cut salmon fillets: 2 portions.",
+      "hasAmounts": true
+    },
+    "spicy-harissa-pasta": {
+      "count": 4,
+      "basis": "12 oz rigatoni with 3 tbsp harissa olive oil, 2 tbsp tomato paste, and 1/4 cup heavy cream: about 4 dinner portions.",
+      "hasAmounts": true
+    },
+    "sunday-roast-dinner": {
+      "count": 4,
+      "basis": "1 whole chicken (about 1.8 kg / 4 lb) with 1.2 kg (2 1/2 lb) floury potatoes and 300 g (10 oz) green beans: about 4 dinner portions.",
+      "hasAmounts": true
+    },
+    "weeknight-shakshuka": {
+      "count": 3,
+      "basis": "6 eggs in a sauce of 1 can (28 oz) whole tomatoes, 1 onion, and 2 red bell peppers: about 3 portions.",
+      "hasAmounts": true
+    },
+    "weeknight-stir-fry": {
+      "count": 3,
+      "basis": "1 lb chicken thighs, 1 red bell pepper, and 1 cup snap peas: about 3 dinner portions.",
+      "hasAmounts": true
+    },
+    "yogurt-marinated-chicken": {
+      "count": 4,
+      "basis": "8 bone-in chicken thighs: about 4 dinner portions.",
+      "hasAmounts": true
+    },
+    "herb-salt": {
+      "count": 24,
+      "basis": "3 tbsp flaky sea salt, 2 sprigs rosemary, and 1 lemon: about 24 condiment portions.",
+      "hasAmounts": true
+    },
+    "zucchini-wraps": {
+      "count": 2,
+      "basis": "2 zucchini, 1 onion bulb, 1 garlic scape, and frozen parathas: about 2 portions.",
+      "hasAmounts": true
+    }
+  }
+}

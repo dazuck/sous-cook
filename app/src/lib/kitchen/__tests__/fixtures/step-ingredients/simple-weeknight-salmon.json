@@ -1,0 +1,19 @@
+{
+  "description": "Baseline pan-seared salmon. Stresses oil/garlic false positives and a non-standard count ('2 center-cut salmon fillets').",
+  "ingredients": [
+    { "amount": "2", "item": "center-cut salmon fillets" },
+    { "amount": "1", "unit": "tbsp", "item": "olive oil" },
+    { "amount": "2", "unit": "cloves", "item": "garlic, minced" },
+    { "amount": "1", "item": "lemon" },
+    { "item": "salt and pepper to taste" },
+    { "amount": "1", "unit": "tbsp", "item": "chopped parsley" }
+  ],
+  "steps": [
+    "Pat the salmon fillets dry and season both sides with salt and pepper.",
+    "Heat the olive oil in a cast iron skillet over medium-high heat.",
+    "Add the garlic and saute for 30 seconds until fragrant.",
+    "Place the salmon skin-side down and cook for 4 minutes per side.",
+    "Squeeze the lemon over the fish and garnish with parsley before serving."
+  ],
+  "golden": [[0, 4], [1], [2], [0], [3, 5]]
+}

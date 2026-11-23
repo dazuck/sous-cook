@@ -1,0 +1,135 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "965a3c74dd8692b6",
+  "recipeHash": "527c1ec30e0001b5",
+  "ms": 3829,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "preheat-and-grease",
+        "kind": "cook",
+        "text": "Preheat the oven to 350F and grease two cake pans.",
+        "label": "prep oven and pans",
+        "ingredientIdx": [],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 15,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "whisk-dry",
+        "kind": "mise",
+        "text": "In a large bowl, whisk together the dry ingredients: 2 cups all-purpose flour, 2 cups sugar, 3/4 cup cocoa powder, 2 tsp baking soda, and 1 tsp salt.",
+        "label": "whisk dry ingredients",
+        "ingredientIdx": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "mix-wet",
+        "kind": "mise",
+        "text": "In another bowl, beat the eggs, then add the buttermilk, oil, and vanilla.",
+        "label": "mix wet ingredients",
+        "ingredientIdx": [
+          5,
+          6,
+          7,
+          8
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "combine-batter",
+        "kind": "cook",
+        "text": "Pour the wet mixture into the dry and stir until just combined.",
+        "label": "combine wet and dry",
+        "ingredientIdx": [],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "whisk-dry",
+          "mix-wet"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": "until just combined",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "add-coffee",
+        "kind": "cook",
+        "text": "Stir in the hot coffee until the batter is smooth and pourable.",
+        "label": "stir in coffee",
+        "ingredientIdx": [
+          9
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "combine-batter"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": "until the batter is smooth and pourable",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "bake-cake",
+        "kind": "cook",
+        "text": "Divide the batter between the pans and bake for 30 minutes.",
+        "label": "bake cake",
+        "ingredientIdx": [],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [
+          "preheat-and-grease",
+          "add-coffee"
+        ],
+        "minutes": {
+          "est": 32,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      }
+    ]
+  }
+}

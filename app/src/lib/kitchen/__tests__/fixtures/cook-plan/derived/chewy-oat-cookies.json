@@ -1,0 +1,234 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "965a3c74dd8692b6",
+  "recipeHash": "50ae0510eadc3e15",
+  "ms": 6262,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "soften-butter",
+        "kind": "ahead",
+        "text": "Soften 1 cup (225 g) unsalted butter.",
+        "label": "soften butter",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 60,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": "at least 3 hours before",
+        "branch": "Dough"
+      },
+      {
+        "id": "room-temp-eggs",
+        "kind": "ahead",
+        "text": "Bring 2 eggs to room temperature.",
+        "label": "warm eggs",
+        "ingredientIdx": [
+          3
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 30,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": "at least 2½ hours before",
+        "branch": "Dough"
+      },
+      {
+        "id": "whisk-dry-ingredients",
+        "kind": "ahead",
+        "text": "Whisk the flour, baking soda, and salt in a bowl.",
+        "label": "whisk dry ingredients",
+        "ingredientIdx": [
+          5,
+          6,
+          7
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": "at least 2 hours before",
+        "branch": "Dough"
+      },
+      {
+        "id": "beat-butter-sugar",
+        "kind": "ahead",
+        "text": "Beat the butter with both sugars for 3 minutes, until pale and fluffy.",
+        "label": "cream butter and sugar",
+        "ingredientIdx": [
+          0,
+          1,
+          2
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [
+          "soften-butter"
+        ],
+        "minutes": {
+          "est": 4,
+          "handsOff": false
+        },
+        "cue": "until pale and fluffy",
+        "lead": "at least 2 hours before",
+        "branch": "Dough"
+      },
+      {
+        "id": "add-eggs-vanilla",
+        "kind": "ahead",
+        "text": "Beat in the eggs one at a time, then the vanilla.",
+        "label": "add eggs and vanilla",
+        "ingredientIdx": [
+          3,
+          4
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "beat-butter-sugar",
+          "room-temp-eggs"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": "at least 2 hours before",
+        "branch": "Dough"
+      },
+      {
+        "id": "mix-dough",
+        "kind": "ahead",
+        "text": "Stir in the flour mixture, then the oats and raisins.",
+        "label": "mix dough",
+        "ingredientIdx": [
+          8,
+          9
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "add-eggs-vanilla",
+          "whisk-dry-ingredients"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": "at least 2 hours before",
+        "branch": "Dough"
+      },
+      {
+        "id": "chill-dough",
+        "kind": "ahead",
+        "text": "Cover the dough and chill it for at least 2 hours, or up to 3 days.",
+        "label": "chill dough",
+        "ingredientIdx": [],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "mix-dough"
+        ],
+        "minutes": {
+          "est": 120,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": "at least 2 hours before",
+        "branch": "Dough"
+      },
+      {
+        "id": "prep-oven-sheets",
+        "kind": "cook",
+        "text": "Heat the oven to 350F and line two baking sheets with parchment.",
+        "label": "prep oven and sheets",
+        "ingredientIdx": [],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 15,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Bake"
+      },
+      {
+        "id": "scoop-dough",
+        "kind": "cook",
+        "text": "Scoop the dough into 2-tablespoon balls and space them 2 inches apart.",
+        "label": "scoop dough",
+        "ingredientIdx": [],
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [
+          "chill-dough",
+          "prep-oven-sheets"
+        ],
+        "minutes": {
+          "est": 10,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Bake"
+      },
+      {
+        "id": "bake-cookies",
+        "kind": "cook",
+        "text": "Bake for 11 to 13 minutes, until golden at the edges but still soft in the middle.",
+        "label": "bake cookies",
+        "ingredientIdx": [],
+        "sourceStep": 7,
+        "implied": false,
+        "needs": [
+          "scoop-dough"
+        ],
+        "minutes": {
+          "est": 12,
+          "handsOff": true
+        },
+        "cue": "until golden at the edges but still soft in the middle",
+        "lead": null,
+        "branch": "Bake"
+      },
+      {
+        "id": "cool-cookies",
+        "kind": "cook",
+        "text": "Cool on the sheets for 5 minutes, then move to a rack.",
+        "label": "cool cookies",
+        "ingredientIdx": [],
+        "sourceStep": 8,
+        "implied": false,
+        "needs": [
+          "bake-cookies"
+        ],
+        "minutes": {
+          "est": 10,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Bake"
+      }
+    ]
+  }
+}

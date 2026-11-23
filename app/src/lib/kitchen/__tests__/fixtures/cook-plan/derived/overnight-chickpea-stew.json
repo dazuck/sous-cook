@@ -1,0 +1,165 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "965a3c74dd8692b6",
+  "recipeHash": "f301e8027131d81d",
+  "ms": 3790,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "soak-chickpeas",
+        "kind": "ahead",
+        "text": "Cover the chickpeas with plenty of cold water and leave them to soak for at least 8 hours.",
+        "label": "soak chickpeas",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 480,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": "the night before",
+        "branch": "Cook"
+      },
+      {
+        "id": "drain-chickpeas",
+        "kind": "mise",
+        "text": "Drain and rinse the soaked chickpeas.",
+        "label": "drain chickpeas",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [
+          "soak-chickpeas"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "prep-veg",
+        "kind": "mise",
+        "text": "Dice the onion and carrot and slice the garlic.",
+        "label": "prep vegetables",
+        "ingredientIdx": [
+          2,
+          3,
+          4
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 8,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "cook-veg",
+        "kind": "cook",
+        "text": "Warm the olive oil in a heavy pot over medium heat and cook the onion and carrot for 8 minutes, stirring now and then, until soft.",
+        "label": "cook onion and carrot",
+        "ingredientIdx": [
+          1,
+          2,
+          4
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "prep-veg"
+        ],
+        "minutes": {
+          "est": 10,
+          "handsOff": true
+        },
+        "cue": "until soft",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "add-aromatics",
+        "kind": "cook",
+        "text": "Add the garlic, cumin, and paprika and stir for 1 minute.",
+        "label": "add aromatics",
+        "ingredientIdx": [
+          3,
+          5,
+          6
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "cook-veg"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "simmer-stew",
+        "kind": "cook",
+        "text": "Add the chickpeas, crushed tomatoes, and stock, bring to a boil, then cover and simmer gently for 1 hour, until the chickpeas are tender.",
+        "label": "simmer stew",
+        "ingredientIdx": [
+          0,
+          7,
+          8
+        ],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [
+          "add-aromatics",
+          "drain-chickpeas"
+        ],
+        "minutes": {
+          "est": 65,
+          "handsOff": true
+        },
+        "cue": "until the chickpeas are tender",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "finish-stew",
+        "kind": "cook",
+        "text": "Stir in the spinach until it wilts and season with salt.",
+        "label": "add spinach",
+        "ingredientIdx": [
+          9,
+          10
+        ],
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [
+          "simmer-stew"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": "until it wilts",
+        "lead": null,
+        "branch": "Cook"
+      }
+    ]
+  }
+}

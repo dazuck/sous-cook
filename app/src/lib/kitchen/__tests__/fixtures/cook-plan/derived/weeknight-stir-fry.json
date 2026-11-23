@@ -1,0 +1,266 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "965a3c74dd8692b6",
+  "recipeHash": "e9710814f4131c25",
+  "ms": 5551,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "slice-chicken",
+        "kind": "mise",
+        "text": "Slice the chicken thighs.",
+        "label": "slice chicken",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "slice-pepper",
+        "kind": "mise",
+        "text": "Slice the red bell pepper.",
+        "label": "slice pepper",
+        "ingredientIdx": [
+          6
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "mince-garlic",
+        "kind": "mise",
+        "text": "Mince the garlic.",
+        "label": "mince garlic",
+        "ingredientIdx": [
+          8
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "grate-ginger",
+        "kind": "mise",
+        "text": "Grate the ginger.",
+        "label": "grate ginger",
+        "ingredientIdx": [
+          9
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "slice-onions",
+        "kind": "mise",
+        "text": "Slice the green onions.",
+        "label": "slice onions",
+        "ingredientIdx": [
+          10
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "make-sauce",
+        "kind": "mise",
+        "text": "Whisk the soy sauce, fish sauce, chili oil, and cornstarch in a bowl to make the sauce.",
+        "label": "make sauce",
+        "ingredientIdx": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "heat-wok",
+        "kind": "cook",
+        "text": "Heat the vegetable oil in a wok over high heat.",
+        "label": "heat wok",
+        "ingredientIdx": [
+          5
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "cook-chicken",
+        "kind": "cook",
+        "text": "Add the chicken and stir-fry until browned, then remove.",
+        "label": "cook chicken",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "heat-wok",
+          "slice-chicken"
+        ],
+        "minutes": {
+          "est": 6,
+          "handsOff": false
+        },
+        "cue": "until browned",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "cook-veggies",
+        "kind": "cook",
+        "text": "Add the bell pepper and snap peas and stir-fry for 2 minutes.",
+        "label": "cook veggies",
+        "ingredientIdx": [
+          6,
+          7
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "cook-chicken",
+          "slice-pepper"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "add-aromatics",
+        "kind": "cook",
+        "text": "Add the garlic and ginger and toss until fragrant.",
+        "label": "add aromatics",
+        "ingredientIdx": [
+          8,
+          9
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "cook-veggies",
+          "mince-garlic",
+          "grate-ginger"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": "until fragrant",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "combine",
+        "kind": "cook",
+        "text": "Return the chicken, pour in the sauce, and toss until glossy.",
+        "label": "combine everything",
+        "ingredientIdx": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [
+          "add-aromatics",
+          "make-sauce"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": "until glossy",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "finish",
+        "kind": "cook",
+        "text": "Drizzle with sesame oil, top with green onions, and serve.",
+        "label": "garnish and serve",
+        "ingredientIdx": [
+          10,
+          11
+        ],
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [
+          "combine",
+          "slice-onions"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      }
+    ]
+  }
+}

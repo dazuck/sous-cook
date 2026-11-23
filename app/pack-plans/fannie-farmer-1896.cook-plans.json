@@ -1,0 +1,1554 @@
+{
+  "version": 1,
+  "packId": "fannie-farmer-1896",
+  "packVersion": "draft-1",
+  "model": "google/gemini-3.5-flash",
+  "stamp": "4:9e4c4743a075ef61",
+  "proposedAt": "2026-10-26T14:54:49.842Z",
+  "recipes": {
+    "doughnuts-i": {
+      "sourceHash": "0fbb602854be9f7b5c4121b3086ef133120e28087c943607ecba189daf1944c8",
+      "plan": {
+        "version": 4,
+        "tasks": [
+          {
+            "id": "soften-butter",
+            "kind": "ahead",
+            "text": "Softened 2.5 tbsp butter.",
+            "label": "soften butter",
+            "ingredientIdx": [
+              2
+            ],
+            "sourceStep": null,
+            "implied": true,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 30,
+              "handsOff": true
+            },
+            "lead": "30 minutes before"
+          },
+          {
+            "id": "cream-butter",
+            "kind": "mise",
+            "text": "Cream the butter: work the softened butter against the side of the bowl until it is smooth, pale, and light, with no firm lumps left in it.",
+            "label": "cream butter",
+            "ingredientIdx": [
+              2
+            ],
+            "sourceStep": 0,
+            "implied": false,
+            "needs": [
+              "soften-butter"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            },
+            "cue": "until it is smooth, pale, and light, with no firm lumps left in it"
+          },
+          {
+            "id": "add-sugar-butter",
+            "kind": "mise",
+            "text": "Add one-half of the sugar to the creamed butter and work it in.",
+            "label": "add sugar to butter",
+            "ingredientIdx": [
+              0
+            ],
+            "sourceStep": 1,
+            "implied": false,
+            "needs": [
+              "cream-butter"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "beat-eggs",
+            "kind": "mise",
+            "text": "In a second bowl, beat the eggs until light — pale, foamy, and thick enough to fall from the beater in a ribbon.",
+            "label": "beat eggs",
+            "ingredientIdx": [
+              3
+            ],
+            "sourceStep": 2,
+            "implied": false,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 4,
+              "handsOff": false
+            },
+            "cue": "until light — pale, foamy, and thick enough to fall from the beater in a ribbon"
+          },
+          {
+            "id": "add-sugar-eggs",
+            "kind": "mise",
+            "text": "Add the remaining sugar to the beaten egg and beat it in.",
+            "label": "add sugar to eggs",
+            "ingredientIdx": [
+              1
+            ],
+            "sourceStep": 3,
+            "implied": false,
+            "needs": [
+              "beat-eggs"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "combine-mixtures",
+            "kind": "cook",
+            "text": "Combine the mixtures: stir the egg-and-sugar mixture into the creamed butter and sugar.",
+            "label": "combine egg and butter mixtures",
+            "ingredientIdx": [],
+            "sourceStep": 4,
+            "implied": false,
+            "needs": [
+              "add-sugar-butter",
+              "add-sugar-eggs"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "stir-milk",
+            "kind": "cook",
+            "text": "Stir the milk into the combined mixture.",
+            "label": "stir in milk",
+            "ingredientIdx": [
+              4
+            ],
+            "sourceStep": 5,
+            "implied": false,
+            "needs": [
+              "combine-mixtures"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 1,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "sift-dry-ingredients",
+            "kind": "mise",
+            "text": "Mix the three and one-half cups of flour with the baking powder, salt, cinnamon, and nutmeg, and sift them together.",
+            "label": "sift dry ingredients",
+            "ingredientIdx": [
+              5,
+              6,
+              7,
+              8,
+              9
+            ],
+            "sourceStep": 6,
+            "implied": false,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 4,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "add-flour-mixture",
+            "kind": "cook",
+            "text": "Add the sifted flour mixture to the batter and stir until it is all taken up.",
+            "label": "add sifted flour",
+            "ingredientIdx": [],
+            "sourceStep": 7,
+            "implied": false,
+            "needs": [
+              "stir-milk",
+              "sift-dry-ingredients"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            },
+            "cue": "until it is all taken up"
+          },
+          {
+            "id": "add-more-flour",
+            "kind": "cook",
+            "text": "Then add enough more flour to make the dough stiff enough to roll, working it in a little at a time.",
+            "label": "add remaining flour",
+            "ingredientIdx": [
+              10
+            ],
+            "sourceStep": 8,
+            "implied": false,
+            "needs": [
+              "add-flour-mixture"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "check-dough",
+            "kind": "cook",
+            "text": "Before dividing the dough, check it: it should be stiff enough to roll and to hold a cut shape, and no stiffer. It should come away from the bowl in a mass and feel soft but no longer sticky. If it slumps or clings to your hand, work in a little more flour and check again.",
+            "label": "check dough consistency",
+            "ingredientIdx": [],
+            "sourceStep": 9,
+            "implied": false,
+            "needs": [
+              "add-more-flour"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "fat-temperature-note",
+            "kind": "cook",
+            "text": "The fat must be kept at a uniform temperature. If it is too cold, the doughnuts will absorb fat; if it is too hot, they will brown before they have risen sufficiently. Doughnuts should come quickly to the top of the fat and brown on one side, then be turned to brown on the other — and should not be turned more than once.",
+            "label": "note fat temperature",
+            "ingredientIdx": [],
+            "sourceStep": 10,
+            "implied": false,
+            "needs": [
+              "check-dough"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 1,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "heat-fat",
+            "kind": "cook",
+            "text": "Heat a deep kettle of fat — deep enough for the doughnuts to float clear of the bottom — and bring it to a steady frying temperature before you begin to fry. Set it on while you roll, so it is ready when the first doughnuts are cut.",
+            "label": "heat frying fat",
+            "ingredientIdx": [
+              12
+            ],
+            "sourceStep": 11,
+            "implied": false,
+            "needs": [
+              "fat-temperature-note"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 15,
+              "handsOff": true
+            },
+            "cue": "before you begin to fry"
+          },
+          {
+            "id": "knead-dough-portion",
+            "kind": "cook",
+            "text": "Toss one-third of the mixture onto a floured board and knead it slightly — just enough to bring it together.",
+            "label": "knead dough portion",
+            "ingredientIdx": [
+              11
+            ],
+            "sourceStep": 12,
+            "implied": false,
+            "needs": [
+              "check-dough"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "roll-dough",
+            "kind": "cook",
+            "text": "Pat the dough down, then roll it out to one-fourth inch thickness.",
+            "label": "roll dough",
+            "ingredientIdx": [],
+            "sourceStep": 13,
+            "implied": false,
+            "needs": [
+              "knead-dough-portion"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "shape-doughnuts",
+            "kind": "cook",
+            "text": "Shape the doughnuts with a doughnut cutter, setting the cuts close together so as to leave as few trimmings as possible.",
+            "label": "cut doughnuts",
+            "ingredientIdx": [],
+            "sourceStep": 14,
+            "implied": false,
+            "needs": [
+              "roll-dough"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "fry-doughnuts",
+            "kind": "cook",
+            "text": "Fry the shaped doughnuts in the deep fat. They should come quickly to the top of the fat and brown on one side.",
+            "label": "fry doughnuts first side",
+            "ingredientIdx": [],
+            "sourceStep": 15,
+            "implied": false,
+            "needs": [
+              "shape-doughnuts",
+              "heat-fat"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 4,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "turn-doughnuts",
+            "kind": "cook",
+            "text": "When the underside has browned, turn each doughnut to brown the other side. Avoid turning more than once.",
+            "label": "turn and brown doughnuts",
+            "ingredientIdx": [],
+            "sourceStep": 16,
+            "implied": false,
+            "needs": [
+              "fry-doughnuts"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            },
+            "cue": "When the underside has browned"
+          },
+          {
+            "id": "drain-doughnuts",
+            "kind": "cook",
+            "text": "Take each doughnut up on a skewer and drain it on brown paper.",
+            "label": "drain doughnuts",
+            "ingredientIdx": [],
+            "sourceStep": 17,
+            "implied": false,
+            "needs": [
+              "turn-doughnuts"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "repeat-remaining-dough",
+            "kind": "cook",
+            "text": "Add the trimmings to one-half of the remaining mixture; roll, shape, and fry as before. Then repeat with the last portion and its trimmings.",
+            "label": "repeat for remaining dough",
+            "ingredientIdx": [],
+            "sourceStep": 18,
+            "implied": false,
+            "needs": [
+              "drain-doughnuts"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 15,
+              "handsOff": false
+            }
+          }
+        ]
+      },
+      "error": null
+    },
+    "parker-house-rolls": {
+      "sourceHash": "e837eafb1c63f3fd4a27104a411c5b07b3faba64f73676f206ac6e3c63bff28a",
+      "plan": {
+        "version": 4,
+        "tasks": [
+          {
+            "id": "scald-milk",
+            "kind": "cook",
+            "text": "Scald the milk: heat it in a saucepan over medium heat until it steams and a ring of small bubbles forms around the edge of the pan, then take it off the heat. Do not let it come to a boil.",
+            "label": "scald milk",
+            "ingredientIdx": [
+              0
+            ],
+            "sourceStep": 0,
+            "implied": false,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 7,
+              "handsOff": false
+            },
+            "cue": "until it steams and a ring of small bubbles forms around the edge of the pan"
+          },
+          {
+            "id": "dissolve-yeast",
+            "kind": "cook",
+            "text": "Dissolve the yeast cake in ¼ cup lukewarm water. Crumble the cake into the water and stir until it has broken up completely and no lumps are left.",
+            "label": "dissolve yeast",
+            "ingredientIdx": [
+              4,
+              5
+            ],
+            "sourceStep": 1,
+            "implied": false,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            },
+            "cue": "until it has broken up completely and no lumps are left"
+          },
+          {
+            "id": "add-butter-sugar-salt",
+            "kind": "cook",
+            "text": "Add the butter, sugar, and salt to the hot scalded milk. Stir until the butter has melted and the sugar and salt have dissolved.",
+            "label": "mix butter sugar salt",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "sourceStep": 2,
+            "implied": false,
+            "needs": [
+              "scald-milk"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            },
+            "cue": "until the butter has melted and the sugar and salt have dissolved"
+          },
+          {
+            "id": "cool-milk",
+            "kind": "cook",
+            "text": "Let the milk mixture stand until it is lukewarm — barely warm, not hot. The yeast goes in next, and it must not meet hot milk.",
+            "label": "cool milk mixture",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "sourceStep": 3,
+            "implied": false,
+            "needs": [
+              "add-butter-sugar-salt"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 15,
+              "handsOff": true
+            },
+            "cue": "until it is lukewarm"
+          },
+          {
+            "id": "add-yeast-flour",
+            "kind": "cook",
+            "text": "When the milk is lukewarm, add the dissolved yeast cake and three cups of flour.",
+            "label": "add yeast and flour",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "sourceStep": 4,
+            "implied": false,
+            "needs": [
+              "dissolve-yeast",
+              "cool-milk"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "beat-batter",
+            "kind": "cook",
+            "text": "Beat thoroughly, until the batter is smooth and comes away from the spoon in a sheet rather than in lumps.",
+            "label": "beat batter",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "sourceStep": 5,
+            "implied": false,
+            "needs": [
+              "add-yeast-flour"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            },
+            "cue": "until the batter is smooth and comes away from the spoon in a sheet"
+          },
+          {
+            "id": "rise-sponge",
+            "kind": "cook",
+            "text": "Cover the bowl and let the sponge rise until light — risen, domed, and full of bubbles under the surface.",
+            "label": "rise sponge",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "sourceStep": 6,
+            "implied": false,
+            "needs": [
+              "beat-batter"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 45,
+              "handsOff": true
+            },
+            "cue": "until light — risen, domed, and full of bubbles under the surface"
+          },
+          {
+            "id": "deflate-add-flour",
+            "kind": "cook",
+            "text": "Cut the risen sponge down — stir it down to deflate it — and add enough flour to make a dough you can knead. It will take about two and one-half cups.",
+            "label": "deflate and add flour",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "sourceStep": 7,
+            "implied": false,
+            "needs": [
+              "rise-sponge"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "rise-dough",
+            "kind": "cook",
+            "text": "Cover the bowl and let the dough rise again, until it is risen and light.",
+            "label": "rise dough",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "sourceStep": 8,
+            "implied": false,
+            "needs": [
+              "deflate-add-flour"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 45,
+              "handsOff": true
+            },
+            "cue": "until it is risen and light"
+          },
+          {
+            "id": "knead-dough",
+            "kind": "cook",
+            "text": "Toss the dough onto a slightly floured board and knead it until it is smooth and elastic.",
+            "label": "knead dough",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "sourceStep": 9,
+            "implied": false,
+            "needs": [
+              "rise-dough"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 8,
+              "handsOff": false
+            },
+            "cue": "until it is smooth and elastic"
+          },
+          {
+            "id": "roll-dough",
+            "kind": "cook",
+            "text": "Pat the dough out with your hands, then roll it to one-third inch thickness, working from the centre outward so the sheet is one depth all over.",
+            "label": "roll dough",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "sourceStep": 10,
+            "implied": false,
+            "needs": [
+              "knead-dough"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 5,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "cut-rounds",
+            "kind": "cook",
+            "text": "Shape with a biscuit-cutter, dipped first in flour. Press straight down, cutting the rounds close together, and dip the cutter again whenever it starts to drag.",
+            "label": "cut rounds",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "sourceStep": 11,
+            "implied": false,
+            "needs": [
+              "roll-dough"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 5,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "crease-rounds",
+            "kind": "cook",
+            "text": "Dip the handle of a case knife (an ordinary table knife) in flour and with it press a crease through the middle of each round — deep enough to hinge the fold, not deep enough to cut through.",
+            "label": "crease rounds",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "sourceStep": 12,
+            "implied": false,
+            "needs": [
+              "cut-rounds"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "butter-and-fold",
+            "kind": "cook",
+            "text": "Brush over one-half of each piece with melted butter, fold it over on the crease, and press the edges together.",
+            "label": "butter and fold",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              9
+            ],
+            "sourceStep": 13,
+            "implied": false,
+            "needs": [
+              "crease-rounds"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 5,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "place-in-pan",
+            "kind": "cook",
+            "text": "Place the folded rolls in a greased pan, one inch apart.",
+            "label": "place in pan",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              9,
+              10
+            ],
+            "sourceStep": 14,
+            "implied": false,
+            "needs": [
+              "butter-and-fold"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "heat-oven",
+            "kind": "cook",
+            "text": "Heat the oven to hot — about 425°F (220°C) — while the rolls are rising, so it is fully up to heat before they go in.",
+            "label": "heat oven",
+            "ingredientIdx": [],
+            "sourceStep": 15,
+            "implied": false,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 15,
+              "handsOff": true
+            }
+          },
+          {
+            "id": "final-rise",
+            "kind": "cook",
+            "text": "Cover the pan and let the rolls rise. As they rise they will part slightly along the crease — that is what they should do. Do not hasten the rise: rolls hurried along are apt to lose their shape.",
+            "label": "rise rolls",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              9,
+              10
+            ],
+            "sourceStep": 16,
+            "implied": false,
+            "needs": [
+              "place-in-pan"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 30,
+              "handsOff": true
+            }
+          },
+          {
+            "id": "bake-rolls",
+            "kind": "cook",
+            "text": "Bake in the hot oven twelve to fifteen minutes.",
+            "label": "bake rolls",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              9,
+              10
+            ],
+            "sourceStep": 17,
+            "implied": false,
+            "needs": [
+              "heat-oven",
+              "final-rise"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 15,
+              "handsOff": true
+            }
+          },
+          {
+            "id": "check-doneness",
+            "kind": "cook",
+            "text": "The rolls are done when the tops are deep golden, the sides where they nearly touch are pale gold, and one lifted from the pan sounds hollow when tapped underneath. If they are still pale at twelve minutes, give them the remaining two or three.",
+            "label": "check doneness",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              9,
+              10
+            ],
+            "sourceStep": 18,
+            "implied": false,
+            "needs": [
+              "bake-rolls"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 1,
+              "handsOff": false
+            },
+            "cue": "when the tops are deep golden, the sides where they nearly touch are pale gold, and one lifted from the pan sounds hollow when tapped underneath"
+          }
+        ]
+      },
+      "error": null
+    },
+    "boiled-custard": {
+      "sourceHash": "515f160824814b326e162fb04661e2d32d5bc8da185de5f76bf3b2888c47c649",
+      "plan": {
+        "version": 4,
+        "tasks": [
+          {
+            "id": "scald-milk",
+            "kind": "cook",
+            "text": "Put the milk in the top of a double boiler, or in a heavy saucepan, and scald it: heat until steam lifts off the surface and a ring of small bubbles forms around the edge of the pan, stopping short of a boil. Keep it hot — it goes into the yolks hot.",
+            "label": "scald milk",
+            "ingredientIdx": [
+              0
+            ],
+            "sourceStep": 0,
+            "implied": false,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 8,
+              "handsOff": false
+            },
+            "cue": "until steam lifts off the surface and a ring of small bubbles forms around the edge of the pan, stopping short of a boil"
+          },
+          {
+            "id": "beat-yolks",
+            "kind": "mise",
+            "text": "Beat the egg yolks slightly — only enough to break them up and blend them to one even colour. Do not beat them light and foamy: a slightly beaten egg is what gives the finished custard its smooth, thick consistency.",
+            "label": "beat egg yolks",
+            "ingredientIdx": [
+              1
+            ],
+            "sourceStep": 1,
+            "implied": false,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "mix-yolks-sugar-salt",
+            "kind": "mise",
+            "text": "Add the sugar and the salt to the beaten yolks and stir until the sugar is dissolved and the mixture is even.",
+            "label": "mix yolks sugar salt",
+            "ingredientIdx": [
+              1,
+              2,
+              3
+            ],
+            "sourceStep": 2,
+            "implied": false,
+            "needs": [
+              "beat-yolks"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            },
+            "cue": "until the sugar is dissolved and the mixture is even"
+          },
+          {
+            "id": "temper-yolks",
+            "kind": "cook",
+            "text": "Stir constantly while you add the hot milk to the yolk mixture — a spoonful or two at a time at first, then in a thin steady stream. Never stop stirring while the milk is going in.",
+            "label": "temper yolks",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "sourceStep": 3,
+            "implied": false,
+            "needs": [
+              "scald-milk",
+              "mix-yolks-sugar-salt"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 4,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "cook-custard",
+            "kind": "cook",
+            "text": "Pour the mixture into the top of the double boiler and set it over — not in — water held at a bare simmer. Cook, stirring constantly and scraping the bottom, until the mixture thickens and a coating is formed on the spoon.",
+            "label": "cook custard",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "sourceStep": 4,
+            "implied": false,
+            "needs": [
+              "temper-yolks"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 10,
+              "handsOff": false
+            },
+            "cue": "until the mixture thickens and a coating is formed on the spoon"
+          },
+          {
+            "id": "test-custard",
+            "kind": "cook",
+            "text": "Lift the spoon clear and look at its back. The custard should leave an even, opaque film; draw a finger through that film and the line should hold clean instead of running back together. If it is still thin and translucent, cook on and test again. If instead it has gone grainy — cooked too long — take it off the heat at once and beat it hard with a rotary (Dover) egg-beater: it may be restored to a smooth consistency, but the custard will not be as thick.",
+            "label": "test custard doneness",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "sourceStep": 5,
+            "implied": false,
+            "needs": [
+              "cook-custard"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            },
+            "cue": "the line should hold clean instead of running back together"
+          },
+          {
+            "id": "strain-custard",
+            "kind": "cook",
+            "text": "Strain the custard immediately through a fine sieve into a cold bowl. The sieve catches any threads of set egg, and getting it out of the hot pan stops the cooking.",
+            "label": "strain custard",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "sourceStep": 6,
+            "implied": false,
+            "needs": [
+              "test-custard"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "chill-custard",
+            "kind": "cook",
+            "text": "Cover the custard and chill it until it is cold through. The old direction is a perforated tin — a cover that keeps dust off while letting the steam out — and that is what prevents a scum from forming on the surface.",
+            "label": "chill custard",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "sourceStep": 7,
+            "implied": false,
+            "needs": [
+              "strain-custard"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 120,
+              "handsOff": true
+            },
+            "cue": "until it is cold through"
+          },
+          {
+            "id": "add-vanilla",
+            "kind": "cook",
+            "text": "Stir the vanilla into the cold custard.",
+            "label": "stir in vanilla",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ],
+            "sourceStep": 8,
+            "implied": false,
+            "needs": [
+              "chill-custard"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 1,
+              "handsOff": false
+            }
+          }
+        ]
+      },
+      "error": null
+    },
+    "waffles": {
+      "sourceHash": "8c6b234650cc73a7620fb60622880de34505e5a905ddd9d6a2444204c41e4cef",
+      "plan": {
+        "version": 4,
+        "tasks": [
+          {
+            "id": "heat-iron-1",
+            "kind": "cook",
+            "text": "A waffle-iron should fit closely on the range. It is heated well on one side, turned, and heated on the other side, and it must be thoroughly greased before the iron is filled. With a new iron, special care must be taken in greasing, or the waffles will stick.",
+            "label": "heat waffle iron",
+            "ingredientIdx": [],
+            "sourceStep": 0,
+            "implied": false,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 5,
+              "handsOff": true
+            }
+          },
+          {
+            "id": "heat-iron-2",
+            "kind": "cook",
+            "text": "Set the waffle-iron so it fits closely on the range and heat it well on one side. Turn it and heat the other side. Leave it heating while you mix the batter.",
+            "label": "heat waffle iron",
+            "ingredientIdx": [],
+            "sourceStep": 1,
+            "implied": false,
+            "needs": [
+              "heat-iron-1"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 5,
+              "handsOff": true
+            }
+          },
+          {
+            "id": "sift-dry-mix",
+            "kind": "mise",
+            "text": "Mix the 1.75 cup flour, 3 tsp baking powder, and 0.5 tsp salt, and sift them together into a bowl.",
+            "label": "sift dry mix",
+            "ingredientIdx": [
+              0,
+              1,
+              2
+            ],
+            "sourceStep": 2,
+            "implied": false,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "beat-yolks",
+            "kind": "mise",
+            "text": "Separate the two eggs, setting the 66 g egg whites aside in a clean dry bowl. Beat the 34 g egg yolks well, until they thicken and pale.",
+            "label": "beat egg yolks",
+            "ingredientIdx": [
+              4,
+              5
+            ],
+            "sourceStep": 3,
+            "implied": false,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            },
+            "cue": "until they thicken and pale"
+          },
+          {
+            "id": "add-milk",
+            "kind": "cook",
+            "text": "Add the 1 cup milk to the sifted dry ingredients gradually, stirring each addition smooth before the next goes in.",
+            "label": "add milk",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "sourceStep": 4,
+            "implied": false,
+            "needs": [
+              "sift-dry-mix"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "stir-yolks",
+            "kind": "cook",
+            "text": "Stir in the well-beaten yolks until the batter is evenly coloured throughout.",
+            "label": "stir in yolks",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ],
+            "sourceStep": 5,
+            "implied": false,
+            "needs": [
+              "add-milk",
+              "beat-yolks"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            },
+            "cue": "until the batter is evenly coloured throughout"
+          },
+          {
+            "id": "stir-butter",
+            "kind": "cook",
+            "text": "Add the 1 tbsp melted butter and stir it through the batter.",
+            "label": "stir in butter",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              6
+            ],
+            "sourceStep": 6,
+            "implied": false,
+            "needs": [
+              "stir-yolks"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "beat-whites",
+            "kind": "mise",
+            "text": "Beat the two egg whites until they are stiff and hold a peak that stands on its own.",
+            "label": "beat egg whites",
+            "ingredientIdx": [
+              5
+            ],
+            "sourceStep": 7,
+            "implied": false,
+            "needs": [
+              "beat-yolks"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 4,
+              "handsOff": false
+            },
+            "cue": "until they are stiff and hold a peak that stands on its own"
+          },
+          {
+            "id": "fold-whites",
+            "kind": "cook",
+            "text": "Add the stiffly beaten whites last. Cut down through the batter with the spoon and lift it over them, turning the bowl as you go, until no streaks of white remain.",
+            "label": "fold egg whites",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "sourceStep": 8,
+            "implied": false,
+            "needs": [
+              "stir-butter",
+              "beat-whites"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            },
+            "cue": "until no streaks of white remain"
+          },
+          {
+            "id": "grease-iron",
+            "kind": "cook",
+            "text": "Grease both hot faces of the iron thoroughly before filling it, working the fat into the corners of the pattern.",
+            "label": "grease waffle iron",
+            "ingredientIdx": [
+              7
+            ],
+            "sourceStep": 9,
+            "implied": false,
+            "needs": [
+              "heat-iron-2"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "confirm-iron",
+            "kind": "cook",
+            "text": "Before filling, confirm the iron is hot through on both faces and freshly greased. Sufficiently heated, it will set the batter fast enough that the iron can be turned almost as soon as it is filled and covered.",
+            "label": "check iron temp",
+            "ingredientIdx": [],
+            "sourceStep": 10,
+            "implied": false,
+            "needs": [
+              "grease-iron"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 1,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "fill-iron",
+            "kind": "cook",
+            "text": "Put a tablespoonful of the mixture in each compartment, near the centre of the iron, and cover. The mixture will spread to just fill the iron.",
+            "label": "fill waffle iron",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "sourceStep": 11,
+            "implied": false,
+            "needs": [
+              "confirm-iron",
+              "fold-whites"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "turn-iron",
+            "kind": "cook",
+            "text": "If the iron is sufficiently heated, turn it almost as soon as it is filled and covered.",
+            "label": "turn waffle iron",
+            "ingredientIdx": [],
+            "sourceStep": 12,
+            "implied": false,
+            "needs": [
+              "fill-iron"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 1,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "cook-waffle",
+            "kind": "cook",
+            "text": "Cook until the waffle is evenly browned and lifts away from the pattern cleanly, then take it out.",
+            "label": "cook waffle",
+            "ingredientIdx": [],
+            "sourceStep": 13,
+            "implied": false,
+            "needs": [
+              "turn-iron"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 4,
+              "handsOff": false
+            },
+            "cue": "until the waffle is evenly browned and lifts away from the pattern cleanly"
+          },
+          {
+            "id": "repeat-waffles",
+            "kind": "cook",
+            "text": "Grease the iron again and repeat — a tablespoonful in each compartment near the centre, cover, turn — until the batter is used up.",
+            "label": "cook remaining waffles",
+            "ingredientIdx": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "sourceStep": 14,
+            "implied": false,
+            "needs": [
+              "cook-waffle"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 10,
+              "handsOff": false
+            },
+            "cue": "until the batter is used up"
+          },
+          {
+            "id": "serve",
+            "kind": "cook",
+            "text": "Serve with 0.75 cup maple syrup.",
+            "label": "serve waffles",
+            "ingredientIdx": [
+              8
+            ],
+            "sourceStep": 15,
+            "implied": false,
+            "needs": [
+              "repeat-waffles"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 1,
+              "handsOff": false
+            }
+          }
+        ]
+      },
+      "error": null
+    },
+    "thin-white-sauce": {
+      "sourceHash": "f1b6b0124b9d459fe540e8edda0fc77a578442ba398d6d7e89460944bb1f712b",
+      "plan": {
+        "version": 4,
+        "tasks": [
+          {
+            "id": "scald-milk",
+            "kind": "cook",
+            "text": "Heat the milk in a small pan over moderate heat until steam rises and a ring of small bubbles forms around the edge, then take it off before it reaches a boil. Leave it hot while you make the rest.",
+            "label": "scald milk",
+            "ingredientIdx": [
+              2
+            ],
+            "sourceStep": 0,
+            "implied": false,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 5,
+              "handsOff": false
+            },
+            "cue": "until steam rises and a ring of small bubbles forms around the edge"
+          },
+          {
+            "id": "mix-flour-seasonings",
+            "kind": "mise",
+            "text": "Stir the flour together with the salt and pepper in a small dish so the seasonings run evenly through it.",
+            "label": "mix dry ingredients",
+            "ingredientIdx": [
+              1,
+              3,
+              4
+            ],
+            "sourceStep": 1,
+            "implied": false,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            }
+          },
+          {
+            "id": "melt-butter",
+            "kind": "cook",
+            "text": "Put the butter in a saucepan over moderate heat and stir until it is melted and bubbling.",
+            "label": "melt butter",
+            "ingredientIdx": [
+              0
+            ],
+            "sourceStep": 2,
+            "implied": false,
+            "needs": [],
+            "branch": "Cook",
+            "minutes": {
+              "est": 3,
+              "handsOff": false
+            },
+            "cue": "until it is melted and bubbling"
+          },
+          {
+            "id": "make-roux",
+            "kind": "cook",
+            "text": "Add the flour mixed with the seasonings to the bubbling butter and stir until thoroughly blended — no dry flour anywhere, the whole of it one smooth paste.",
+            "label": "make roux",
+            "ingredientIdx": [
+              0,
+              1,
+              3,
+              4
+            ],
+            "sourceStep": 3,
+            "implied": false,
+            "needs": [
+              "mix-flour-seasonings",
+              "melt-butter"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            },
+            "cue": "until thoroughly blended"
+          },
+          {
+            "id": "add-milk",
+            "kind": "cook",
+            "text": "Pour on the scalded milk gradually, adding about one-third at a time. Stir each addition into the paste until it is well mixed before the next one goes in.",
+            "label": "add milk",
+            "ingredientIdx": [
+              0,
+              1,
+              3,
+              4,
+              2
+            ],
+            "sourceStep": 4,
+            "implied": false,
+            "needs": [
+              "scald-milk",
+              "make-roux"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 4,
+              "handsOff": false
+            },
+            "cue": "until it is well mixed"
+          },
+          {
+            "id": "beat-sauce",
+            "kind": "cook",
+            "text": "With all the milk in, beat the sauce until it is smooth and glossy — no lumps, and a clear shine on it as it moves in the pan.",
+            "label": "beat sauce",
+            "ingredientIdx": [
+              0,
+              1,
+              3,
+              4,
+              2
+            ],
+            "sourceStep": 5,
+            "implied": false,
+            "needs": [
+              "add-milk"
+            ],
+            "branch": "Cook",
+            "minutes": {
+              "est": 2,
+              "handsOff": false
+            },
+            "cue": "until it is smooth and glossy"
+          }
+        ]
+      },
+      "error": null
+    }
+  }
+}

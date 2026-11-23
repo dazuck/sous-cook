@@ -1,0 +1,2635 @@
+{
+  "id": "fannie-farmer-1896",
+  "title": "The Boston Cooking-School Cook Book",
+  "version": "draft-1",
+  "creator": {
+    "name": "Fannie Merritt Farmer",
+    "bio": "Principal of the Boston Cooking School; standardized the level measurement in American home cooking. 1896 edition, public domain.",
+    "voice_notes": "Precise, era-formal, instructional; obsessive about exact level measurements; assumes a coal range and hand tools."
+  },
+  "cover_ref": null,
+  "description": "Demo pack drafted from the 1896 Boston Cooking-School Cook Book — five recipes chosen to stress Pack Format v0.",
+  "price_usd": null,
+  "recipes": [
+    {
+      "id": "doughnuts-i",
+      "title": "Doughnuts I",
+      "story": "",
+      "serves_base": 12,
+      "serves_estimated": true,
+      "time_active_min": 45,
+      "time_total_min": 60,
+      "tags": [
+        "fried",
+        "doughnuts",
+        "breakfast",
+        "dessert",
+        "baking-powder-dough",
+        "historic-american",
+        "deep-frying"
+      ],
+      "ingredients": [
+        {
+          "id": "sugar-first-half",
+          "name": "Sugar",
+          "qty_canonical": {
+            "mass_g": 100
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 0.5
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 100
+            }
+          },
+          "scaling": "linear",
+          "prep": "one-half of the sugar, creamed with the butter",
+          "optional": false
+        },
+        {
+          "id": "sugar-second-half",
+          "name": "Sugar",
+          "qty_canonical": {
+            "mass_g": 100
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 0.5
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 100
+            }
+          },
+          "scaling": "linear",
+          "prep": "the remaining sugar, beaten into the eggs",
+          "optional": false
+        },
+        {
+          "id": "butter",
+          "name": "Butter",
+          "qty_canonical": {
+            "mass_g": 35
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tbsp",
+              "amount": 2.5
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 35
+            }
+          },
+          "scaling": "linear",
+          "prep": "softened, for creaming",
+          "optional": false
+        },
+        {
+          "id": "eggs",
+          "name": "Eggs",
+          "qty_canonical": {
+            "count": 3
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "milk",
+          "name": "Milk",
+          "qty_canonical": {
+            "volume_ml": 240
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 1
+            },
+            "metric": {
+              "unit": "ml",
+              "amount": 240
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "baking-powder",
+          "name": "Baking powder",
+          "qty_canonical": {
+            "mass_g": 16,
+            "volume_ml": 20
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tsp",
+              "amount": 4
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 16
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "cinnamon",
+          "name": "Cinnamon",
+          "qty_canonical": {
+            "mass_g": 0.65,
+            "volume_ml": 1.25
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tsp",
+              "amount": 0.25
+            },
+            "metric": {
+              "unit": "ml",
+              "amount": 1.25
+            }
+          },
+          "scaling": "linear",
+          "prep": "ground",
+          "optional": false
+        },
+        {
+          "id": "nutmeg",
+          "name": "Nutmeg",
+          "qty_canonical": {
+            "mass_g": 0.55,
+            "volume_ml": 1.25
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tsp",
+              "amount": 0.25
+            },
+            "metric": {
+              "unit": "ml",
+              "amount": 1.25
+            }
+          },
+          "scaling": "linear",
+          "prep": "grated",
+          "optional": false
+        },
+        {
+          "id": "salt",
+          "name": "Salt",
+          "qty_canonical": {
+            "mass_g": 9,
+            "volume_ml": 7.5,
+            "salt_type": "table"
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tsp",
+              "amount": 1.5
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 9
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "flour-sifted",
+          "name": "Flour",
+          "qty_canonical": {
+            "mass_g": 420
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 3.5
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 420
+            }
+          },
+          "scaling": "linear",
+          "prep": "mixed and sifted with the baking powder, salt, and spices",
+          "optional": false
+        },
+        {
+          "id": "flour-extra",
+          "name": "Flour",
+          "qty_canonical": {
+            "mass_g": 60
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 0.5
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 60
+            }
+          },
+          "scaling": "linear",
+          "prep": "additional, worked in by feel until the dough is stiff enough to roll",
+          "optional": false
+        },
+        {
+          "id": "flour-board",
+          "name": "Flour",
+          "qty_canonical": {
+            "mass_g": 30
+          },
+          "display_equivalents": {
+            "metric": {
+              "unit": "g",
+              "amount": 30
+            }
+          },
+          "scaling": "fixed",
+          "prep": "for the board and the cutter",
+          "optional": false
+        },
+        {
+          "id": "frying-fat",
+          "name": "Fat for deep frying",
+          "qty_canonical": {
+            "volume_ml": 1900
+          },
+          "display_equivalents": {
+            "metric": {
+              "unit": "l",
+              "amount": 1.9
+            }
+          },
+          "scaling": "fixed",
+          "prep": "lard, shortening, or a neutral frying oil; enough to float the doughnuts clear of the bottom",
+          "optional": false
+        }
+      ],
+      "steps": [
+        {
+          "id": "cream-butter",
+          "type": "action",
+          "title": "Cream the butter",
+          "text": "Cream the butter: work the softened butter against the side of the bowl until it is smooth, pale, and light, with no firm lumps left in it.",
+          "ingredient_refs": [
+            "butter"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:creaming-butter-and-sugar"
+          ],
+          "state_refs": [
+            "state:creamed-butter"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "add-first-sugar",
+          "type": "action",
+          "title": "Add half the sugar",
+          "text": "Add one-half of the sugar to the creamed butter and work it in.",
+          "ingredient_refs": [
+            "butter",
+            "sugar-first-half"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:creaming-butter-and-sugar"
+          ],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "beat-eggs",
+          "type": "action",
+          "title": "Beat the eggs until light",
+          "text": "In a second bowl, beat the eggs until light — pale, foamy, and thick enough to fall from the beater in a ribbon.",
+          "ingredient_refs": [
+            "eggs"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:beating-eggs-until-light"
+          ],
+          "state_refs": [
+            "state:eggs-beaten-light"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "add-remaining-sugar",
+          "type": "action",
+          "title": "Add the remaining sugar to the eggs",
+          "text": "Add the remaining sugar to the beaten egg and beat it in.",
+          "ingredient_refs": [
+            "eggs",
+            "sugar-second-half"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:beating-eggs-until-light"
+          ],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "combine-mixtures",
+          "type": "action",
+          "title": "Combine the two mixtures",
+          "text": "Combine the mixtures: stir the egg-and-sugar mixture into the creamed butter and sugar.",
+          "ingredient_refs": [
+            "butter",
+            "sugar-first-half",
+            "eggs",
+            "sugar-second-half"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "add-milk",
+          "type": "action",
+          "title": "Stir in the milk",
+          "text": "Stir the milk into the combined mixture.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar-first-half",
+            "sugar-second-half",
+            "eggs"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "sift-dry",
+          "type": "action",
+          "title": "Mix and sift the dry ingredients",
+          "text": "Mix the three and one-half cups of flour with the baking powder, salt, cinnamon, and nutmeg, and sift them together.",
+          "ingredient_refs": [
+            "flour-sifted",
+            "baking-powder",
+            "salt",
+            "cinnamon",
+            "nutmeg"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:sifting-dry-ingredients"
+          ],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "add-dry",
+          "type": "action",
+          "title": "Add the sifted flour mixture",
+          "text": "Add the sifted flour mixture to the batter and stir until it is all taken up.",
+          "ingredient_refs": [
+            "flour-sifted",
+            "baking-powder",
+            "salt",
+            "cinnamon",
+            "nutmeg",
+            "butter",
+            "sugar-first-half",
+            "sugar-second-half",
+            "eggs",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "work-in-more-flour",
+          "type": "action",
+          "title": "Work in enough more flour to roll",
+          "text": "Then add enough more flour to make the dough stiff enough to roll, working it in a little at a time.",
+          "ingredient_refs": [
+            "flour-extra",
+            "flour-sifted",
+            "baking-powder",
+            "salt",
+            "cinnamon",
+            "nutmeg",
+            "butter",
+            "sugar-first-half",
+            "sugar-second-half",
+            "eggs",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [
+            "state:dough-stiff-enough-to-roll"
+          ],
+          "coach_hints": [
+            "The common error here is too much flour. Add it a few spoonfuls at a time and stop the moment the dough will roll — dough worked stiff and dry fries into hard, heavy doughnuts, and you cannot take flour back out.",
+            "Too soft is the other failure: a slack dough won't hold a cut edge and drinks fat in the kettle. If it still smears across your hand when you pat it, work in a little more flour before you divide it."
+          ]
+        },
+        {
+          "id": "dough-checkpoint",
+          "type": "checkpoint",
+          "title": "Check the dough before dividing",
+          "text": "Before dividing the dough, check it: it should be stiff enough to roll and to hold a cut shape, and no stiffer. It should come away from the bowl in a mass and feel soft but no longer sticky. If it slumps or clings to your hand, work in a little more flour and check again.",
+          "ingredient_refs": [
+            "flour-extra",
+            "flour-sifted",
+            "baking-powder",
+            "salt",
+            "cinnamon",
+            "nutmeg",
+            "butter",
+            "sugar-first-half",
+            "sugar-second-half",
+            "eggs",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [
+            "state:dough-stiff-enough-to-roll"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "about-the-fat",
+          "type": "interlude",
+          "title": "About the fat",
+          "text": "The fat must be kept at a uniform temperature. If it is too cold, the doughnuts will absorb fat; if it is too hot, they will brown before they have risen sufficiently. Doughnuts should come quickly to the top of the fat and brown on one side, then be turned to brown on the other — and should not be turned more than once.",
+          "ingredient_refs": [
+            "frying-fat"
+          ],
+          "timer_sec": null,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:deep-frying",
+            "commons:testing-fat-temperature"
+          ],
+          "state_refs": [
+            "state:fat-at-frying-temperature"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "heat-fat",
+          "type": "action",
+          "title": "Heat the deep fat",
+          "text": "Heat a deep kettle of fat — deep enough for the doughnuts to float clear of the bottom — and bring it to a steady frying temperature before you begin to fry. Set it on while you roll, so it is ready when the first doughnuts are cut.",
+          "ingredient_refs": [
+            "frying-fat"
+          ],
+          "timer_sec": null,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:deep-frying",
+            "commons:testing-fat-temperature"
+          ],
+          "state_refs": [
+            "state:fat-at-frying-temperature"
+          ],
+          "coach_hints": [
+            "This is where doughnuts are won or lost. Too cold and they sit and soak up fat; too hot and they colour before they have risen. Holding one steady temperature is the whole rule.",
+            "With no thermometer, use the old bread-cube test the book's fat rule refers to: a one-inch cube of bread should brown in about sixty seconds in fat that is right for an uncooked mixture like this dough.",
+            "Fill the kettle no more than halfway. Wet dough makes the fat foam up hard when it goes in, and a full kettle boils over."
+          ]
+        },
+        {
+          "id": "toss-and-knead",
+          "type": "action",
+          "title": "Toss out one-third and knead slightly",
+          "text": "Toss one-third of the mixture onto a floured board and knead it slightly — just enough to bring it together.",
+          "ingredient_refs": [
+            "flour-board",
+            "flour-extra",
+            "flour-sifted",
+            "baking-powder",
+            "salt",
+            "cinnamon",
+            "nutmeg",
+            "butter",
+            "sugar-first-half",
+            "sugar-second-half",
+            "eggs",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:kneading-dough-lightly"
+          ],
+          "state_refs": [],
+          "coach_hints": [
+            "\"Knead slightly\" is literal — a dozen folds at most. This dough is raised with baking powder, not yeast, so working it only builds gluten and turns a tender doughnut into bread."
+          ]
+        },
+        {
+          "id": "pat-and-roll",
+          "type": "action",
+          "title": "Pat and roll to one-fourth inch",
+          "text": "Pat the dough down, then roll it out to one-fourth inch thickness.",
+          "ingredient_refs": [
+            "flour-board",
+            "flour-extra",
+            "flour-sifted",
+            "baking-powder",
+            "salt",
+            "cinnamon",
+            "nutmeg",
+            "butter",
+            "sugar-first-half",
+            "sugar-second-half",
+            "eggs",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:rolling-dough-to-thickness"
+          ],
+          "state_refs": [],
+          "coach_hints": [
+            "Keep the sheet an even one-fourth inch. Thin patches brown and dry out before the thick ones have risen through, and nothing you do in the kettle will even that up."
+          ]
+        },
+        {
+          "id": "cut-doughnuts",
+          "type": "action",
+          "title": "Shape with the doughnut cutter",
+          "text": "Shape the doughnuts with a doughnut cutter, setting the cuts close together so as to leave as few trimmings as possible.",
+          "ingredient_refs": [
+            "flour-board",
+            "flour-extra",
+            "flour-sifted",
+            "baking-powder",
+            "salt",
+            "cinnamon",
+            "nutmeg",
+            "butter",
+            "sugar-first-half",
+            "sugar-second-half",
+            "eggs",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:cutting-doughnuts"
+          ],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "fry-first-side",
+          "type": "action",
+          "title": "Fry in deep fat",
+          "text": "Fry the shaped doughnuts in the deep fat. They should come quickly to the top of the fat and brown on one side.",
+          "ingredient_refs": [
+            "frying-fat",
+            "flour-extra",
+            "flour-sifted",
+            "baking-powder",
+            "salt",
+            "cinnamon",
+            "nutmeg",
+            "butter",
+            "sugar-first-half",
+            "sugar-second-half",
+            "eggs",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:deep-frying"
+          ],
+          "state_refs": [
+            "state:fat-at-frying-temperature",
+            "state:doughnut-risen-to-surface",
+            "state:fried-golden-brown"
+          ],
+          "coach_hints": [
+            "Fry only a few at a time. A crowded kettle pulls the fat temperature down, and cool fat is exactly what makes greasy doughnuts.",
+            "If a doughnut sinks and lingers on the bottom instead of coming quickly to the top, the fat is too cold. Take it out, let the fat come back up, and test with a single doughnut before committing the batch."
+          ]
+        },
+        {
+          "id": "turn-and-brown",
+          "type": "action",
+          "title": "Turn once to brown the other side",
+          "text": "When the underside has browned, turn each doughnut to brown the other side. Avoid turning more than once.",
+          "ingredient_refs": [
+            "frying-fat",
+            "flour-extra",
+            "flour-sifted",
+            "baking-powder",
+            "salt",
+            "cinnamon",
+            "nutmeg",
+            "butter",
+            "sugar-first-half",
+            "sugar-second-half",
+            "eggs",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:deep-frying"
+          ],
+          "state_refs": [
+            "state:fried-golden-brown"
+          ],
+          "coach_hints": [
+            "Turn once and leave them alone. Each extra turn puts a browned, drier face back down into the fat, and the doughnut takes on grease instead of colour — if you lose track, the paler face is the one still to cook."
+          ]
+        },
+        {
+          "id": "drain",
+          "type": "action",
+          "title": "Take up and drain",
+          "text": "Take each doughnut up on a skewer and drain it on brown paper.",
+          "ingredient_refs": [
+            "flour-extra",
+            "flour-sifted",
+            "baking-powder",
+            "salt",
+            "cinnamon",
+            "nutmeg",
+            "butter",
+            "sugar-first-half",
+            "sugar-second-half",
+            "eggs",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "remaining-dough",
+          "type": "action",
+          "title": "Roll, shape, and fry the rest",
+          "text": "Add the trimmings to one-half of the remaining mixture; roll, shape, and fry as before. Then repeat with the last portion and its trimmings.",
+          "ingredient_refs": [
+            "flour-board",
+            "frying-fat",
+            "flour-extra",
+            "flour-sifted",
+            "baking-powder",
+            "salt",
+            "cinnamon",
+            "nutmeg",
+            "butter",
+            "sugar-first-half",
+            "sugar-second-half",
+            "eggs",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:rolling-dough-to-thickness",
+            "commons:cutting-doughnuts",
+            "commons:deep-frying"
+          ],
+          "state_refs": [
+            "state:fat-at-frying-temperature",
+            "state:doughnut-risen-to-surface",
+            "state:fried-golden-brown"
+          ],
+          "coach_hints": [
+            "Let the fat come back up to temperature between batches. It drops every time doughnuts go in, and the last batch is the one that comes out greasy.",
+            "The trimmings have already been worked once. Handle them lightly and roll them no more often than you must, or the last doughnuts will be tougher than the first."
+          ]
+        }
+      ],
+      "variations": [],
+      "creator_notes": [
+        "The fat must be kept at a uniform temperature. If too cold, doughnuts will absorb fat; if too hot, doughnuts will brown before sufficiently risen.",
+        "Doughnuts should come quickly to top of fat, brown on one side, then be turned to brown on the other; avoid turning more than once.",
+        "The source closes with \"See rule for testing fat.\" — a cross-reference to a separate section of the original book that is not part of this transcription. The bread-cube test given in the frying coach hints stands in for it and should be checked against the original rule before publishing.",
+        "Transcription gap to confirm with the source: the ingredient list calls for 1 cup milk, but the method never says when to add it. It is placed here after the two mixtures are combined and before the flour, which is the standard order for this batter.",
+        "Transcription gap to confirm with the source: the method reads \"Beat egg until light\" (singular) while the ingredient list calls for 3 eggs. All three are beaten together here."
+      ]
+    },
+    {
+      "id": "parker-house-rolls",
+      "title": "Parker House Rolls",
+      "story": "",
+      "serves_base": 12,
+      "serves_estimated": true,
+      "time_active_min": 45,
+      "time_total_min": 255,
+      "tags": [
+        "bread",
+        "yeast-dough",
+        "dinner-rolls",
+        "baking",
+        "classic-american"
+      ],
+      "ingredients": [
+        {
+          "id": "milk",
+          "name": "Milk",
+          "qty_canonical": {
+            "mass_g": 488,
+            "volume_ml": 473
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 2
+            },
+            "metric": {
+              "unit": "ml",
+              "amount": 475
+            }
+          },
+          "scaling": "linear",
+          "prep": "scalded, then cooled to lukewarm",
+          "optional": false
+        },
+        {
+          "id": "butter",
+          "name": "Butter",
+          "qty_canonical": {
+            "mass_g": 43,
+            "volume_ml": 44
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tbsp",
+              "amount": 3
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 43
+            }
+          },
+          "scaling": "linear",
+          "prep": "for the dough — stirred into the hot milk",
+          "optional": false
+        },
+        {
+          "id": "sugar",
+          "name": "Sugar",
+          "qty_canonical": {
+            "mass_g": 25,
+            "volume_ml": 30
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tbsp",
+              "amount": 2
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 25
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "salt",
+          "name": "Salt",
+          "qty_canonical": {
+            "mass_g": 6,
+            "volume_ml": 5,
+            "salt_type": "fine table salt"
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tsp",
+              "amount": 1
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 6
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "yeast-cake",
+          "name": "Yeast cake (compressed fresh yeast)",
+          "qty_canonical": {
+            "mass_g": 17,
+            "count": 1
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tsp",
+              "amount": 2.25
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 17
+            }
+          },
+          "scaling": "linear",
+          "prep": "dissolved in the lukewarm water",
+          "optional": false
+        },
+        {
+          "id": "water-lukewarm",
+          "name": "Lukewarm water",
+          "qty_canonical": {
+            "mass_g": 59,
+            "volume_ml": 59
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 0.25
+            },
+            "metric": {
+              "unit": "ml",
+              "amount": 60
+            }
+          },
+          "scaling": "linear",
+          "prep": "for dissolving the yeast cake",
+          "optional": false
+        },
+        {
+          "id": "flour-sponge",
+          "name": "Flour",
+          "qty_canonical": {
+            "mass_g": 360,
+            "volume_ml": 710
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 3
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 360
+            }
+          },
+          "scaling": "linear",
+          "prep": "for the sponge — beaten in with the dissolved yeast",
+          "optional": false
+        },
+        {
+          "id": "flour-kneading",
+          "name": "Flour",
+          "qty_canonical": {
+            "mass_g": 300,
+            "volume_ml": 592
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 2.5
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 300
+            }
+          },
+          "scaling": "linear",
+          "prep": "worked in after the first rise, to make a dough stiff enough to knead",
+          "optional": false
+        },
+        {
+          "id": "flour-dusting",
+          "name": "Flour",
+          "qty_canonical": {
+            "mass_g": 30,
+            "volume_ml": 59
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 0.25
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 30
+            }
+          },
+          "scaling": "fixed",
+          "prep": "for the board, the biscuit-cutter, and the knife handle",
+          "optional": false
+        },
+        {
+          "id": "butter-melted-brushing",
+          "name": "Melted butter",
+          "qty_canonical": {
+            "mass_g": 28,
+            "volume_ml": 30
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tbsp",
+              "amount": 2
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 28
+            }
+          },
+          "scaling": "fixed",
+          "prep": "melted, for brushing half of each round before folding",
+          "optional": false
+        },
+        {
+          "id": "butter-pan-grease",
+          "name": "Butter for the pan",
+          "qty_canonical": {
+            "mass_g": 14,
+            "volume_ml": 15
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tbsp",
+              "amount": 1
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 14
+            }
+          },
+          "scaling": "fixed",
+          "prep": "softened, for greasing the baking pan",
+          "optional": false
+        }
+      ],
+      "steps": [
+        {
+          "id": "scald-milk",
+          "type": "action",
+          "title": "Scald the milk",
+          "text": "Scald the milk: heat it in a saucepan over medium heat until it steams and a ring of small bubbles forms around the edge of the pan, then take it off the heat. Do not let it come to a boil.",
+          "ingredient_refs": [
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:scalding-milk"
+          ],
+          "state_refs": [
+            "state:milk-scalded"
+          ],
+          "coach_hints": [
+            "Milk scorches from the bottom up and you won't smell it until it's too late — stir it and pull it off the heat at the first ring of bubbles. If the bottom has browned, start with fresh milk; the scorch carries through the whole batch.",
+            "A skin forming on the surface is harmless. Stir it back in."
+          ]
+        },
+        {
+          "id": "dissolve-yeast",
+          "type": "action",
+          "title": "Dissolve the yeast",
+          "text": "Dissolve the yeast cake in ¼ cup lukewarm water. Crumble the cake into the water and stir until it has broken up completely and no lumps are left.",
+          "ingredient_refs": [
+            "yeast-cake",
+            "water-lukewarm"
+          ],
+          "timer_sec": null,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:dissolving-cake-yeast"
+          ],
+          "state_refs": [
+            "state:yeast-dissolved"
+          ],
+          "coach_hints": [
+            "Lukewarm means about body temperature — water you can't feel as either warm or cool on the inside of your wrist. Hot water kills the yeast outright, and nothing later in the recipe recovers it."
+          ]
+        },
+        {
+          "id": "enrich-milk",
+          "type": "action",
+          "title": "Add butter, sugar, and salt to the milk",
+          "text": "Add the butter, sugar, and salt to the hot scalded milk. Stir until the butter has melted and the sugar and salt have dissolved.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "cool-to-lukewarm",
+          "type": "checkpoint",
+          "title": "Wait until it is lukewarm",
+          "text": "Let the milk mixture stand until it is lukewarm — barely warm, not hot. The yeast goes in next, and it must not meet hot milk.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt"
+          ],
+          "timer_sec": null,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [
+            "state:mixture-lukewarm"
+          ],
+          "coach_hints": [
+            "This is the step that kills most batches. If the milk still feels hot on the inside of your wrist, it is hot enough to kill the yeast — wait until it is cooler than you think it needs to be.",
+            "If yeast has already gone into hot milk, the sponge will sit flat and never lift. There is no rescue: start the sponge again with fresh yeast in fresh lukewarm liquid."
+          ]
+        },
+        {
+          "id": "mix-sponge",
+          "type": "action",
+          "title": "Add the yeast and the first three cups of flour",
+          "text": "When the milk is lukewarm, add the dissolved yeast cake and three cups of flour.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "beat-sponge",
+          "type": "action",
+          "title": "Beat thoroughly",
+          "text": "Beat thoroughly, until the batter is smooth and comes away from the spoon in a sheet rather than in lumps.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:beating-a-sponge-batter"
+          ],
+          "state_refs": [
+            "state:sponge-beaten-smooth"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "first-rise",
+          "type": "wait",
+          "title": "Cover and let rise until light",
+          "text": "Cover the bowl and let the sponge rise until light — risen, domed, and full of bubbles under the surface.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge"
+          ],
+          "timer_sec": null,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:proofing-yeast-dough"
+          ],
+          "state_refs": [
+            "state:sponge-risen-light"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "cut-down-add-flour",
+          "type": "action",
+          "title": "Cut down and add flour to knead",
+          "text": "Cut the risen sponge down — stir it down to deflate it — and add enough flour to make a dough you can knead. It will take about two and one-half cups.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge",
+            "flour-kneading"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [
+            "state:dough-stiff-enough-to-knead"
+          ],
+          "coach_hints": [
+            "Add the flour in two or three additions, not all at once. Two and one-half cups is the author's estimate, not a promise — stop as soon as the dough gathers into one mass and stops sticking to your hand.",
+            "Too much flour is the usual error and it only shows up at the end, as heavy rolls with a dry crumb. A dough slightly slack now is safer than a stiff one; the board flour during kneading takes up the difference."
+          ]
+        },
+        {
+          "id": "second-rise",
+          "type": "wait",
+          "title": "Let rise again",
+          "text": "Cover the bowl and let the dough rise again, until it is risen and light.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge",
+            "flour-kneading"
+          ],
+          "timer_sec": null,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:proofing-yeast-dough"
+          ],
+          "state_refs": [
+            "state:dough-risen-light"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "knead-dough",
+          "type": "action",
+          "title": "Toss onto the board and knead",
+          "text": "Toss the dough onto a slightly floured board and knead it until it is smooth and elastic.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge",
+            "flour-kneading",
+            "flour-dusting"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:kneading-yeast-dough"
+          ],
+          "state_refs": [
+            "state:dough-smooth-and-elastic"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "roll-out",
+          "type": "action",
+          "title": "Pat and roll to one-third inch",
+          "text": "Pat the dough out with your hands, then roll it to one-third inch thickness, working from the centre outward so the sheet is one depth all over.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge",
+            "flour-kneading",
+            "flour-dusting"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:rolling-dough-to-thickness"
+          ],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "cut-rounds",
+          "type": "action",
+          "title": "Cut rounds with a biscuit-cutter",
+          "text": "Shape with a biscuit-cutter, dipped first in flour. Press straight down, cutting the rounds close together, and dip the cutter again whenever it starts to drag.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge",
+            "flour-kneading",
+            "flour-dusting"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:cutting-rounds-with-a-biscuit-cutter"
+          ],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "crease-rounds",
+          "type": "action",
+          "title": "Crease each round",
+          "text": "Dip the handle of a case knife (an ordinary table knife) in flour and with it press a crease through the middle of each round — deep enough to hinge the fold, not deep enough to cut through.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge",
+            "flour-kneading",
+            "flour-dusting"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:shaping-parker-house-fold"
+          ],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "butter-and-fold",
+          "type": "action",
+          "title": "Butter, fold, and press",
+          "text": "Brush over one-half of each piece with melted butter, fold it over on the crease, and press the edges together.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge",
+            "flour-kneading",
+            "butter-melted-brushing"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:shaping-parker-house-fold"
+          ],
+          "state_refs": [],
+          "coach_hints": [
+            "Keep the melted butter off the very rim you are about to press — a buttered edge won't stick, and the roll unfolds in the pan.",
+            "Press with your fingertips along the edge rather than with the flat of your hand, so you seal the rim without flattening the puff."
+          ]
+        },
+        {
+          "id": "pan-rolls",
+          "type": "action",
+          "title": "Place in the greased pan",
+          "text": "Place the folded rolls in a greased pan, one inch apart.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge",
+            "flour-kneading",
+            "butter-melted-brushing",
+            "butter-pan-grease"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "heat-oven",
+          "type": "action",
+          "title": "Heat the oven",
+          "text": "Heat the oven to hot — about 425°F (220°C) — while the rolls are rising, so it is fully up to heat before they go in.",
+          "ingredient_refs": [],
+          "timer_sec": null,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [
+            "state:oven-hot"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "final-rise",
+          "type": "wait",
+          "title": "Cover and let rise in the pan",
+          "text": "Cover the pan and let the rolls rise. As they rise they will part slightly along the crease — that is what they should do. Do not hasten the rise: rolls hurried along are apt to lose their shape.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge",
+            "flour-kneading",
+            "butter-melted-brushing",
+            "butter-pan-grease"
+          ],
+          "timer_sec": null,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:proofing-yeast-dough"
+          ],
+          "state_refs": [
+            "state:rolls-risen-and-parted"
+          ],
+          "coach_hints": [
+            "Don't force this rise in a warm oven or on top of the stove. Rolls pushed to rise fast lose their shape — this is the author's one explicit warning in the recipe.",
+            "A little parting along the crease is correct. A roll that has flopped fully open has over-risen; bake it anyway, it will taste right even if it looks wrong."
+          ]
+        },
+        {
+          "id": "bake",
+          "type": "action",
+          "title": "Bake in a hot oven",
+          "text": "Bake in the hot oven twelve to fifteen minutes.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge",
+            "flour-kneading",
+            "butter-melted-brushing",
+            "butter-pan-grease"
+          ],
+          "timer_sec": 720,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": [
+            "Twelve minutes is the check, not the finish. Look at twelve and give them the last two or three minutes only if the tops are still pale.",
+            "If the tops are browning before the middles set — the oven is running hot — lay a sheet of foil loosely over the pan for the last few minutes rather than pulling them early."
+          ]
+        },
+        {
+          "id": "check-done",
+          "type": "checkpoint",
+          "title": "Check that they are baked",
+          "text": "The rolls are done when the tops are deep golden, the sides where they nearly touch are pale gold, and one lifted from the pan sounds hollow when tapped underneath. If they are still pale at twelve minutes, give them the remaining two or three.",
+          "ingredient_refs": [
+            "milk",
+            "butter",
+            "sugar",
+            "salt",
+            "yeast-cake",
+            "water-lukewarm",
+            "flour-sponge",
+            "flour-kneading",
+            "butter-melted-brushing",
+            "butter-pan-grease"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [
+            "state:rolls-baked-golden"
+          ],
+          "coach_hints": []
+        }
+      ],
+      "variations": [
+        {
+          "name": "Shaped from torn pieces",
+          "description": "The author's second shaping method, in place of rolling and cutting: cut or tear off small pieces of dough and shape them round like a biscuit. Place in rows on a floured board, cover, and let rise fifteen minutes. With the handle of a large wooden spoon, or a toy rolling-pin, roll through the centre of each biscuit; brush the edge of the lower halves with melted butter, fold, press lightly, place in a buttered pan one inch apart, cover, let rise, and bake.",
+          "patch": {}
+        }
+      ],
+      "creator_notes": [
+        "The original lists flour with no total: three cups go into the sponge, and about two and one-half cups more are worked in after the first rise — roughly five and a half cups in all.",
+        "The author's caution on the last rise: as the rolls rise they will part slightly, and if hastened in rising they are apt to lose their shape.",
+        "A yeast cake is compressed fresh yeast, about 0.6 oz (17 g). If you are using modern active dry yeast, 2¼ teaspoons (7 g) stands in for one cake, dissolved the same way in the lukewarm water."
+      ]
+    },
+    {
+      "id": "boiled-custard",
+      "title": "Boiled Custard",
+      "story": "",
+      "serves_base": 4,
+      "serves_estimated": true,
+      "time_active_min": 25,
+      "time_total_min": 145,
+      "tags": [
+        "dessert",
+        "custard",
+        "stovetop",
+        "double-boiler",
+        "make-ahead",
+        "historic-american"
+      ],
+      "ingredients": [
+        {
+          "id": "milk",
+          "name": "Milk",
+          "qty_canonical": {
+            "mass_g": 488,
+            "volume_ml": 473
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 2
+            },
+            "metric": {
+              "unit": "ml",
+              "amount": 475
+            }
+          },
+          "scaling": "linear",
+          "prep": "scalded",
+          "optional": false
+        },
+        {
+          "id": "egg-yolks",
+          "name": "Egg yolks",
+          "qty_canonical": {
+            "mass_g": 54,
+            "count": 3
+          },
+          "display_equivalents": {
+            "metric": {
+              "unit": "g",
+              "amount": 54
+            }
+          },
+          "scaling": "linear",
+          "prep": "separated from the whites; yolks only",
+          "optional": false
+        },
+        {
+          "id": "sugar",
+          "name": "Sugar",
+          "qty_canonical": {
+            "mass_g": 50,
+            "volume_ml": 59
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 0.25
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 50
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "salt",
+          "name": "Salt",
+          "qty_canonical": {
+            "mass_g": 0.75,
+            "volume_ml": 0.6,
+            "salt_type": "fine"
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tsp",
+              "amount": 0.125
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 0.75
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "vanilla",
+          "name": "Vanilla",
+          "qty_canonical": {
+            "volume_ml": 2.5
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tsp",
+              "amount": 0.5
+            },
+            "metric": {
+              "unit": "ml",
+              "amount": 2.5
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        }
+      ],
+      "steps": [
+        {
+          "id": "scald-the-milk",
+          "type": "action",
+          "title": "Scald the milk",
+          "text": "Put the milk in the top of a double boiler, or in a heavy saucepan, and scald it: heat until steam lifts off the surface and a ring of small bubbles forms around the edge of the pan, stopping short of a boil. Keep it hot — it goes into the yolks hot.",
+          "ingredient_refs": [
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:scalding-milk"
+          ],
+          "state_refs": [
+            "state:milk-scalded"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "beat-the-yolks-slightly",
+          "type": "action",
+          "title": "Beat the yolks slightly",
+          "text": "Beat the egg yolks slightly — only enough to break them up and blend them to one even colour. Do not beat them light and foamy: a slightly beaten egg is what gives the finished custard its smooth, thick consistency.",
+          "ingredient_refs": [
+            "egg-yolks"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:beating-eggs-slightly"
+          ],
+          "state_refs": [
+            "state:eggs-beaten-slightly"
+          ],
+          "coach_hints": [
+            "The mistake here is beating too long. Once the yolks foam you have beaten air into the custard: it cooks up frothy, sets thinner, and the bubbles surface as a pale scum. Stop the moment the streaks of yolk disappear."
+          ]
+        },
+        {
+          "id": "add-sugar-and-salt",
+          "type": "action",
+          "title": "Stir in the sugar and salt",
+          "text": "Add the sugar and the salt to the beaten yolks and stir until the sugar is dissolved and the mixture is even.",
+          "ingredient_refs": [
+            "egg-yolks",
+            "sugar",
+            "salt"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "add-the-hot-milk-gradually",
+          "type": "action",
+          "title": "Add the hot milk gradually",
+          "text": "Stir constantly while you add the hot milk to the yolk mixture — a spoonful or two at a time at first, then in a thin steady stream. Never stop stirring while the milk is going in.",
+          "ingredient_refs": [
+            "egg-yolks",
+            "sugar",
+            "salt",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:tempering-eggs"
+          ],
+          "state_refs": [],
+          "coach_hints": [
+            "Pouring the milk in too fast is what scrambles a custard before it ever reaches the heat. If you see fine yellow specks or set threads in the bowl, the yolks caught — stop, pass the mixture through a fine sieve, then carry on and strain again at the end.",
+            "Stir, don't whisk. Keep a spoon moving through the bottom of the bowl; a whisk beats in exactly the air you just avoided beating into the yolks."
+          ]
+        },
+        {
+          "id": "cook-in-the-double-boiler",
+          "type": "action",
+          "title": "Cook in the double boiler",
+          "text": "Pour the mixture into the top of the double boiler and set it over — not in — water held at a bare simmer. Cook, stirring constantly and scraping the bottom, until the mixture thickens and a coating is formed on the spoon.",
+          "ingredient_refs": [
+            "milk",
+            "egg-yolks",
+            "sugar",
+            "salt"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:cooking-in-a-double-boiler"
+          ],
+          "state_refs": [
+            "state:custard-coats-the-spoon"
+          ],
+          "coach_hints": [
+            "Hard-boiling water in the lower pan is the usual cause of a curdled custard — the top pan runs hotter than the yolks can take. Hold the water at a bare simmer and keep the top pan clear of it.",
+            "It thickens suddenly at the end and goes on cooking after you lift it off. Have the sieve and a cold bowl standing ready before you start, so the moment it coats the spoon you can move."
+          ]
+        },
+        {
+          "id": "test-the-coating-on-the-spoon",
+          "type": "checkpoint",
+          "title": "Test the coating on the spoon",
+          "text": "Lift the spoon clear and look at its back. The custard should leave an even, opaque film; draw a finger through that film and the line should hold clean instead of running back together. If it is still thin and translucent, cook on and test again. If instead it has gone grainy — cooked too long — take it off the heat at once and beat it hard with a rotary (Dover) egg-beater: it may be restored to a smooth consistency, but the custard will not be as thick.",
+          "ingredient_refs": [
+            "milk",
+            "egg-yolks",
+            "sugar",
+            "salt"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:testing-the-spoon-coating",
+            "commons:rescuing-a-curdled-custard"
+          ],
+          "state_refs": [
+            "state:custard-coats-the-spoon",
+            "state:custard-curdled"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "strain-immediately",
+          "type": "action",
+          "title": "Strain immediately",
+          "text": "Strain the custard immediately through a fine sieve into a cold bowl. The sieve catches any threads of set egg, and getting it out of the hot pan stops the cooking.",
+          "ingredient_refs": [
+            "milk",
+            "egg-yolks",
+            "sugar",
+            "salt"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:straining-custard"
+          ],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "chill",
+          "type": "wait",
+          "title": "Chill, covered",
+          "text": "Cover the custard and chill it until it is cold through. The old direction is a perforated tin — a cover that keeps dust off while letting the steam out — and that is what prevents a scum from forming on the surface.",
+          "ingredient_refs": [
+            "milk",
+            "egg-yolks",
+            "sugar",
+            "salt"
+          ],
+          "timer_sec": null,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [
+            "state:custard-chilled"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "flavor-with-vanilla",
+          "type": "action",
+          "title": "Flavor with vanilla",
+          "text": "Stir the vanilla into the cold custard.",
+          "ingredient_refs": [
+            "vanilla",
+            "milk",
+            "egg-yolks",
+            "sugar",
+            "salt"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": []
+        }
+      ],
+      "variations": [
+        {
+          "name": "When eggs are scarce",
+          "description": "The source's substitution for when eggs are short: use the yolks of two eggs and one-half tablespoon corn-starch in place of the yolks of three eggs. Stir the corn-starch in dry with the sugar and salt so it goes into the yolks without lumping.",
+          "patch": {
+            "ingredients.egg-yolks.qty_canonical": {
+              "count": 2,
+              "mass_g": 36
+            },
+            "ingredients.egg-yolks.display_equivalents": {
+              "metric": {
+                "unit": "g",
+                "amount": 36
+              }
+            },
+            "ingredients.corn-starch": {
+              "id": "corn-starch",
+              "name": "Corn-starch",
+              "qty_canonical": {
+                "mass_g": 4,
+                "volume_ml": 7.4
+              },
+              "display_equivalents": {
+                "imperial": {
+                  "unit": "tbsp",
+                  "amount": 0.5
+                },
+                "metric": {
+                  "unit": "g",
+                  "amount": 4
+                }
+              },
+              "scaling": "linear",
+              "optional": false
+            },
+            "steps.add-sugar-and-salt.ingredient_refs": [
+              "egg-yolks",
+              "sugar",
+              "salt",
+              "corn-starch"
+            ]
+          }
+        }
+      ],
+      "creator_notes": [
+        "Eggs should be beaten slightly for custard, that it may be of smooth, thick consistency.",
+        "If cooked too long the custard will curdle; should this happen, by using a Dover egg-beater it may be restored to a smooth consistency, but custard will not be as thick.",
+        "To prevent scum from forming, cover with a perforated tin."
+      ]
+    },
+    {
+      "id": "waffles",
+      "title": "Waffles",
+      "story": "",
+      "serves_base": 4,
+      "serves_estimated": true,
+      "time_active_min": 30,
+      "time_total_min": 35,
+      "tags": [
+        "breakfast",
+        "waffles",
+        "quick-bread",
+        "beaten-egg-whites",
+        "waffle-iron",
+        "historic-american"
+      ],
+      "ingredients": [
+        {
+          "id": "flour",
+          "name": "Flour",
+          "qty_canonical": {
+            "mass_g": 210,
+            "volume_ml": 414
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 1.75
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 210
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "baking-powder",
+          "name": "Baking powder",
+          "qty_canonical": {
+            "mass_g": 12,
+            "volume_ml": 15
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tsp",
+              "amount": 3
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 12
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "salt",
+          "name": "Salt",
+          "qty_canonical": {
+            "mass_g": 3,
+            "volume_ml": 2.5,
+            "salt_type": "table"
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tsp",
+              "amount": 0.5
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 3
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "milk",
+          "name": "Milk",
+          "qty_canonical": {
+            "mass_g": 244,
+            "volume_ml": 237
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 1
+            },
+            "metric": {
+              "unit": "ml",
+              "amount": 237
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "egg-yolks",
+          "name": "Egg yolks",
+          "qty_canonical": {
+            "mass_g": 34,
+            "count": 2
+          },
+          "display_equivalents": {
+            "metric": {
+              "unit": "g",
+              "amount": 34
+            }
+          },
+          "scaling": "linear",
+          "prep": "well beaten",
+          "optional": false
+        },
+        {
+          "id": "egg-whites",
+          "name": "Egg whites",
+          "qty_canonical": {
+            "mass_g": 66,
+            "count": 2
+          },
+          "display_equivalents": {
+            "metric": {
+              "unit": "g",
+              "amount": 66
+            }
+          },
+          "scaling": "linear",
+          "prep": "beaten stiff, added last",
+          "optional": false
+        },
+        {
+          "id": "butter",
+          "name": "Butter",
+          "qty_canonical": {
+            "mass_g": 14,
+            "volume_ml": 15
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tbsp",
+              "amount": 1
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 14
+            }
+          },
+          "scaling": "linear",
+          "prep": "melted and cooled slightly",
+          "optional": false
+        },
+        {
+          "id": "greasing-fat",
+          "name": "Butter or lard, for the iron",
+          "qty_canonical": {
+            "mass_g": 15
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tbsp",
+              "amount": 1
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 15
+            }
+          },
+          "scaling": "fixed",
+          "prep": "for greasing the iron before each filling",
+          "optional": false
+        },
+        {
+          "id": "maple-syrup",
+          "name": "Maple syrup",
+          "qty_canonical": {
+            "volume_ml": 180
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 0.75
+            },
+            "metric": {
+              "unit": "ml",
+              "amount": 180
+            }
+          },
+          "scaling": "linear",
+          "prep": "to serve",
+          "optional": false
+        }
+      ],
+      "steps": [
+        {
+          "id": "about-the-waffle-iron",
+          "type": "interlude",
+          "title": "About the waffle-iron",
+          "text": "A waffle-iron should fit closely on the range. It is heated well on one side, turned, and heated on the other side, and it must be thoroughly greased before the iron is filled. With a new iron, special care must be taken in greasing, or the waffles will stick.",
+          "ingredient_refs": [],
+          "timer_sec": null,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:heating-a-waffle-iron",
+            "commons:greasing-a-waffle-iron"
+          ],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "heat-the-iron",
+          "type": "action",
+          "title": "Heat the iron on both sides",
+          "text": "Set the waffle-iron so it fits closely on the range and heat it well on one side. Turn it and heat the other side. Leave it heating while you mix the batter.",
+          "ingredient_refs": [],
+          "timer_sec": null,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:heating-a-waffle-iron"
+          ],
+          "state_refs": [
+            "state:waffle-iron-hot"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "sift-the-dry-ingredients",
+          "type": "action",
+          "title": "Mix and sift the dry ingredients",
+          "text": "Mix the flour, baking powder, and salt, and sift them together into a bowl.",
+          "ingredient_refs": [
+            "flour",
+            "baking-powder",
+            "salt"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:sifting-dry-ingredients"
+          ],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "beat-the-yolks",
+          "type": "action",
+          "title": "Beat the yolks well",
+          "text": "Separate the two eggs, setting the whites aside in a clean dry bowl. Beat the yolks well, until they thicken and pale.",
+          "ingredient_refs": [
+            "egg-yolks",
+            "egg-whites"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:beating-eggs-until-light"
+          ],
+          "state_refs": [
+            "state:eggs-beaten-light"
+          ],
+          "coach_hints": []
+        },
+        {
+          "id": "add-milk-gradually",
+          "type": "action",
+          "title": "Add the milk gradually",
+          "text": "Add the milk to the sifted dry ingredients gradually, stirring each addition smooth before the next goes in.",
+          "ingredient_refs": [
+            "flour",
+            "baking-powder",
+            "salt",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:adding-liquid-gradually"
+          ],
+          "state_refs": [
+            "state:batter-smooth"
+          ],
+          "coach_hints": [
+            "Tipping the milk in all at once is what makes lumps — add it in three or four parts and clear each one before the next.",
+            "If lumps do form, keep stirring steadily rather than beating hard; hard beating clears them but toughens the waffle."
+          ]
+        },
+        {
+          "id": "add-the-beaten-yolks",
+          "type": "action",
+          "title": "Add the beaten yolks",
+          "text": "Stir in the well-beaten yolks until the batter is evenly coloured throughout.",
+          "ingredient_refs": [
+            "flour",
+            "baking-powder",
+            "salt",
+            "milk",
+            "egg-yolks"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "add-the-melted-butter",
+          "type": "action",
+          "title": "Add the melted butter",
+          "text": "Add the melted butter and stir it through the batter.",
+          "ingredient_refs": [
+            "flour",
+            "baking-powder",
+            "salt",
+            "milk",
+            "egg-yolks",
+            "butter"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "beat-the-whites",
+          "type": "action",
+          "title": "Beat the whites stiff",
+          "text": "Beat the two egg whites until they are stiff and hold a peak that stands on its own.",
+          "ingredient_refs": [
+            "egg-whites"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:beating-egg-whites-stiff"
+          ],
+          "state_refs": [
+            "state:egg-whites-beaten-stiff"
+          ],
+          "coach_hints": [
+            "Any trace of fat or yolk in the bowl or on the beater keeps whites from stiffening. If they are still loose and bubbly after several minutes, they will not come — start again with a clean dry bowl and fresh whites.",
+            "Stop while they are stiff and still glossy. Beaten past that they go dry and break into curds, and those specks will not fold away.",
+            "Beaten whites slacken and weep within minutes, so fold them in as soon as they are ready rather than letting the bowl stand."
+          ]
+        },
+        {
+          "id": "fold-in-the-whites",
+          "type": "action",
+          "title": "Fold in the whites",
+          "text": "Add the stiffly beaten whites last. Cut down through the batter with the spoon and lift it over them, turning the bowl as you go, until no streaks of white remain.",
+          "ingredient_refs": [
+            "flour",
+            "baking-powder",
+            "salt",
+            "milk",
+            "egg-yolks",
+            "butter",
+            "egg-whites"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:folding-in-beaten-whites"
+          ],
+          "state_refs": [
+            "state:whites-folded-in"
+          ],
+          "coach_hints": [
+            "Stirring or beating here drives out the air you just beat in and the waffles come out flat and heavy — cut, lift, turn the bowl, and do it in as few strokes as will serve.",
+            "Stop the moment the last white streak disappears. A few extra folds cost more lift than a small streak of white ever would."
+          ]
+        },
+        {
+          "id": "grease-the-iron",
+          "type": "action",
+          "title": "Grease the hot iron",
+          "text": "Grease both hot faces of the iron thoroughly before filling it, working the fat into the corners of the pattern.",
+          "ingredient_refs": [
+            "greasing-fat"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:greasing-a-waffle-iron"
+          ],
+          "state_refs": [
+            "state:waffle-iron-hot"
+          ],
+          "coach_hints": [
+            "A new iron is the one that sticks. Grease it more heavily than feels necessary for the first several waffles, and expect to give up the first one to seasoning the pattern.",
+            "If a waffle tears and leaves crust behind, do not scrape the iron cold — bring it back up to heat, wipe it out, and re-grease before the next filling."
+          ]
+        },
+        {
+          "id": "check-the-iron",
+          "type": "checkpoint",
+          "title": "Is the iron hot enough?",
+          "text": "Before filling, confirm the iron is hot through on both faces and freshly greased. Sufficiently heated, it will set the batter fast enough that the iron can be turned almost as soon as it is filled and covered.",
+          "ingredient_refs": [],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:heating-a-waffle-iron"
+          ],
+          "state_refs": [
+            "state:waffle-iron-hot"
+          ],
+          "coach_hints": [
+            "An iron short of heat is the commonest cause of both sticking and pale, limp waffles. If the batter goes in without an immediate hiss, take the iron back over the flame before using any more batter."
+          ]
+        },
+        {
+          "id": "fill-the-iron",
+          "type": "action",
+          "title": "Fill the iron",
+          "text": "Put a tablespoonful of the mixture in each compartment, near the centre of the iron, and cover. The mixture will spread to just fill the iron.",
+          "ingredient_refs": [
+            "flour",
+            "baking-powder",
+            "salt",
+            "milk",
+            "egg-yolks",
+            "butter",
+            "egg-whites"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:filling-a-waffle-iron"
+          ],
+          "state_refs": [],
+          "coach_hints": [
+            "Resist adding more than a spoonful per compartment — the batter spreads on its own, and an overfilled iron pushes batter out at the hinge and glues the halves together."
+          ]
+        },
+        {
+          "id": "turn-the-iron",
+          "type": "action",
+          "title": "Turn the iron",
+          "text": "If the iron is sufficiently heated, turn it almost as soon as it is filled and covered.",
+          "ingredient_refs": [],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": [
+            "Turning late is the mistake here: the batter sets in the lower half and the upper face comes out pale and soft. Turn as soon as the lid is down.",
+            "If batter runs from the seam as you tip the iron, it was either overfilled or not hot enough — correct both before the next one."
+          ]
+        },
+        {
+          "id": "cook-until-golden",
+          "type": "checkpoint",
+          "title": "Cook until browned",
+          "text": "Cook until the waffle is evenly browned and lifts away from the pattern cleanly, then take it out.",
+          "ingredient_refs": [],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [
+            "state:waffle-baked-golden"
+          ],
+          "coach_hints": [
+            "Opening the iron early tears the waffle in half. If it resists as you lift the lid, close it and give it another moment — a finished waffle releases without pulling.",
+            "Steam still driving hard out of the seam means it is not done; wait until that has quieted."
+          ]
+        },
+        {
+          "id": "repeat-with-remaining-batter",
+          "type": "action",
+          "title": "Repeat with the rest of the batter",
+          "text": "Grease the iron again and repeat — a tablespoonful in each compartment near the centre, cover, turn — until the batter is used up.",
+          "ingredient_refs": [
+            "greasing-fat",
+            "flour",
+            "baking-powder",
+            "salt",
+            "milk",
+            "egg-yolks",
+            "butter",
+            "egg-whites"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:greasing-a-waffle-iron",
+            "commons:filling-a-waffle-iron"
+          ],
+          "state_refs": [
+            "state:waffle-iron-hot"
+          ],
+          "coach_hints": [
+            "The iron loses heat with every waffle. If one takes noticeably longer to brown than the last, give the iron a moment back over the flame before filling it again.",
+            "Grease before every filling, not just the first — the batter has little fat in it and the pattern gives it up quickly."
+          ]
+        },
+        {
+          "id": "serve-with-maple-syrup",
+          "type": "action",
+          "title": "Serve",
+          "text": "Serve with maple syrup.",
+          "ingredient_refs": [
+            "maple-syrup"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [],
+          "coach_hints": []
+        }
+      ],
+      "variations": [],
+      "creator_notes": [
+        "In using a new iron, special care must be taken in greasing, or waffles will stick."
+      ]
+    },
+    {
+      "id": "thin-white-sauce",
+      "title": "Thin White Sauce",
+      "story": "",
+      "serves_base": 4,
+      "serves_estimated": true,
+      "time_active_min": 10,
+      "time_total_min": 10,
+      "tags": [
+        "sauce",
+        "white-sauce",
+        "basic-preparation",
+        "stovetop",
+        "quick",
+        "vegetarian"
+      ],
+      "ingredients": [
+        {
+          "id": "butter",
+          "name": "Butter",
+          "qty_canonical": {
+            "mass_g": 28
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tbsp",
+              "amount": 2
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 28
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "flour",
+          "name": "Flour",
+          "qty_canonical": {
+            "mass_g": 11
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tbsp",
+              "amount": 1.5
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 11
+            }
+          },
+          "scaling": "linear",
+          "prep": "mixed with the salt and pepper",
+          "optional": false
+        },
+        {
+          "id": "milk",
+          "name": "Milk",
+          "qty_canonical": {
+            "mass_g": 245,
+            "volume_ml": 240
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "cup",
+              "amount": 1
+            },
+            "metric": {
+              "unit": "ml",
+              "amount": 240
+            }
+          },
+          "scaling": "linear",
+          "prep": "scalded",
+          "optional": false
+        },
+        {
+          "id": "salt",
+          "name": "Salt",
+          "qty_canonical": {
+            "mass_g": 1.5,
+            "volume_ml": 1.25,
+            "salt_type": "fine table salt"
+          },
+          "display_equivalents": {
+            "imperial": {
+              "unit": "tsp",
+              "amount": 0.25
+            },
+            "metric": {
+              "unit": "g",
+              "amount": 1.5
+            }
+          },
+          "scaling": "linear",
+          "optional": false
+        },
+        {
+          "id": "pepper",
+          "name": "Pepper",
+          "qty_canonical": {
+            "mass_g": 0.1
+          },
+          "scaling": "fixed",
+          "optional": false
+        }
+      ],
+      "steps": [
+        {
+          "id": "scald-the-milk",
+          "type": "action",
+          "title": "Scald the milk",
+          "text": "The sauce calls for the milk already scalded, so start there. Heat the milk in a small pan over moderate heat until steam rises and a ring of small bubbles forms around the edge, then take it off before it reaches a boil. Leave it hot while you make the rest.",
+          "ingredient_refs": [
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:scalding-milk"
+          ],
+          "state_refs": [
+            "state:milk-scalded"
+          ],
+          "coach_hints": [
+            "Milk catches on the bottom of the pan long before the top looks hot. Keep the heat moderate, keep it moving, and pull it off the moment the edge rings with bubbles.",
+            "If a skin forms while it stands, lift it off rather than stirring it back in — stirred in, it shows up as rubbery threads in the finished sauce."
+          ]
+        },
+        {
+          "id": "mix-flour-with-seasonings",
+          "type": "action",
+          "title": "Mix the flour with the seasonings",
+          "text": "Stir the flour together with the salt and pepper in a small dish so the seasonings run evenly through it. Have it ready beside the stove — it goes into the butter as soon as the butter bubbles.",
+          "ingredient_refs": [
+            "flour",
+            "salt",
+            "pepper"
+          ],
+          "timer_sec": null,
+          "parallel_ok": true,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:sifting-dry-ingredients"
+          ],
+          "state_refs": [],
+          "coach_hints": []
+        },
+        {
+          "id": "melt-the-butter",
+          "type": "action",
+          "title": "Melt the butter",
+          "text": "Put the butter in a saucepan over moderate heat and stir until it is melted and bubbling.",
+          "ingredient_refs": [
+            "butter"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [],
+          "state_refs": [
+            "state:butter-melted-and-bubbling"
+          ],
+          "coach_hints": [
+            "This is a white sauce — butter taken past pale gold will colour and flavour it. Keep the heat moderate, and if it browns, wipe the pan and start the butter again."
+          ]
+        },
+        {
+          "id": "blend-flour-into-butter",
+          "type": "action",
+          "title": "Stir in the flour and seasonings",
+          "text": "Add the flour mixed with the seasonings to the bubbling butter and stir until thoroughly blended — no dry flour anywhere, the whole of it one smooth paste.",
+          "ingredient_refs": [
+            "butter",
+            "flour",
+            "salt",
+            "pepper"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:blending-a-butter-flour-roux"
+          ],
+          "state_refs": [
+            "state:roux-thoroughly-blended"
+          ],
+          "coach_hints": [
+            "Every lump in a finished white sauce starts here: flour the butter never wetted will not dissolve later. Get the paste uniform before any milk goes in.",
+            "Blend it, don't brown it — keep it moving on moderate heat so the paste stays pale."
+          ]
+        },
+        {
+          "id": "add-milk-gradually",
+          "type": "action",
+          "title": "Pour on the milk, a third at a time",
+          "text": "Pour on the scalded milk gradually, adding about one-third at a time. Stir each addition into the paste until it is well mixed before the next one goes in.",
+          "ingredient_refs": [
+            "butter",
+            "flour",
+            "salt",
+            "pepper",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:adding-liquid-gradually"
+          ],
+          "state_refs": [
+            "state:sauce-well-mixed"
+          ],
+          "coach_hints": [
+            "The first third is the one that lumps — it thickens almost at once, so stir it completely smooth before adding more.",
+            "If lumps appear, switch to a whisk and beat them out while the sauce is still thin; once it thickens they are much harder to break up."
+          ]
+        },
+        {
+          "id": "beat-until-smooth",
+          "type": "checkpoint",
+          "title": "Beat until smooth and glossy",
+          "text": "With all the milk in, beat the sauce until it is smooth and glossy — no lumps, and a clear shine on it as it moves in the pan.",
+          "ingredient_refs": [
+            "butter",
+            "flour",
+            "salt",
+            "pepper",
+            "milk"
+          ],
+          "timer_sec": null,
+          "parallel_ok": false,
+          "media_ref": null,
+          "technique_refs": [
+            "commons:beating-a-sauce-smooth"
+          ],
+          "state_refs": [
+            "state:sauce-smooth-and-glossy"
+          ],
+          "coach_hints": [
+            "Dull and grainy means it isn't beaten enough — keep working it over the heat and the gloss will come up. If a few lumps hold out, pour the sauce through a fine strainer."
+          ]
+        }
+      ],
+      "variations": [
+        {
+          "name": "Wire-whisk method",
+          "description": "If a wire whisk is used, all the scalded milk may be added at once instead of in thirds.",
+          "patch": {
+            "steps.add-milk-gradually.text": "Pour in all the scalded milk at once and beat it into the paste with a wire whisk until well mixed."
+          }
+        }
+      ],
+      "creator_notes": [
+        "The ingredient list calls for the milk already scalded, but the source's method contains no scalding instruction — the scald is folded in here as the first step."
+      ]
+    }
+  ]
+}

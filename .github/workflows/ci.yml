@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      # pack/ has no install of its own: it is a member of the app's workspace.
+      - run: pnpm --dir app install --frozen-lockfile
+      - run: pnpm --dir pack lint
+      - run: pnpm --dir pack typecheck
+      - run: pnpm --dir pack test
+
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - run: pnpm --dir app install --frozen-lockfile
+      - run: pnpm --dir app lint
+      - run: pnpm --dir app exec tsc --noEmit -p .
+      - run: pnpm --dir app run typecheck:scripts
+      # The tests and the build need no database, no keys and no network.
+      - run: pnpm --dir app test:run
+      - run: pnpm --dir app build
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The token is read-only here, so the action can't comment on a pull request.
+          GITLEAKS_ENABLE_COMMENTS: "false"

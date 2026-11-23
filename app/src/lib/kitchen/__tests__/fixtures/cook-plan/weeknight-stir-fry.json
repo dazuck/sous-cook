@@ -1,0 +1,23 @@
+{
+  "description": "A sauce whisked up front plus implied cuts; no hands-off time anywhere, so as-I-go mise must land before the wok.",
+  "prepStyles": [
+    "front-loaded",
+    "implied"
+  ],
+  "recipeFrom": "weeknight-stir-fry",
+  "gold": {
+    "ahead": [],
+    "mise": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      6,
+      8,
+      9,
+      10
+    ],
+    "handsOffSteps": []
+  }
+}

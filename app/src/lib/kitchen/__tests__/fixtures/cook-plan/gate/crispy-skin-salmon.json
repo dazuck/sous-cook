@@ -1,0 +1,161 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "34ff405c9b3efb1d",
+  "recipeHash": "89fd058337cbbc60",
+  "ms": 3903,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "prep-salmon",
+        "kind": "mise",
+        "text": "Score the skin of the salmon fillets and pat completely dry.",
+        "label": "prep salmon",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Salmon"
+      },
+      {
+        "id": "season-salmon",
+        "kind": "cook",
+        "text": "Season the skin generously with flaky sea salt.",
+        "label": "season salmon",
+        "ingredientIdx": [
+          2
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [
+          "prep-salmon"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Salmon"
+      },
+      {
+        "id": "heat-oil",
+        "kind": "cook",
+        "text": "Heat the neutral oil in a stainless pan until shimmering.",
+        "label": "heat oil",
+        "ingredientIdx": [
+          1
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": "until shimmering",
+        "lead": null,
+        "branch": "Salmon"
+      },
+      {
+        "id": "cook-salmon",
+        "kind": "cook",
+        "text": "Lay the salmon skin-side down and press gently; cook until the skin is crisp.",
+        "label": "cook salmon",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "season-salmon",
+          "heat-oil"
+        ],
+        "minutes": {
+          "est": 6,
+          "handsOff": true
+        },
+        "cue": "until the skin is crisp",
+        "lead": null,
+        "branch": "Salmon"
+      },
+      {
+        "id": "prep-salad-veg",
+        "kind": "mise",
+        "text": "Tear the little gem lettuce and thinly slice the watermelon radish.",
+        "label": "prep salad greens",
+        "ingredientIdx": [
+          3,
+          4
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 4,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Salad"
+      },
+      {
+        "id": "slice-avocado",
+        "kind": "mise",
+        "text": "Slice the avocado and arrange it with the greens.",
+        "label": "slice avocado",
+        "ingredientIdx": [
+          5
+        ],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [
+          "prep-salad-veg"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Salad"
+      },
+      {
+        "id": "dress-salad",
+        "kind": "cook",
+        "text": "Dress the salad with the dressing and finish with a squeeze of lemon.",
+        "label": "dress salad",
+        "ingredientIdx": [
+          6,
+          7
+        ],
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [
+          "slice-avocado"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Salad"
+      }
+    ]
+  },
+  "usage": {
+    "calls": 1,
+    "inputTokens": 2629,
+    "outputTokens": 539
+  }
+}

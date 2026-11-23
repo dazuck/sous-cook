@@ -1,0 +1,22 @@
+{
+  "description": "Mise named only in ingredient lines (minced, grated, finely chopped). No ahead: no soak is stated.",
+  "prepStyles": [
+    "implied"
+  ],
+  "recipeFrom": "indian-dal-tadka",
+  "gold": {
+    "ahead": [],
+    "mise": [
+      0,
+      7,
+      8,
+      9,
+      10,
+      13
+    ],
+    "handsOffSteps": [
+      0,
+      5
+    ]
+  }
+}

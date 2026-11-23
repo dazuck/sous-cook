@@ -1,0 +1,16 @@
+{
+  "description": "Sweet potato and apple puree. Stresses very short, single-ingredient steps and a simple two-ingredient blend.",
+  "ingredients": [
+    { "amount": "1", "item": "sweet potato" },
+    { "amount": "1", "item": "apple" },
+    { "amount": "1/4", "unit": "tsp", "item": "cinnamon" },
+    { "amount": "1/2", "unit": "cup", "item": "water" }
+  ],
+  "steps": [
+    "Peel and dice the sweet potato.",
+    "Core and chop the apple.",
+    "Steam the sweet potato and apple until soft, about 15 minutes.",
+    "Blend with the water and a pinch of cinnamon until smooth."
+  ],
+  "golden": [[0], [1], [0, 1], [2, 3]]
+}

@@ -1,0 +1,18 @@
+{
+  "description": "All mise implied by ingredient lines; the pasta boil is the hands-off window.",
+  "prepStyles": [
+    "implied"
+  ],
+  "recipeFrom": "spicy-harissa-pasta",
+  "gold": {
+    "ahead": [],
+    "mise": [
+      3,
+      6,
+      8
+    ],
+    "handsOffSteps": [
+      0
+    ]
+  }
+}

@@ -1,0 +1,692 @@
+{
+  "description": "Chicken pita wraps fixture plan for timetable and cook-view tests. Plan only.",
+  "plan": {
+    "version": 4,
+    "tasks": [
+      {
+        "id": "mince-garlic-chicken",
+        "kind": "ahead",
+        "branch": "Chicken",
+        "label": "mince garlic",
+        "text": "mince garlic",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "lead": "2-6 hours before"
+      },
+      {
+        "id": "mix-marinade",
+        "kind": "ahead",
+        "branch": "Chicken",
+        "label": "mix marinade",
+        "text": "mix marinade",
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [
+          "mince-garlic-chicken"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "lead": "2-6 hours before"
+      },
+      {
+        "id": "slash-chicken",
+        "kind": "ahead",
+        "branch": "Chicken",
+        "label": "slash chicken",
+        "text": "slash chicken",
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "lead": "2-6 hours before"
+      },
+      {
+        "id": "rub-chicken-skin",
+        "kind": "ahead",
+        "branch": "Chicken",
+        "label": "rub chicken skin",
+        "text": "rub chicken skin",
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "mix-marinade",
+          "slash-chicken"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "lead": "2-6 hours before"
+      },
+      {
+        "id": "toss-chicken-marinade",
+        "kind": "ahead",
+        "branch": "Chicken",
+        "label": "toss chicken in marinade",
+        "text": "toss chicken in marinade",
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "rub-chicken-skin"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "lead": "2-6 hours before"
+      },
+      {
+        "id": "refrigerate-chicken",
+        "kind": "ahead",
+        "branch": "Chicken",
+        "label": "marinate chicken",
+        "text": "marinate chicken",
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "toss-chicken-marinade"
+        ],
+        "minutes": {
+          "est": 240,
+          "handsOff": true
+        },
+        "lead": "2-6 hours before"
+      },
+      {
+        "id": "chop-garlic-hummus",
+        "kind": "mise",
+        "branch": "Hummus",
+        "label": "chop garlic",
+        "text": "chop garlic",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "slice-cabbage",
+        "kind": "mise",
+        "branch": "Cabbage Slaw",
+        "label": "slice cabbage",
+        "text": "slice cabbage",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 4,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "slice-cucumbers",
+        "kind": "mise",
+        "branch": "Cucumber Pickles",
+        "label": "slice cucumbers",
+        "text": "slice cucumbers",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "place-chickpeas-saucepan",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "place chickpeas in saucepan",
+        "text": "place chickpeas in saucepan",
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "boil-chickpeas",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "boil chickpeas",
+        "text": "boil chickpeas",
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [
+          "place-chickpeas-saucepan"
+        ],
+        "minutes": {
+          "est": 8,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "simmer-chickpeas",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "simmer chickpeas",
+        "text": "simmer chickpeas",
+        "sourceStep": 7,
+        "implied": false,
+        "needs": [
+          "boil-chickpeas"
+        ],
+        "minutes": {
+          "est": 20,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "drain-chickpeas",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "drain and cool chickpeas",
+        "text": "drain and cool chickpeas",
+        "sourceStep": 8,
+        "implied": false,
+        "needs": [
+          "simmer-chickpeas"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "set-aside-chickpeas",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "set aside chickpeas",
+        "text": "set aside chickpeas",
+        "sourceStep": 9,
+        "implied": false,
+        "needs": [
+          "drain-chickpeas"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "combine-lemon-garlic",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "combine lemon, garlic, salt",
+        "text": "combine lemon, garlic, salt",
+        "sourceStep": 10,
+        "implied": false,
+        "needs": [
+          "chop-garlic-hummus"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "process-and-rest-garlic",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "process and rest garlic mixture",
+        "text": "process and rest garlic mixture",
+        "sourceStep": 11,
+        "implied": false,
+        "needs": [
+          "combine-lemon-garlic"
+        ],
+        "minutes": {
+          "est": 11,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "blend-tahini",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "blend tahini",
+        "text": "blend tahini",
+        "sourceStep": 12,
+        "implied": false,
+        "needs": [
+          "process-and-rest-garlic"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "drizzle-ice-water",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "drizzle in ice water",
+        "text": "drizzle in ice water",
+        "sourceStep": 13,
+        "implied": false,
+        "needs": [
+          "blend-tahini"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "scrape-and-blend-tahini",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "blend until ultra smooth",
+        "text": "blend until ultra smooth",
+        "sourceStep": 14,
+        "implied": false,
+        "needs": [
+          "drizzle-ice-water"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "add-cumin-chickpeas",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "add cumin and chickpeas",
+        "text": "add cumin and chickpeas",
+        "sourceStep": 15,
+        "implied": false,
+        "needs": [
+          "scrape-and-blend-tahini",
+          "set-aside-chickpeas"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "drizzle-olive-oil-hummus",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "drizzle olive oil into hummus",
+        "text": "drizzle olive oil into hummus",
+        "sourceStep": 16,
+        "implied": false,
+        "needs": [
+          "add-cumin-chickpeas"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "blend-hummus-smooth",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "blend hummus super smooth",
+        "text": "blend hummus super smooth",
+        "sourceStep": 17,
+        "implied": false,
+        "needs": [
+          "drizzle-olive-oil-hummus"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "adjust-hummus-water",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "adjust hummus texture with ice water",
+        "text": "adjust hummus texture with ice water",
+        "sourceStep": 18,
+        "implied": false,
+        "needs": [
+          "blend-hummus-smooth"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "season-hummus",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "season hummus to taste",
+        "text": "season hummus to taste",
+        "sourceStep": 19,
+        "implied": false,
+        "needs": [
+          "adjust-hummus-water"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "plate-hummus",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "plate hummus",
+        "text": "plate hummus",
+        "sourceStep": 20,
+        "implied": false,
+        "needs": [
+          "season-hummus"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "set-aside-hummus",
+        "kind": "cook",
+        "branch": "Hummus",
+        "label": "set aside hummus",
+        "text": "set aside hummus",
+        "sourceStep": 21,
+        "implied": false,
+        "needs": [
+          "plate-hummus"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "toss-cabbage-slaw",
+        "kind": "cook",
+        "branch": "Cabbage Slaw",
+        "label": "toss cabbage slaw",
+        "text": "toss cabbage slaw",
+        "sourceStep": 22,
+        "implied": false,
+        "needs": [
+          "slice-cabbage"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "rest-cabbage-slaw",
+        "kind": "cook",
+        "branch": "Cabbage Slaw",
+        "label": "rest cabbage slaw",
+        "text": "rest cabbage slaw",
+        "sourceStep": 23,
+        "implied": false,
+        "needs": [
+          "toss-cabbage-slaw"
+        ],
+        "minutes": {
+          "est": 15,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "toss-cucumber-pickles",
+        "kind": "cook",
+        "branch": "Cucumber Pickles",
+        "label": "toss cucumber pickles",
+        "text": "toss cucumber pickles",
+        "sourceStep": 24,
+        "implied": false,
+        "needs": [
+          "slice-cucumbers"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "rest-cucumber-pickles",
+        "kind": "cook",
+        "branch": "Cucumber Pickles",
+        "label": "rest cucumber pickles",
+        "text": "rest cucumber pickles",
+        "sourceStep": 25,
+        "implied": false,
+        "needs": [
+          "toss-cucumber-pickles"
+        ],
+        "minutes": {
+          "est": 15,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "prep-pita",
+        "kind": "cook",
+        "branch": "Assembly",
+        "label": "prep pita bread",
+        "text": "prep pita bread",
+        "sourceStep": 26,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "slice-tomatoes-herbs",
+        "kind": "cook",
+        "branch": "Assembly",
+        "label": "slice tomatoes and prep herbs",
+        "text": "slice tomatoes and prep herbs",
+        "sourceStep": 27,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 4,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "preheat-oven",
+        "kind": "cook",
+        "branch": "Chicken",
+        "label": "preheat oven",
+        "text": "preheat oven",
+        "sourceStep": 28,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 15,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "arrange-chicken-pans",
+        "kind": "cook",
+        "branch": "Chicken",
+        "label": "arrange chicken on sheet pans",
+        "text": "arrange chicken on sheet pans",
+        "sourceStep": 29,
+        "implied": false,
+        "needs": [
+          "refrigerate-chicken",
+          "preheat-oven"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "roast-chicken",
+        "kind": "cook",
+        "branch": "Chicken",
+        "label": "roast chicken thighs",
+        "text": "roast chicken thighs",
+        "sourceStep": 30,
+        "implied": false,
+        "needs": [
+          "arrange-chicken-pans"
+        ],
+        "minutes": {
+          "est": 38,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "turn-on-broiler",
+        "kind": "cook",
+        "branch": "Chicken",
+        "label": "turn on broiler",
+        "text": "turn on broiler",
+        "sourceStep": 31,
+        "implied": false,
+        "needs": [
+          "roast-chicken"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "position-rack",
+        "kind": "cook",
+        "branch": "Chicken",
+        "label": "position oven rack",
+        "text": "position oven rack",
+        "sourceStep": 32,
+        "implied": false,
+        "needs": [
+          "turn-on-broiler"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "broil-chicken",
+        "kind": "cook",
+        "branch": "Chicken",
+        "label": "broil chicken",
+        "text": "broil chicken",
+        "sourceStep": 33,
+        "implied": false,
+        "needs": [
+          "position-rack"
+        ],
+        "minutes": {
+          "est": 7,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "rest-chicken",
+        "kind": "cook",
+        "branch": "Chicken",
+        "label": "rest chicken",
+        "text": "rest chicken",
+        "sourceStep": 34,
+        "implied": false,
+        "needs": [
+          "broil-chicken"
+        ],
+        "minutes": {
+          "est": 8,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "pull-and-slice-chicken",
+        "kind": "cook",
+        "branch": "Chicken",
+        "label": "slice chicken meat",
+        "text": "slice chicken meat",
+        "sourceStep": 35,
+        "implied": false,
+        "needs": [
+          "rest-chicken"
+        ],
+        "minutes": {
+          "est": 8,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "chop-skin-and-toss",
+        "kind": "cook",
+        "branch": "Chicken",
+        "label": "chop skin and toss with meat",
+        "text": "chop skin and toss with meat",
+        "sourceStep": 36,
+        "implied": false,
+        "needs": [
+          "pull-and-slice-chicken"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "garnish-hummus",
+        "kind": "cook",
+        "branch": "Assembly",
+        "label": "garnish hummus plate",
+        "text": "garnish hummus plate",
+        "sourceStep": 37,
+        "implied": false,
+        "needs": [
+          "set-aside-hummus"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "assemble-and-serve",
+        "kind": "cook",
+        "branch": "Assembly",
+        "label": "assemble and serve",
+        "text": "assemble and serve",
+        "sourceStep": 38,
+        "implied": false,
+        "needs": [
+          "chop-skin-and-toss",
+          "rest-cabbage-slaw",
+          "rest-cucumber-pickles",
+          "prep-pita",
+          "slice-tomatoes-herbs",
+          "garnish-hummus"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        }
+      }
+    ]
+  }
+}

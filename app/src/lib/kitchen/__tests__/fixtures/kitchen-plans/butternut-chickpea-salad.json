@@ -1,0 +1,176 @@
+{
+  "description": "Roasted squash and chickpea salad fixture plan for timetable and cook-view tests. Plan only.",
+  "plan": {
+    "version": 4,
+    "tasks": [
+      {
+        "id": "prep-squash",
+        "kind": "mise",
+        "branch": "Squash",
+        "label": "prep squash",
+        "text": "prep squash",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 8,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "prep-garbanzos",
+        "kind": "mise",
+        "branch": "Garbanzos",
+        "label": "prep garbanzos",
+        "text": "prep garbanzos",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "slice-apple",
+        "kind": "mise",
+        "branch": "Salad",
+        "label": "slice apple",
+        "text": "slice apple",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "slice-onion",
+        "kind": "mise",
+        "branch": "Salad",
+        "label": "slice onion",
+        "text": "slice onion",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "tear-lettuce",
+        "kind": "mise",
+        "branch": "Salad",
+        "label": "tear lettuce",
+        "text": "tear lettuce",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "slice-chile",
+        "kind": "mise",
+        "branch": "Salad",
+        "label": "slice chile",
+        "text": "slice chile",
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "air-fry-garbanzos",
+        "kind": "cook",
+        "branch": "Garbanzos",
+        "label": "air fry garbanzos",
+        "text": "air fry garbanzos",
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [
+          "prep-garbanzos"
+        ],
+        "minutes": {
+          "est": 12,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "air-fry-squash",
+        "kind": "cook",
+        "branch": "Squash",
+        "label": "air fry squash",
+        "text": "air fry squash",
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [
+          "prep-squash"
+        ],
+        "minutes": {
+          "est": 32,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "soak-onion",
+        "kind": "mise",
+        "branch": "Salad",
+        "label": "soak onion",
+        "text": "soak onion",
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "slice-onion"
+        ],
+        "minutes": {
+          "est": 10,
+          "handsOff": true
+        }
+      },
+      {
+        "id": "make-dressing",
+        "kind": "mise",
+        "branch": "Dressing",
+        "label": "make dressing",
+        "text": "make dressing",
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        }
+      },
+      {
+        "id": "assemble-salad",
+        "kind": "cook",
+        "branch": "Salad",
+        "label": "assemble salad",
+        "text": "assemble salad",
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "tear-lettuce",
+          "slice-apple",
+          "air-fry-squash",
+          "air-fry-garbanzos",
+          "soak-onion",
+          "make-dressing",
+          "slice-chile"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        }
+      }
+    ]
+  }
+}

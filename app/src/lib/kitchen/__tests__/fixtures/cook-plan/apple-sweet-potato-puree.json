@@ -1,0 +1,17 @@
+{
+  "description": "Two explicit mise steps up front, then a 15-minute steam. The simplest front-loaded shape.",
+  "prepStyles": [
+    "front-loaded"
+  ],
+  "recipeFrom": "apple-sweet-potato-puree",
+  "gold": {
+    "ahead": [],
+    "mise": [
+      0,
+      1
+    ],
+    "handsOffSteps": [
+      2
+    ]
+  }
+}

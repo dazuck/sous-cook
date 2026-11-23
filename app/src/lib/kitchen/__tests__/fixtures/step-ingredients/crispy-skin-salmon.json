@@ -1,0 +1,23 @@
+{
+  "description": "Crispy-skin salmon with a dressed salad (the repro case). Stresses a multi-word component name referenced abstractly ('the dressing' for 'Base B Vinaigrette') and skin-on / hyphenated names.",
+  "ingredients": [
+    { "amount": "4", "item": "skin-on salmon fillets" },
+    { "amount": "2", "unit": "tbsp", "item": "neutral oil" },
+    { "item": "flaky sea salt" },
+    { "amount": "1", "unit": "head", "item": "little gem lettuce" },
+    { "amount": "1", "item": "watermelon radish" },
+    { "amount": "1", "item": "avocado" },
+    { "amount": "2", "unit": "tbsp", "item": "Base B Vinaigrette" },
+    { "amount": "1", "item": "lemon" }
+  ],
+  "steps": [
+    "Score the skin of the salmon fillets and pat completely dry.",
+    "Season the skin generously with flaky sea salt.",
+    "Heat the neutral oil in a stainless pan until shimmering.",
+    "Lay the salmon skin-side down and press gently; cook until the skin is crisp.",
+    "Meanwhile, tear the little gem lettuce and thinly slice the watermelon radish.",
+    "Slice the avocado and arrange it with the greens.",
+    "Dress the salad with the dressing and finish with a squeeze of lemon."
+  ],
+  "golden": [[0], [2], [1], [0], [3, 4], [5], [6, 7]]
+}

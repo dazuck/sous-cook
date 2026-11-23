@@ -1,0 +1,8 @@
+packages:
+  - .
+  # The shared pack schema (slice B3). Installed only from here:
+  # `pnpm --dir app install` links it and gives pack/ its own node_modules.
+  - ../pack
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver

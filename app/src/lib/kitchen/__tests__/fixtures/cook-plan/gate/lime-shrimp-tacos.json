@@ -1,0 +1,216 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "34ff405c9b3efb1d",
+  "recipeHash": "11ed3344a32ab64f",
+  "ms": 3963,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "peel-devein-shrimp",
+        "kind": "mise",
+        "text": "Peel and devein the shrimp.",
+        "label": "prep shrimp",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Tacos"
+      },
+      {
+        "id": "shred-cabbage",
+        "kind": "mise",
+        "text": "Shred the cabbage.",
+        "label": "shred cabbage",
+        "ingredientIdx": [
+          9
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Tacos"
+      },
+      {
+        "id": "pickle-onion",
+        "kind": "mise",
+        "text": "Thinly slice the red onion and put it in a jar with the vinegar, sugar, and a pinch of the salt. Let it stand for 20 minutes.",
+        "label": "pickle onion",
+        "ingredientIdx": [
+          5,
+          6,
+          7,
+          8
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 22,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Tacos"
+      },
+      {
+        "id": "prep-citrus-garlic",
+        "kind": "mise",
+        "text": "Mince the garlic, zest and juice one lime, and cut the other into wedges.",
+        "label": "prep citrus and garlic",
+        "ingredientIdx": [
+          1,
+          4
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 4,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Tacos"
+      },
+      {
+        "id": "marinate-shrimp",
+        "kind": "mise",
+        "text": "Toss the shrimp with the lime zest and juice, the garlic, chili powder, half the oil, and the rest of the salt, and leave to marinate for 15 minutes.",
+        "label": "marinate shrimp",
+        "ingredientIdx": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          8
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "peel-devein-shrimp",
+          "prep-citrus-garlic"
+        ],
+        "minutes": {
+          "est": 17,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Tacos"
+      },
+      {
+        "id": "slice-avocado",
+        "kind": "mise",
+        "text": "Slice the avocado.",
+        "label": "slice avocado",
+        "ingredientIdx": [
+          10
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Tacos"
+      },
+      {
+        "id": "cook-shrimp",
+        "kind": "cook",
+        "text": "Heat the remaining oil in a large skillet over high heat and cook the shrimp for 2 minutes per side, until pink.",
+        "label": "cook shrimp",
+        "ingredientIdx": [
+          0,
+          2
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "marinate-shrimp"
+        ],
+        "minutes": {
+          "est": 6,
+          "handsOff": true
+        },
+        "cue": "until pink",
+        "lead": null,
+        "branch": "Tacos"
+      },
+      {
+        "id": "warm-tortillas",
+        "kind": "cook",
+        "text": "Warm the tortillas in a dry pan for 30 seconds a side.",
+        "label": "warm tortillas",
+        "ingredientIdx": [
+          11
+        ],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Tacos"
+      },
+      {
+        "id": "assemble-tacos",
+        "kind": "cook",
+        "text": "Fill the tortillas with cabbage, shrimp, avocado, pickled onion, and cilantro, and serve with the lime wedges.",
+        "label": "assemble tacos",
+        "ingredientIdx": [
+          0,
+          1,
+          5,
+          9,
+          10,
+          11,
+          12
+        ],
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [
+          "shred-cabbage",
+          "pickle-onion",
+          "prep-citrus-garlic",
+          "slice-avocado",
+          "cook-shrimp",
+          "warm-tortillas"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Tacos"
+      }
+    ]
+  },
+  "usage": {
+    "calls": 1,
+    "inputTokens": 2697,
+    "outputTokens": 832
+  }
+}

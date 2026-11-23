@@ -1,0 +1,204 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "34ff405c9b3efb1d",
+  "recipeHash": "af2e0edc8339e208",
+  "ms": 3804,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "marinate-yogurt-mix",
+        "kind": "ahead",
+        "text": "Stir the yogurt, grated garlic, garam masala, turmeric, the juice of the lemon, and most of the salt together in a large bowl.",
+        "label": "mix marinade",
+        "ingredientIdx": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": "at least 4 hours",
+        "branch": "Chicken"
+      },
+      {
+        "id": "slash-marinate-chicken",
+        "kind": "ahead",
+        "text": "Slash each chicken thigh twice to the bone, add to the bowl, and turn to coat. Cover and marinate in the fridge for at least 4 hours, or overnight.",
+        "label": "marinate chicken",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [
+          "marinate-yogurt-mix"
+        ],
+        "minutes": {
+          "est": 245,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": "at least 4 hours",
+        "branch": "Chicken"
+      },
+      {
+        "id": "preheat-oven",
+        "kind": "cook",
+        "text": "Heat the oven to 220C (425F) and line a roasting tray with foil.",
+        "label": "preheat oven",
+        "ingredientIdx": [],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 10,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Chicken"
+      },
+      {
+        "id": "roast-chicken",
+        "kind": "cook",
+        "text": "Lay the chicken skin-side up on the tray, drizzle with the oil, and roast for 35 to 40 minutes, until charred at the edges.",
+        "label": "roast chicken",
+        "ingredientIdx": [
+          11
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "slash-marinate-chicken",
+          "preheat-oven"
+        ],
+        "minutes": {
+          "est": 40,
+          "handsOff": true
+        },
+        "cue": "until charred at the edges",
+        "lead": null,
+        "branch": "Chicken"
+      },
+      {
+        "id": "grate-cucumber",
+        "kind": "mise",
+        "text": "Grate the cucumber and squeeze out the liquid.",
+        "label": "grate cucumber",
+        "ingredientIdx": [
+          7
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Raita"
+      },
+      {
+        "id": "chop-mint",
+        "kind": "mise",
+        "text": "Finely chop the mint.",
+        "label": "chop mint",
+        "ingredientIdx": [
+          9
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Raita"
+      },
+      {
+        "id": "mix-raita",
+        "kind": "mise",
+        "text": "Stir the mint into the Greek yogurt with the cucumber and the rest of the salt.",
+        "label": "make raita",
+        "ingredientIdx": [
+          6,
+          7,
+          8,
+          9
+        ],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [
+          "grate-cucumber",
+          "chop-mint"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Raita"
+      },
+      {
+        "id": "slice-onion",
+        "kind": "mise",
+        "text": "Slice the red onion into thin rings.",
+        "label": "slice onion",
+        "ingredientIdx": [
+          10
+        ],
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "rest-and-serve",
+        "kind": "cook",
+        "text": "Rest the chicken for 5 minutes, then serve with the raita and onion.",
+        "label": "rest and serve",
+        "ingredientIdx": [],
+        "sourceStep": 7,
+        "implied": false,
+        "needs": [
+          "roast-chicken",
+          "mix-raita",
+          "slice-onion"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      }
+    ]
+  },
+  "usage": {
+    "calls": 1,
+    "inputTokens": 2715,
+    "outputTokens": 810
+  }
+}

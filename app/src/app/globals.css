@@ -1,0 +1,177 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+/* Sous DS v1.13 (design/DESIGN_SYSTEM.md): the tokens as written, and the
+ * vendored faces. Every screen wears them; this file only maps them to
+ * Tailwind utilities and sets the page's base. */
+@import "../styles/tokens.css";
+@import "../styles/fonts.css";
+
+/* Press-in (P66, DS §3): sand shows at once on pointer-down and fades out
+ * over the control's own 320 ms on release. `press-in.ts` marks the pressed
+ * control the instant the pointer lands (`:active` alone waits on touch, and
+ * stays on while a pointer is dragged), and every `active:` utility answers
+ * to that mark. */
+@custom-variant active (&:is([data-pressed]));
+
+@theme inline {
+  /* Un-classed text lands in the DS's Figtree (tokens.css). */
+  --font-sans: var(--font-text);
+
+  /* Sous DS colours (tokens.css) as utilities: bg-paper, text-ink, ... */
+  --color-ground: var(--ground);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-sand: var(--sand);
+  --color-ember: var(--ember);
+  --color-ember-700: var(--ember-700);
+  --color-herb: var(--herb);
+  /* The voice dot's breath and its line's fade (Player screens.css). */
+  --animate-dot-breathe: dot-breathe var(--dur-breathe) var(--ease) infinite;
+  --animate-dot-in: dot-in var(--dur-step) var(--ease);
+
+  @keyframes dot-breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  @keyframes dot-in {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+}
+
+/* Scrollbars in sand (DS §1). */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--sand);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-soft);
+}
+
+/* Hidden scrollbar utility */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Selection in ink, paper text: it shows on paper and on sand alike, where
+   sand on sand would vanish in a field or a card. */
+::selection {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* Pull-to-refresh is off on the cook route (N3, N7). */
+html.cook-route {
+  overscroll-behavior-y: none;
+}
+
+/* The cook view's one left edge (components/kitchen/cook-edge.ts), which the
+   hub's borrowed screens share. The same on every recipe: the foot has a
+   band of its own (DS §5, the foot), so no gutters are kept for it. */
+.cook-edge {
+  --edge: 24px;
+}
+
+/* A timer's last ten seconds grow from the digits' own left edge (to the
+   step's size in the meta, a little in the well: `--final-scale`) and pulse
+   once a second in colour, ember to ember-700 (DS §3). A finished one's
+   "Done" pulses the same, with a small swell, until it is stopped (DS §1:
+   danger is ember plus motion). Never by opacity (DS §1). Under reduced
+   motion the final ten still grow, at once, and nothing pulses. */
+@keyframes timer-pulse {
+  0%,
+  100% {
+    color: var(--ember);
+  }
+  50% {
+    color: var(--ember-700);
+  }
+}
+@keyframes timer-alarm {
+  0%,
+  100% {
+    color: var(--ember);
+    transform: scale(1);
+  }
+  50% {
+    color: var(--ember-700);
+    transform: scale(1.06);
+  }
+}
+/* The last ten grow (any clock); only an ember clock beats in colour
+   (`timer-beat`), so an ink clock grows and stays ink (DS §5, §1). Two
+   classes, not a utility override: these rules sit outside Tailwind's
+   layers and would beat an `[animation:none]` (B5a verify, 11790c5). */
+.timer-pulse {
+  display: inline-block;
+  transform-origin: 0% 60%;
+  transform: scale(var(--final-scale, 1.45));
+  transition: transform var(--dur-step) var(--ease);
+}
+.timer-beat {
+  animation: timer-pulse var(--dur-pulse) var(--ease) infinite;
+}
+.timer-alarm {
+  display: inline-block;
+  transform-origin: 0% 60%;
+  animation: timer-alarm var(--dur-pulse) var(--ease) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .timer-pulse {
+    transition: none;
+  }
+  .timer-beat {
+    animation: none;
+  }
+  .timer-alarm {
+    animation: none;
+  }
+}
+/* The press lands with no transition, whatever the control's own fade is: the
+ * pressed control, its pseudo-elements and what it holds. Unlayered, so it
+ * beats the utilities' `duration-[320ms]`. On release the rule stops matching
+ * and the control's own 320 ms colour fade on `--ease` is the fade out. A
+ * press that turns out to be a scroll clears with `data-press-snap`, the same
+ * no-transition for two frames (press-in.ts). */
+[data-pressed],
+[data-pressed]::before,
+[data-pressed]::after,
+[data-pressed] *,
+[data-press-snap],
+[data-press-snap]::before,
+[data-press-snap]::after,
+[data-press-snap] * {
+  transition-duration: 0s;
+}
+@media (width >= 48rem) {
+  .cook-edge {
+    --edge: calc(44 * var(--cpx));
+  }
+}

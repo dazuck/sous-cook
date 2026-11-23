@@ -1,0 +1,100 @@
+{
+  "description": "Waits under 30 minutes (a 20-minute quick pickle, a 15-minute marinade) are mise with hands-off time, not ahead. Heavy front-loaded mise.",
+  "prepStyles": [
+    "front-loaded"
+  ],
+  "recipe": {
+    "ingredients": [
+      {
+        "amount": "1",
+        "unit": "lb",
+        "item": "shrimp, peeled and deveined"
+      },
+      {
+        "amount": "2",
+        "item": "limes"
+      },
+      {
+        "amount": "2",
+        "unit": "tbsp",
+        "item": "olive oil"
+      },
+      {
+        "amount": "1",
+        "unit": "tsp",
+        "item": "chili powder"
+      },
+      {
+        "amount": "2",
+        "unit": "cloves",
+        "item": "garlic"
+      },
+      {
+        "amount": "1",
+        "item": "red onion"
+      },
+      {
+        "amount": "1/2",
+        "unit": "cup",
+        "item": "cider vinegar"
+      },
+      {
+        "amount": "1",
+        "unit": "tsp",
+        "item": "sugar"
+      },
+      {
+        "amount": "1",
+        "unit": "tsp",
+        "item": "salt"
+      },
+      {
+        "amount": "2",
+        "unit": "cups",
+        "item": "shredded cabbage"
+      },
+      {
+        "amount": "1",
+        "item": "avocado"
+      },
+      {
+        "amount": "8",
+        "item": "corn tortillas"
+      },
+      {
+        "amount": "1/4",
+        "unit": "cup",
+        "item": "cilantro leaves"
+      }
+    ],
+    "steps": [
+      "Thinly slice the red onion and put it in a jar with the vinegar, sugar, and a pinch of the salt. Let it stand for 20 minutes.",
+      "Mince the garlic, zest and juice one lime, and cut the other into wedges.",
+      "Toss the shrimp with the lime zest and juice, the garlic, chili powder, half the oil, and the rest of the salt, and leave to marinate for 15 minutes.",
+      "Slice the avocado.",
+      "Heat the remaining oil in a large skillet over high heat and cook the shrimp for 2 minutes per side, until pink.",
+      "Warm the tortillas in a dry pan for 30 seconds a side.",
+      "Fill the tortillas with cabbage, shrimp, avocado, pickled onion, and cilantro, and serve with the lime wedges."
+    ]
+  },
+  "gold": {
+    "ahead": [],
+    "mise": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "handsOffSteps": [
+      0,
+      2
+    ]
+  }
+}

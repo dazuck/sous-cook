@@ -1,0 +1,19 @@
+{
+  "description": "Two components with long mid-cook waits (poach, soak, broil, simmer), none of them ahead. Almost no mise.",
+  "prepStyles": [
+    "implied"
+  ],
+  "recipeFrom": "multi-component-mole",
+  "gold": {
+    "ahead": [],
+    "mise": [
+      19
+    ],
+    "handsOffSteps": [
+      0,
+      2,
+      5,
+      8
+    ]
+  }
+}

@@ -1,0 +1,1314 @@
+"use client";
+
+/**
+ * The Recipe Opening (R4 two-column Opening: `Get out` + `The flow` in `2..6`
+ * natural phases with a movable `--sand` prep capsule) and the Level 2
+ * Mid-Cook Phase Outline (`[data-phase-outline]`).
+ *
+ * - Deck 1 & Deck 2 on the Opening use `ov.opening` geometry so Back, the
+ *   recipe title, the voice dot / timer well / `Start` controls, `More`,
+ *   `hands-on` minutes, and `Prep first | As I go` with both total times
+ *   never collide at any viewport or timer count.
+ * - Below Deck 2 on the Opening sits the two-column body:
+ *   - Left column (`[data-get-out]`): `Equipment`, `Fridge & counter`, and
+ *     `Pantry & spices` rendered as atomic inline-block items (`·` separated,
+ *     zero `"and N more"` truncation) with a `Show amounts` toggle.
+ *   - Right column (`[data-opening-flow]`): optional `--sand` `Ahead` callout
+ *     with `"Missed it? Ask Sous"`, followed by `2..6` numbered phases.
+ *     Toggling `Prep first` ↔ `As I go` FLIP-animates `[data-movable-prep]`
+ *     and `[data-phase-row]` on `cubic-bezier(0.32, 0.72, 0, 1)`.
+ *   - In portrait (DS v1.52) the columns stack: `Get out` at the body's full
+ *     width over a hairline, the flow at full width under it, every word
+ *     whole (wrapped, never cut with an ellipsis). Which of the flow's
+ *     optional lines show is fitted on the real fonts (`stackShedOrder`);
+ *     `Get out`'s heads run in before their lists only as the last resort
+ *     (`stackRung`).
+ * - At Level 2 mid-cook (`ov.whole`), the header (`Back`, title, time-to-table,
+ *   `Whole recipe` ghost, or `ReadBar` when a phase/step is tapped) frames
+ *   `[data-phase-outline]`, a scannable single-line list of the `2..6` phases
+ *   (`✓` / `done`, active `--ember-700` with `min left`, and upcoming phases).
+ */
+
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
+import Link from "next/link";
+import { prepWords } from "@/lib/kitchen/cook-overview";
+import { buildCookPhases, type CookPhaseRow } from "@/lib/kitchen/cook-phases";
+import type { CookPlan, PrepMode } from "@/lib/kitchen/cook-plan";
+import type { Strip } from "@/lib/kitchen/cook-strip";
+import { COOK_COPY, type CookState, type PrepAheadGroup } from "@/lib/kitchen/cook-view";
+import { buildGetOut, type GetOutItem as CategorizedGetOutItem } from "@/lib/kitchen/get-out";
+import type { StoredIngredientLines } from "@/lib/kitchen/ingredient-display";
+import type { OverviewPlace } from "@/lib/kitchen/overview-place";
+import {
+  fmtMinutes,
+  fmtTotal,
+  soonerLabelX,
+  soonerMinutes,
+  type GetOutItem,
+} from "@/lib/kitchen/timetable-layout";
+
+/** One curve (SPEC §11): geometry 420 ms, opacity in 280 ms. */
+const EASE = "cubic-bezier(0.32,0.72,0,1)";
+const MOVE_MS = 420;
+/** How long a prep mode's marks glide to their new minutes (SPEC §11). */
+export const TIMETABLE_MOVE_MS = MOVE_MS;
+const IN_MS = 280;
+/** The old serve line's ghost: held 1.9 s, then out over 600 ms. */
+const SOONER_HOLD_MS = 1900;
+const SOONER_FADE_MS = 600;
+const FOCUS = "outline-none focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ink";
+
+export interface TimetableProps {
+  ov: OverviewPlace;
+  rootRef: Ref<HTMLDivElement>;
+  strip: Strip;
+  opening: boolean;
+  /** The level is settled here: its parts take focus. */
+  live: boolean;
+  readMark: string | null;
+  onRead: (key: string | null) => void;
+  /** The read's Go: to the read step's screen, or to Prep. */
+  onGo: (screen: number) => void;
+  onWhole: () => void;
+  /** Back to the step (level 2's back). */
+  onClose: () => void;
+  onMode?: (mode: PrepMode) => void;
+  getOut: readonly GetOutItem[];
+  scaleNote: string | null;
+  /** The read step's words in full, for a screen reader (the header may cut them). */
+  readText: string | null;
+  /**
+   * On the cook screen: the sheet draws the Paper and the progress line (the last track, `hide`),
+   * and the marks grow from the line, `growFrom` cpx down the drawing (T3).
+   */
+  onSheet?: { growFrom: number; hide: readonly string[] } | null;
+  /** Plan and state for building R4 phases and categorized Get Out. */
+  plan?: CookPlan | null;
+  state?: CookState;
+  ingredients?: StoredIngredientLines;
+  steps?: readonly string[];
+  onAskAhead?: (group: PrepAheadGroup) => void;
+}
+
+interface Anim {
+  id: number;
+  from: OverviewPlace;
+  /** What switching to As I go saved, when it ends sooner. */
+  sooner: { x: number; y: number; h: number; label: string; labelX: number; labelY: number } | null;
+}
+
+const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function soonerOf(from: OverviewPlace, to: OverviewPlace, measure: (s: string) => number): Anim["sooner"] {
+  const saved = soonerMinutes(from.timetable.total, to.timetable.total);
+  if (saved <= 0) return null;
+  const a = from.drawing.marks.find((m) => m.role === "serve");
+  const b = to.drawing.marks.find((m) => m.role === "serve");
+  const label = COOK_COPY.sooner(fmtMinutes(saved));
+  const w = measure(label);
+  const chart = (to.opening ?? to.whole)?.chart;
+  const right = chart ? chart.x + chart.w : Infinity;
+  const ax = a?.x ?? (chart ? chart.x + chart.w - 40 : 800);
+  const bx = b?.x ?? Math.max(100, ax - 80);
+  const ay = a?.y ?? (chart ? chart.y + 8 : 160);
+  const ah = a?.h ?? 40;
+  return { x: ax + 0.5, y: ay, h: ah, label, labelX: soonerLabelX(ax, bx, w, right), labelY: ay + ah / 2 - 14 };
+}
+
+let soonerCtx: CanvasRenderingContext2D | null | undefined;
+function measureSooner(s: string): number {
+  if (soonerCtx === undefined) soonerCtx = typeof document !== "undefined" ? document.createElement("canvas").getContext("2d") : null;
+  if (!soonerCtx) return s.length * 11;
+  soonerCtx.font = "600 22px Figtree";
+  return soonerCtx.measureText(s).width;
+}
+
+/**
+ * The order the portrait opening's optional lines give way when its stack is taller than its body
+ * (DS v1.52). Phase summaries go first: those of phases with another line of their own before those
+ * without, later phases before earlier. Then the hands-off times, the shortest first, a phase's
+ * hands-off window and the time left beside its Meanwhile alike, so the longest is the last to go.
+ * The movable capsule and Meanwhile's prep never give way.
+ */
+function stackShedOrder(phases: readonly CookPhaseRow[]): string[] {
+  const hasWindow = (p: CookPhaseRow) => p.passiveWindow !== null && p.meanwhile === null;
+  const hasOther = (p: CookPhaseRow) => p.movable !== null || p.meanwhile !== null || hasWindow(p);
+  const summaries = phases.filter((p) => p.summary);
+  const handsOff = [
+    ...phases.filter(hasWindow).map((p) => ({ id: `window:${p.key}`, minutes: p.passiveWindow!.minutes })),
+    ...phases
+      .filter((p) => p.meanwhile?.remainingLabel)
+      .map((p) => ({ id: `remaining:${p.key}`, minutes: p.meanwhile!.remainingFreeMinutes })),
+  ].sort((x, y) => x.minutes - y.minutes);
+  return [
+    ...summaries.filter(hasOther).reverse().map((p) => `summary:${p.key}`),
+    ...summaries.filter((p) => !hasOther(p)).reverse().map((p) => `summary:${p.key}`),
+    ...handsOff.map((h) => h.id),
+  ];
+}
+
+/**
+ * One step of the portrait opening's fit (DS v1.52): its row spacing, whether Get out's group heads
+ * run in beside their lists, and how many of `stackShedOrder`'s n `lines` have given way. Step 0 is every
+ * line at the loose spacing; steps 1..1+n the tight spacing with 0..n lines given way, Get out as the
+ * mocks draw it (each head over its list); then, only when that still runs past the body and there is
+ * a Get out, steps 2+n..2+2n run the heads in, with every line back and given way again from the first.
+ */
+function stackRung(step: number, lines: number, hasGetOut: boolean) {
+  const runIn = hasGetOut && step > 1 + lines;
+  return { tight: step > 0, runIn, shed: runIn ? step - 2 - lines : Math.max(0, step - 1) };
+}
+
+export function Timetable(props: TimetableProps) {
+  const {
+    ov,
+    rootRef,
+    strip,
+    opening,
+    live,
+    readMark,
+    onRead,
+    onGo,
+    onWhole,
+    onClose,
+    onMode,
+    getOut,
+    scaleNote,
+    readText,
+    onSheet = null,
+    plan = null,
+    state,
+    ingredients,
+    steps,
+    onAskAhead,
+  } = props;
+
+  const [showAmounts, setShowAmounts] = useState(false);
+
+  /** The words and the header: in after the marks have grown (the sheet's `--words-op`). */
+  const wordsOp = "var(--words-op, 1)";
+  const c = ov.c;
+  const d = ov.drawing;
+  const tab = live ? 0 : -1;
+  const px = (v: number) => v * c;
+
+  // Build categorized Get Out model (Equipment, Fridge & counter, Pantry & spices)
+  const getOutModel = useMemo(() => {
+    if (ingredients && ingredients.length > 0) {
+      return buildGetOut({
+        ingredients,
+        steps: steps ?? [],
+        taskTexts: plan?.tasks.map((t) => t.text),
+      });
+    }
+    return {
+      equipment: [] as string[],
+      fridge: getOut.map<CategorizedGetOutItem>((g) => ({
+        index: g.index,
+        key: `${g.index}:${g.name}`,
+        bare: g.name,
+        withAmount: g.amount ? `${g.amount} ${g.name}` : g.name,
+        amount: g.amount,
+      })),
+      pantry: [] as CategorizedGetOutItem[],
+    };
+  }, [ingredients, steps, plan, getOut]);
+
+  const stripMarks = strip.marks;
+  const activeTaskId = useMemo(() => {
+    if (!plan || opening) return null;
+    const inHand = stripMarks.find((m) => m.state === "in-hand");
+    return inHand?.tasks[0] ?? null;
+  }, [plan, opening, stripMarks]);
+
+  const phasesModel = useMemo(() => {
+    if (!plan) return null;
+    const effectiveTicked = opening ? (state?.ticked ?? new Set<string>()) : new Set<string>();
+    return buildCookPhases(
+      plan,
+      ov.timetable.mode,
+      effectiveTicked,
+      opening ? 0 : strip.now,
+      activeTaskId,
+    );
+  }, [plan, ov.timetable.mode, state?.ticked, opening, strip.now, activeTaskId]);
+
+  const phaseMarksMap = useMemo(() => {
+    const map = new Map<string, (typeof stripMarks)[number][]>();
+    if (!phasesModel) return map;
+    const cookPhases = phasesModel.phases.filter((p) => p.kind === "cook");
+    for (const p of cookPhases) map.set(p.key, []);
+    if (cookPhases.length === 0) return map;
+    for (const m of stripMarks) {
+      if (m.key === "prep") continue;
+      const target =
+        cookPhases.find((p) => m.tasks.some((id) => p.firstStepTaskIds.includes(id))) ??
+        cookPhases[cookPhases.length - 1];
+      map.get(target.key)!.push(m);
+    }
+    return map;
+  }, [phasesModel, stripMarks]);
+
+  // A prep mode chosen moves the capsule and phases (FLIP): track mode switches and interruptions.
+  const [shown, setShown] = useState<{ ov: OverviewPlace; anim: Anim | null; n: number; snap: number }>({
+    ov,
+    anim: null,
+    n: 0,
+    snap: 0,
+  });
+  if (shown.ov !== ov) {
+    const prev = shown.ov;
+    const switched =
+      prev.timetable.mode !== ov.timetable.mode &&
+      prev.c === c &&
+      (prev.opening === null) === (ov.opening === null) &&
+      prev.sheetBottom === ov.sheetBottom &&
+      !reduced();
+    const n = switched ? shown.n + 1 : shown.n;
+    const snap = !switched && shown.anim ? shown.snap + 1 : shown.snap;
+    setShown({
+      ov,
+      n,
+      anim: switched ? { id: n, from: prev, sooner: soonerOf(prev, ov, measureSooner) } : null,
+      snap,
+    });
+  }
+  const anim = shown.anim;
+  useEffect(() => {
+    if (!anim) return;
+    const t = window.setTimeout(
+      () => setShown((s) => (s.anim?.id === anim.id ? { ...s, anim: null } : s)),
+      SOONER_HOLD_MS + SOONER_FADE_MS + 100,
+    );
+    return () => window.clearTimeout(t);
+  }, [anim]);
+
+  const rootEl = useRef<HTMLDivElement | null>(null);
+  const lastFlipRects = useRef<Map<string, DOMRect>>(new Map());
+  const lastAnimId = useRef<number>(-1);
+  const setRoot = useCallback(
+    (el: HTMLDivElement | null) => {
+      rootEl.current = el;
+      if (typeof rootRef === "function") rootRef(el);
+      else if (rootRef && "current" in rootRef) Object.assign(rootRef, { current: el });
+    },
+    [rootRef],
+  );
+
+  // A switch ended early (resize, font load, rotation): finish running animations immediately.
+  useLayoutEffect(() => {
+    if (!shown.snap) return;
+    const root = rootEl.current;
+    for (const a of root?.getAnimations({ subtree: true }) ?? []) {
+      if (a.effect?.getComputedTiming().endTime !== Infinity) a.finish();
+    }
+    if (root) {
+      const nextRects = new Map<string, DOMRect>();
+      for (const el of root.querySelectorAll<HTMLElement>("[data-flip-id]")) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) nextRects.set(el.dataset.flipId!, r);
+      }
+      lastFlipRects.current = nextRects;
+    }
+  }, [shown.snap]);
+
+  // The opening in portrait (DS v1.52): Get out stacks over the flow and no word is cut, so how the
+  // flow sits is fitted on the real fonts rather than by arithmetic. Step 0 shows every line at the
+  // loose spacing; step 1 the same at landscape's tight spacing; each step after gives one optional
+  // line way (`stackShedOrder`); past the last, Get out's heads run in beside their lists and the lines
+  // come back to give way again (`stackRung`), until the stack stands inside its body, or there is
+  // nothing left to try and the body scrolls (§6 Frame geometry). A fit holds for the inputs it was
+  // made on; new inputs start again from step 0. Each step re-renders before paint, so only the fit
+  // is ever seen. Until the last step still runs past it, the body clips rather than scrolls: a row
+  // mid-glide past its edge never brings a scrollbar in to reflow the words (round 2 review).
+  const phases = phasesModel?.phases ?? [];
+  const stacked = ov.opening !== null && ov.sheetBottom > (ov.opening.chart.w + 2 * ov.opening.chart.x) * c;
+  const shedOrder = stacked ? stackShedOrder(phases) : [];
+  const hasGetOut = getOutModel.equipment.length > 0 || getOutModel.fridge.length > 0 || getOutModel.pantry.length > 0;
+  const lastStep = 1 + shedOrder.length + (hasGetOut ? 1 + shedOrder.length : 0);
+  const fitInputs = useMemo<readonly unknown[]>(
+    () => [ov, showAmounts, scaleNote, phasesModel, getOutModel],
+    [ov, showAmounts, scaleNote, phasesModel, getOutModel],
+  );
+  const [stackFit, setStackFit] = useState<{ inputs: readonly unknown[]; step: number; scrolls: boolean } | null>(null);
+  const fitNow = stackFit !== null && stackFit.inputs === fitInputs ? stackFit : null;
+  const stackStep = fitNow?.step ?? 0;
+  /** The fit has run out of steps and the stack still runs past its body: only now may the body scroll. */
+  const stackScrolls = fitNow?.scrolls ?? false;
+  const openingBodyRef = useRef<HTMLDivElement | null>(null);
+  const openingFlowRef = useRef<HTMLElement | null>(null);
+  /** This commit is a step of the fit: the glide waits for the stack it lands in. */
+  const refitting = useRef(false);
+  useLayoutEffect(() => {
+    refitting.current = false;
+    const body = openingBodyRef.current;
+    const flow = openingFlowRef.current;
+    if (!stacked || !body || !flow) return;
+    // The sections' own boxes, which the glide's transforms (on the rows inside) never move.
+    const b = body.getBoundingClientRect();
+    const over = flow.getBoundingClientRect().bottom - b.top + body.scrollTop > b.height + 0.5;
+    if (over && stackStep < lastStep) {
+      refitting.current = true;
+      setStackFit({ inputs: fitInputs, step: stackStep + 1, scrolls: false });
+    } else if (over && !stackScrolls) {
+      // The body's scrollbar may narrow the stack, so the glide waits for this commit too.
+      refitting.current = true;
+      setStackFit({ inputs: fitInputs, step: stackStep, scrolls: true });
+    }
+  }, [stacked, stackStep, stackScrolls, lastStep, fitInputs]);
+
+  // FLIP animation on mode toggle (`[data-flip-id]`) + "N min sooner" fade.
+  useLayoutEffect(() => {
+    const root = rootEl.current;
+    if (!root || refitting.current) return;
+    const prevRects = lastFlipRects.current;
+
+    if (anim && anim.id !== lastAnimId.current) {
+      lastAnimId.current = anim.id;
+      const nextRects = new Map<string, DOMRect>();
+      for (const el of root.querySelectorAll<HTMLElement>("[data-flip-id]")) {
+        const id = el.dataset.flipId!;
+        const prev = prevRects.get(id);
+        const next = el.getBoundingClientRect();
+        if (next.width > 0 && next.height > 0) nextRects.set(id, next);
+        if (prev && next.width > 0 && next.height > 0) {
+          const dx = prev.left - next.left;
+          const dy = prev.top - next.top;
+          el.animate(
+            [
+              { transform: `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)` },
+              { transform: "translate(0px, 0px)" },
+            ],
+            { duration: MOVE_MS, easing: EASE },
+          );
+        } else if (!prev) {
+          el.animate([{ opacity: 0 }, { opacity: 1 }], {
+            duration: MOVE_MS,
+            easing: EASE,
+            fill: "backwards",
+          });
+        }
+      }
+      lastFlipRects.current = nextRects;
+
+      const label = root.querySelector<HTMLElement>("[data-sooner]");
+      const all = SOONER_HOLD_MS + SOONER_FADE_MS;
+      label?.animate(
+        [
+          { opacity: 0, offset: 0, easing: EASE },
+          { opacity: 0, offset: 250 / all, easing: EASE },
+          { opacity: 1, offset: 550 / all, easing: EASE },
+          { opacity: 1, offset: SOONER_HOLD_MS / all, easing: EASE },
+          { opacity: 0, offset: 1 },
+        ],
+        { duration: all, fill: "forwards" },
+      );
+    } else if (!anim) {
+      const nextRects = new Map<string, DOMRect>();
+      for (const el of root.querySelectorAll<HTMLElement>("[data-flip-id]")) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) nextRects.set(el.dataset.flipId!, r);
+      }
+      lastFlipRects.current = nextRects;
+    }
+  });
+
+  const markOf = (key: string) =>
+    strip.marks.find((m) => m.key === key) ?? strip.prepMarks?.find((m) => m.key === key) ?? null;
+  const prepMark = strip.marks.find((m) => m.key === "prep") ?? null;
+  const op = ov.opening;
+  const wh = ov.whole;
+  const toggle = op?.toggle ?? wh?.toggle ?? null;
+  const read = ov.read && wh?.read ? { key: ov.read.key, kind: ov.read.go, ...wh.read } : null;
+  const goLabel = read?.kind === "prep" ? COOK_COPY.goToPrep : COOK_COPY.goToStep;
+
+  const renderIngredientItems = (items: readonly CategorizedGetOutItem[]) =>
+    items.map((it, idx) => (
+      <li
+        key={it.index}
+        data-row
+        data-ingredient-index={it.index}
+        className="inline-block whitespace-nowrap"
+        style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
+      >
+        {showAmounts && it.amount ? (
+          <>
+            <span data-amount className="font-bold text-ink">
+              {it.amount}
+            </span>{" "}
+            <span data-ingredient-name className="font-medium text-ink">
+              {it.bare.charAt(0).toLowerCase() + it.bare.slice(1)}
+            </span>
+          </>
+        ) : (
+          <>
+            {it.amount && (
+              <span data-amount className="sr-only">
+                {it.amount}{" "}
+              </span>
+            )}
+            <span data-ingredient-name className="font-medium text-ink">
+              {it.bare}
+            </span>
+          </>
+        )}
+        {idx < items.length - 1 && (
+          <span data-dot aria-hidden="true" className="text-ink-soft">
+            {"\u00a0·\u00a0"}
+          </span>
+        )}
+      </li>
+    ));
+
+  const firstMeanwhilePhaseKey = phases.find((p) => p.meanwhile !== null)?.key ?? null;
+
+  return (
+    <div
+      ref={setRoot}
+      data-overview
+      data-timetable
+      data-opening-lanes={opening ? "" : undefined}
+      data-fits={d.fits ? "true" : "false"}
+      data-row-pitch={d.R.toFixed(1)}
+      data-block-h={d.blockH.toFixed(1)}
+      data-lane-count={ov.timetable.lanes.length}
+      data-demoted={d.demoted.length}
+      data-gutter={d.gutter.toFixed(1)}
+      data-mode={ov.timetable.mode}
+      className="absolute inset-0 z-[1]"
+      style={{ opacity: 0, visibility: "hidden" }}
+    >
+      <div className="pointer-events-none absolute inset-0" style={{ opacity: "var(--lanes-op, 1)" }}>
+        {/* Level 2's own sheet when rendered standalone outside CookSheet's derived Paper. */}
+        {wh && !onSheet && (
+          <>
+            <div
+              data-whole-sheet
+              aria-hidden
+              className="absolute bg-paper ring-1 ring-ink/[.11] ring-inset"
+              style={{
+                left: px(wh.sheet.x),
+                top: px(wh.sheet.y),
+                width: px(wh.sheet.w),
+                height: px(wh.sheet.h),
+                borderRadius: px(28),
+              }}
+            />
+            <div
+              aria-hidden
+              className="absolute rounded-full bg-ink/[.22]"
+              style={{ left: px(wh.grab.x), top: px(wh.grab.y), width: px(wh.grab.w), height: px(wh.grab.h) }}
+            />
+          </>
+        )}
+
+        {/* Prep first | As I go, with both totals: the trade-off reads before the tap. */}
+        {toggle && onMode && (
+          <div
+            role="group"
+            aria-label={COOK_COPY.modeGroup}
+            data-mode-toggle
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            className="pointer-events-none absolute z-[7]"
+            style={{ left: 0, top: px(toggle.y), width: "100%", height: px(toggle.h), opacity: wordsOp }}
+          >
+            {toggle.items.map((it) => (
+              <span key={it.mode}>
+                <button
+                  type="button"
+                  tabIndex={live || opening ? 0 : -1}
+                  aria-pressed={it.on}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMode(it.mode);
+                  }}
+                  className={`pointer-events-auto absolute cursor-pointer whitespace-nowrap after:absolute after:-inset-x-[calc(8*var(--cpx))] after:-inset-y-[calc(8*var(--cpx))] active:bg-sand ${FOCUS} ${
+                    it.on
+                      ? "font-semibold text-ink underline decoration-ink decoration-[length:calc(2*var(--cpx))] underline-offset-[5px]"
+                      : "font-medium text-ink-soft"
+                  }`}
+                  style={{ left: px(it.x), top: 0, height: px(toggle.h), fontSize: px(28), lineHeight: `${px(toggle.h)}px` }}
+                >
+                  {it.label}
+                </button>
+                <span
+                  data-mode-minutes={it.mode}
+                  className="absolute font-medium whitespace-nowrap text-ink-soft"
+                  style={{ left: px(it.minutesX), top: px(4), height: px(toggle.h), fontSize: px(22), lineHeight: `${px(toggle.h)}px` }}
+                >
+                  {it.minutes}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* The opening's hands-on minutes, once, quietly, at the head of the toggle's row. */}
+        {op?.handsOn && (
+          <p
+            data-opening-hands-on
+            className="absolute m-0 font-medium whitespace-nowrap text-ink-soft"
+            style={{
+              left: px(op.handsOn.x),
+              top: px(op.handsOn.y),
+              height: px(op.handsOn.h),
+              fontSize: px(22),
+              lineHeight: `${px(op.handsOn.h)}px`,
+            }}
+          >
+            {op.handsOn.text}
+          </p>
+        )}
+
+        {/* THE OPENING: Two-Column Recipe Opening (`Get out` + `The flow`). */}
+        {op && (() => {
+          const bodyTop = px(op.chart.y);
+          const bodyHeight = Math.max(px(180), ov.sheetBottom - bodyTop - px(14));
+          const availCpx = bodyHeight / c;
+          // Landscape: Get out's column beside the flow, its spacing and lines budgeted by arithmetic.
+          // Portrait (DS v1.52): stacked, each the body's full width, both fitted (`stackStep`).
+          const leftColWidth = px(380);
+          const rung = stackRung(stackStep, shedOrder.length, hasGetOut);
+          const aheadList = phasesModel?.ahead ?? [];
+          const hasAhead = aheadList.length > 0 || Boolean(op.ahead && op.ahead.items.length > 0);
+          const flowAvailCpx = availCpx - (hasAhead ? 40 : 0);
+          const tightFlow = stacked ? rung.tight : flowAvailCpx < phases.length * 66;
+          const baseRowCpx = tightFlow ? 31 : 38;
+          const maxSubLines = Math.max(0, Math.floor((flowAvailCpx - 14 - phases.length * baseRowCpx) / 27));
+
+          const allowedPassiveKeys = new Set<string>();
+          const allowedSummaryKeys = new Set<string>();
+          /** Portrait: the optional lines the fit has given way so far. */
+          const shed = new Set(shedOrder.slice(0, rung.shed));
+          /** Portrait, the fit's last resort before shedding again: each Get out head runs in before its list. */
+          const runIn = stacked && rung.runIn;
+          if (stacked) {
+            for (const p of phases) {
+              if (p.passiveWindow !== null && p.meanwhile === null && !shed.has(`window:${p.key}`)) allowedPassiveKeys.add(p.key);
+              if (p.summary && !shed.has(`summary:${p.key}`)) allowedSummaryKeys.add(p.key);
+            }
+          } else {
+            let usedSubLines = phases.filter((p) => p.movable !== null || p.meanwhile !== null).length;
+            const passiveCandidates = phases
+              .filter((p) => p.passiveWindow !== null && p.meanwhile === null)
+              .sort((a, b) => (b.passiveWindow?.minutes ?? 0) - (a.passiveWindow?.minutes ?? 0));
+            for (const p of passiveCandidates) {
+              if (usedSubLines < maxSubLines || allowedPassiveKeys.size === 0) {
+                allowedPassiveKeys.add(p.key);
+                usedSubLines += 1;
+              }
+            }
+            const summaryPrimary = phases.filter(
+              (p) => p.summary && !p.movable && !p.meanwhile && !allowedPassiveKeys.has(p.key),
+            );
+            const summarySecondary = phases.filter(
+              (p) => p.summary && (p.movable || p.meanwhile || allowedPassiveKeys.has(p.key)),
+            );
+            for (const p of [...summaryPrimary, ...summarySecondary]) {
+              if (usedSubLines < maxSubLines) {
+                allowedSummaryKeys.add(p.key);
+                usedSubLines += 1;
+              }
+            }
+          }
+
+          return (
+            <div data-opening className="absolute inset-0">
+              <Link
+                href="/kitchen"
+                prefetch={false}
+                data-opening-back
+                aria-label="Back to the kitchen"
+                onClick={(e) => e.stopPropagation()}
+                style={{ left: px(op.back.x), top: px(op.back.y), width: px(op.back.w), height: px(op.back.h) }}
+                className={`pointer-events-auto absolute z-[6] inline-flex items-center justify-center rounded-full text-ink transition-colors duration-[320ms] ease-[var(--ease)] after:absolute after:-inset-x-[calc(16*var(--cpx))] after:-inset-y-[calc(12*var(--cpx))] active:bg-sand ${FOCUS}`}
+              >
+                <Chevron size={px(26)} />
+              </Link>
+              <h1
+                data-opening-title
+                className="absolute m-0 font-[family-name:var(--font-display)] font-normal whitespace-nowrap text-ink [font-synthesis:none]"
+                style={{ left: px(op.title.x), top: px(op.title.y), fontSize: px(op.title.size), lineHeight: `${px(op.title.lh)}px` }}
+              >
+                {op.title.lines.map((ln, q) => (
+                  <span key={q} className="block">
+                    {q > 0 ? ` ${ln}` : ln}
+                  </span>
+                ))}
+              </h1>
+              <span data-tt-role="total" className="sr-only">
+                {fmtTotal(ov.timetable.total)}
+              </span>
+
+              {/* Subtle hairline below Deck 2 */}
+              <div
+                aria-hidden
+                className="absolute h-px bg-ink/[.11]"
+                style={{ left: px(op.chart.x), top: px(op.chart.y - 8), width: px(op.chart.w) }}
+              />
+
+              {/* Two-Column Body: Left = Get out, Right = The flow; in portrait, Get out over the flow */}
+              <div
+                ref={openingBodyRef}
+                data-opening-body
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                className={
+                  stacked
+                    ? `pointer-events-auto absolute flex flex-col gap-[calc(18*var(--cpx))] overflow-x-hidden ${stackScrolls ? "overflow-y-auto" : "overflow-y-hidden"}`
+                    : "pointer-events-auto absolute flex items-start gap-[calc(18*var(--cpx))] overflow-hidden"
+                }
+                style={{
+                  left: px(op.chart.x),
+                  top: bodyTop,
+                  width: px(op.chart.w),
+                  height: bodyHeight,
+                }}
+              >
+                {/* Left Column: Get out */}
+                {hasGetOut && (
+                  <section
+                    data-get-out
+                    aria-label={COOK_COPY.getOut}
+                    className={
+                      stacked
+                        ? "shrink-0 flex flex-col gap-[calc(6*var(--cpx))]"
+                        : "shrink-0 flex flex-col gap-[calc(6*var(--cpx))] overflow-hidden"
+                    }
+                    style={stacked ? undefined : { width: leftColWidth, maxHeight: bodyHeight }}
+                  >
+                    <div className="flex items-baseline justify-between gap-[calc(10*var(--cpx))]">
+                      <h2
+                        data-get-out-head
+                        className="m-0 font-semibold whitespace-nowrap text-ink"
+                        style={{ fontSize: px(24), lineHeight: `${px(28)}px` }}
+                      >
+                        {COOK_COPY.getOut}
+                        {scaleNote && (
+                          <>
+                            {" "}
+                            <span data-scale-note className="font-medium text-ink-soft" style={{ fontSize: px(22) }}>
+                              {scaleNote}
+                            </span>
+                          </>
+                        )}
+                      </h2>
+                      {(getOutModel.fridge.length > 0 || getOutModel.pantry.length > 0) && (
+                        <button
+                          type="button"
+                          data-show-amounts
+                          aria-pressed={showAmounts}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowAmounts((v) => !v);
+                          }}
+                          className={`pointer-events-auto cursor-pointer font-semibold whitespace-nowrap text-ink-soft hover:text-ink ${FOCUS}`}
+                          style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
+                        >
+                          {showAmounts ? "Hide amounts" : "Show amounts"}
+                        </button>
+                      )}
+                    </div>
+
+                    {getOutModel.equipment.length > 0 && (
+                      <div
+                        data-get-out-group="equipment"
+                        className={runIn ? undefined : "flex flex-col gap-[calc(1*var(--cpx))]"}
+                        style={runIn ? { fontSize: px(22), lineHeight: `${px(26)}px` } : undefined}
+                      >
+                        <h3
+                          data-get-out-subhead="equipment"
+                          className={`m-0 ${runIn ? "inline " : ""}font-semibold whitespace-nowrap text-ink-soft`}
+                          style={{ fontSize: px(22), lineHeight: `${px(25)}px`, marginRight: runIn ? px(10) : undefined }}
+                        >
+                          Equipment
+                        </h3>
+                        <ul data-get-out-equipment className={runIn ? "m-0 inline list-none p-0" : "m-0 list-none p-0 leading-none"}>
+                          {getOutModel.equipment.map((eq, idx) => (
+                            <li
+                              key={eq}
+                              data-equipment-item
+                              className="inline-block whitespace-nowrap font-medium text-ink"
+                              style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
+                            >
+                              <span>{eq}</span>
+                              {idx < getOutModel.equipment.length - 1 && (
+                                <span data-dot aria-hidden="true" className="text-ink-soft">
+                                  {"\u00a0·\u00a0"}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {getOutModel.fridge.length > 0 && (
+                      <div
+                        data-get-out-group="fridge"
+                        className={runIn ? undefined : "flex flex-col gap-[calc(1*var(--cpx))]"}
+                        style={runIn ? { fontSize: px(22), lineHeight: `${px(26)}px` } : undefined}
+                      >
+                        <h3
+                          data-get-out-subhead="fridge"
+                          className={`m-0 ${runIn ? "inline " : ""}font-semibold whitespace-nowrap text-ink-soft`}
+                          style={{ fontSize: px(22), lineHeight: `${px(25)}px`, marginRight: runIn ? px(10) : undefined }}
+                        >
+                          Fridge &amp; counter
+                        </h3>
+                        <ul data-get-out-fridge className={runIn ? "m-0 inline list-none p-0" : "m-0 list-none p-0 leading-none"}>
+                          {renderIngredientItems(getOutModel.fridge)}
+                        </ul>
+                      </div>
+                    )}
+
+                    {getOutModel.pantry.length > 0 && (
+                      <div
+                        data-get-out-group="pantry"
+                        className={runIn ? undefined : "flex flex-col gap-[calc(1*var(--cpx))]"}
+                        style={runIn ? { fontSize: px(22), lineHeight: `${px(26)}px` } : undefined}
+                      >
+                        <h3
+                          data-get-out-subhead="pantry"
+                          className={`m-0 ${runIn ? "inline " : ""}font-semibold whitespace-nowrap text-ink-soft`}
+                          style={{ fontSize: px(22), lineHeight: `${px(25)}px`, marginRight: runIn ? px(10) : undefined }}
+                        >
+                          Pantry &amp; spices
+                        </h3>
+                        <ul data-get-out-pantry className={runIn ? "m-0 inline list-none p-0" : "m-0 list-none p-0 leading-none"}>
+                          {renderIngredientItems(getOutModel.pantry)}
+                        </ul>
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {/* Right Column: The flow (`2..6` natural phases + movable prep capsule) */}
+                <section
+                  ref={openingFlowRef}
+                  data-opening-flow
+                  aria-label="The flow"
+                  className={
+                    stacked
+                      ? `relative shrink-0 flex flex-col gap-[calc(4*var(--cpx))]${
+                          hasGetOut ? " border-t border-ink/[.11] pt-[calc(8*var(--cpx))]" : ""
+                        }`
+                      : "relative min-w-0 flex-1 flex flex-col gap-[calc(4*var(--cpx))] overflow-hidden"
+                  }
+                  style={stacked ? undefined : { maxHeight: bodyHeight }}
+                >
+                  {hasAhead && (
+                    <div
+                      data-ahead
+                      data-sand=""
+                      className={
+                        stacked
+                          ? "flex items-baseline justify-between gap-[calc(10*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))]"
+                          : "flex flex-nowrap items-baseline justify-between gap-[calc(10*var(--cpx))] overflow-hidden rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))]"
+                      }
+                    >
+                      <p
+                        className={stacked ? "m-0 min-w-0 flex-1" : "m-0 min-w-0 flex-1 truncate"}
+                        style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
+                      >
+                        <span className="font-semibold text-ink" style={{ fontSize: px(24), lineHeight: `${px(26)}px` }}>
+                          {COOK_COPY.ahead}
+                        </span>{" "}
+                        {aheadList.length > 0
+                          ? aheadList.map((a, q) => (
+                              <span key={q} className={stacked ? undefined : "whitespace-nowrap"}>
+                                {q > 0 ? " · " : ""}
+                                <span className="font-bold text-ink">{a.summary}</span>{" "}
+                                <span className="font-medium text-ink-soft">· {a.lead}</span>
+                              </span>
+                            ))
+                          : op.ahead!.items.map((a, q) => (
+                              <span key={q} className={stacked ? undefined : "whitespace-nowrap"}>
+                                {q > 0 ? " · " : ""}
+                                <span className="font-bold text-ink">{a.name}</span>{" "}
+                                <span className="font-medium text-ink-soft">{a.lead}</span>
+                              </span>
+                            ))}
+                      </p>
+                      {onAskAhead && aheadList[0]?.group && (
+                        <button
+                          type="button"
+                          data-ask-ahead
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onAskAhead(aheadList[0].group);
+                          }}
+                          className={`pointer-events-auto shrink-0 cursor-pointer font-semibold whitespace-nowrap text-ink underline decoration-ink/[.35] underline-offset-[4px] ${FOCUS}`}
+                          style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
+                        >
+                          {COOK_COPY.missedAhead}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {anim?.sooner && (
+                    <div
+                      data-sooner
+                      className="pointer-events-none absolute top-0 right-0 z-10 font-semibold whitespace-nowrap text-ink-soft"
+                      style={{ fontSize: px(22), lineHeight: `${px(26)}px`, opacity: 0 }}
+                    >
+                      {anim.sooner.label}
+                    </div>
+                  )}
+
+                  <ol
+                    data-phase-list
+                    className={`m-0 flex flex-col list-none p-0 ${
+                      tightFlow ? "gap-[calc(2*var(--cpx))]" : "gap-[calc(4*var(--cpx))]"
+                    }`}
+                  >
+                    {phases.map((phase) => {
+                      const pMarks = phaseMarksMap.get(phase.key) ?? [];
+                      const showSummary = allowedSummaryKeys.has(phase.key);
+                      const showPassive = allowedPassiveKeys.has(phase.key);
+                      const isFirstMeanwhile = phase.key === firstMeanwhilePhaseKey;
+                      const rowAttr = phase.kind === "prep" ? "prep" : phase.key;
+
+                      return (
+                        <li
+                          key={phase.key}
+                          data-phase-row={rowAttr}
+                          data-phase-key={phase.key}
+                          data-phase-kind={phase.kind}
+                          data-flip-id={`phase:${phase.key}`}
+                          className={`relative flex items-start gap-[calc(10*var(--cpx))] border-b border-ink/[.08] last:border-b-0 ${
+                            tightFlow ? "py-[calc(2*var(--cpx))]" : "py-[calc(4*var(--cpx))]"
+                          }`}
+                        >
+                          <span
+                            data-phase-num
+                            className="shrink-0 font-[family-name:var(--font-display)] font-normal text-ink [font-synthesis:none]"
+                            style={{ width: px(24), fontSize: px(26), lineHeight: `${px(tightFlow ? 25 : 27)}px` }}
+                          >
+                            {phase.n}
+                          </span>
+                          <div className="min-w-0 flex-1 flex flex-col gap-[calc(2*var(--cpx))]">
+                            <div className="flex items-baseline justify-between gap-[calc(10*var(--cpx))]">
+                              <span
+                                data-phase-title
+                                className={stacked ? "min-w-0 font-semibold text-ink" : "min-w-0 truncate font-semibold text-ink"}
+                                style={{ fontSize: px(24), lineHeight: `${px(tightFlow ? 25 : 27)}px` }}
+                              >
+                                {phase.title}
+                              </span>
+                              <span
+                                data-phase-minutes
+                                className="shrink-0 font-medium whitespace-nowrap text-ink-soft tabular-nums"
+                                style={{ fontSize: px(22), lineHeight: `${px(tightFlow ? 25 : 26)}px` }}
+                              >
+                                {fmtMinutes(phase.minutes)}
+                              </span>
+                            </div>
+
+                            {showSummary && (
+                              <p
+                                data-phase-summary
+                                className={stacked ? "m-0 font-medium text-ink-soft" : "m-0 truncate font-medium text-ink-soft"}
+                                style={{ fontSize: px(22), lineHeight: `${px(24)}px` }}
+                              >
+                                {phase.summary}
+                              </p>
+                            )}
+
+                            {phase.movable && (
+                              <div
+                                data-movable-prep={phase.movable.key}
+                                data-flip-id="movable-prep"
+                                data-sand=""
+                                className={
+                                  stacked
+                                    ? "flex flex-wrap items-baseline justify-between gap-x-[calc(8*var(--cpx))] rounded-[var(--radius-1)] bg-sand px-[calc(10*var(--cpx))] py-[calc(2*var(--cpx))]"
+                                    : "flex flex-nowrap items-baseline justify-between gap-[calc(8*var(--cpx))] overflow-hidden rounded-[var(--radius-1)] bg-sand px-[calc(10*var(--cpx))] py-[calc(2*var(--cpx))]"
+                                }
+                              >
+                                <span
+                                  className={stacked ? "min-w-0 font-semibold text-ink" : "min-w-0 flex-1 truncate font-semibold text-ink"}
+                                  style={{ fontSize: px(22), lineHeight: `${px(24)}px` }}
+                                >
+                                  {phase.movable.text}
+                                </span>
+                                <span
+                                  className="shrink-0 font-medium whitespace-nowrap text-ink-soft"
+                                  style={{ fontSize: px(22), lineHeight: `${px(24)}px` }}
+                                >
+                                  {fmtMinutes(phase.movable.minutes)} · {phase.movable.hint}
+                                </span>
+                              </div>
+                            )}
+
+                            {showPassive && phase.passiveWindow && (
+                              <div
+                                data-passive-window=""
+                                className={`${stacked ? "" : "truncate whitespace-nowrap "}rounded-[var(--radius-1)] border border-dashed border-ink/[.18] px-[calc(10*var(--cpx))] py-[calc(1*var(--cpx))] font-medium text-ink-soft`}
+                                style={{ fontSize: px(22), lineHeight: `${px(24)}px` }}
+                              >
+                                {phase.passiveWindow.label}
+                              </div>
+                            )}
+
+                            {phase.meanwhile && (
+                              <div
+                                data-passive-window={phase.meanwhile.key}
+                                className={
+                                  stacked
+                                    ? "flex flex-wrap items-baseline gap-x-[calc(8*var(--cpx))] gap-y-[calc(2*var(--cpx))]"
+                                    : "flex flex-nowrap items-baseline gap-[calc(8*var(--cpx))] overflow-hidden"
+                                }
+                              >
+                                {/* Portrait: one wrapping run of words in the sand, never cut. */}
+                                <div
+                                  data-movable-prep={phase.meanwhile.key}
+                                  data-flip-id={isFirstMeanwhile ? "movable-prep" : phase.meanwhile.key}
+                                  data-sand=""
+                                  className={
+                                    stacked
+                                      ? "min-w-0 rounded-[var(--radius-1)] bg-sand px-[calc(10*var(--cpx))] py-[calc(2*var(--cpx))]"
+                                      : "inline-flex min-w-0 items-baseline gap-[calc(6*var(--cpx))] overflow-hidden rounded-[var(--radius-1)] bg-sand px-[calc(10*var(--cpx))] py-[calc(2*var(--cpx))]"
+                                  }
+                                  style={stacked ? { fontSize: px(22), lineHeight: `${px(24)}px` } : undefined}
+                                >
+                                  <span
+                                    className="shrink-0 font-semibold text-ink"
+                                    style={{ fontSize: px(22), lineHeight: `${px(24)}px` }}
+                                  >
+                                    Meanwhile ·
+                                  </span>
+                                  {stacked && " "}
+                                  <span
+                                    className={stacked ? "font-medium text-ink" : "min-w-0 truncate font-medium text-ink"}
+                                    style={{ fontSize: px(22), lineHeight: `${px(24)}px` }}
+                                  >
+                                    {phase.meanwhile.text}
+                                  </span>
+                                  {stacked && " "}
+                                  <span
+                                    className="shrink-0 font-medium whitespace-nowrap text-ink-soft tabular-nums"
+                                    style={{ fontSize: px(22), lineHeight: `${px(24)}px` }}
+                                  >
+                                    · {fmtMinutes(phase.meanwhile.minutes)}
+                                  </span>
+                                </div>
+                                {phase.meanwhile.remainingLabel && !shed.has(`remaining:${phase.key}`) && (
+                                  <span
+                                    data-remaining-free
+                                    className="shrink-0 font-medium whitespace-nowrap text-ink-soft"
+                                    style={{ fontSize: px(22), lineHeight: `${px(24)}px` }}
+                                  >
+                                    + {phase.meanwhile.remainingLabel}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Card markers for screen readers & geometry invariants */}
+                          <div aria-hidden className="pointer-events-none absolute inset-0 flex">
+                            {phase.kind === "prep" ? (
+                              <span data-prep-card className="block h-full w-full" />
+                            ) : (
+                              pMarks.map((m) => (
+                                <span
+                                  key={m.key}
+                                  data-card={m.key}
+                                  data-card-kind={m.pot ? "pot" : "hands-on"}
+                                  data-card-state={m.state}
+                                  aria-label={`${cardName(m.label, !!m.pot, m.state)}. Read it`}
+                                  className="block h-full flex-1"
+                                />
+                              ))
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </section>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* LEVEL 2: Mid-cook Phase Outline (`!opening && wh`). */}
+        {wh && !opening && (() => {
+          const whAvailCpx = Math.max(120, (onSheet?.growFrom ?? wh.chart.y + wh.chart.h) - wh.chart.y - 16);
+          const tightWh = whAvailCpx < phases.length * 46;
+          const showWhMeanwhile = whAvailCpx >= phases.length * (tightWh ? 32 : 44) + 30;
+
+          return (
+            <div
+              data-phase-outline
+              className={`absolute flex flex-col justify-center ${
+                tightWh ? "gap-[calc(2*var(--cpx))]" : "gap-[calc(6*var(--cpx))]"
+              }`}
+              style={{
+                left: px(wh.chart.x),
+                top: px(wh.chart.y),
+                width: px(wh.chart.w),
+                height: px(whAvailCpx),
+                opacity: wordsOp,
+              }}
+            >
+              {phases.map((phase) => {
+                const isDone = phase.state === "done";
+                const isNow = phase.state === "now";
+                const pMarks = phaseMarksMap.get(phase.key) ?? [];
+                const isRead =
+                  readMark !== null &&
+                  (phase.kind === "prep" ? readMark === "prep" : pMarks.some((m) => m.key === readMark));
+                const isFirstMeanwhile = phase.key === firstMeanwhilePhaseKey;
+                const rowAttr = phase.kind === "prep" ? "prep" : phase.key;
+
+                return (
+                  <div
+                    key={phase.key}
+                    data-phase-row={rowAttr}
+                    data-phase-key={phase.key}
+                    data-phase-kind={phase.kind}
+                    data-phase-state={phase.state}
+                    data-read-ring={isRead ? "" : undefined}
+                    data-flip-id={`phase:${phase.key}`}
+                    className={`relative flex items-center justify-between gap-[calc(14*var(--cpx))] rounded-[var(--radius-1)] px-[calc(8*var(--cpx))] ${
+                      tightWh ? "py-[calc(2*var(--cpx))]" : "py-[calc(5*var(--cpx))]"
+                    } ${isRead ? "ring-2 ring-ink" : ""}`}
+                  >
+                    <span
+                      data-phase-num
+                      className={`shrink-0 font-[family-name:var(--font-display)] font-normal [font-synthesis:none] ${
+                        isDone ? "text-ink-soft" : isNow ? "text-[color:var(--ember-700)]" : "text-ink"
+                      }`}
+                      style={{ width: px(28), fontSize: px(26), lineHeight: `${px(tightWh ? 26 : 28)}px` }}
+                    >
+                      {isDone ? "✓" : phase.n}
+                    </span>
+
+                    <div className="min-w-0 flex-1 flex flex-col gap-[calc(2*var(--cpx))]">
+                      <span
+                        data-phase-title
+                        className={`truncate ${
+                          isDone
+                            ? "font-medium text-ink-soft"
+                            : isNow
+                              ? "font-semibold text-[color:var(--ember-700)]"
+                              : "font-semibold text-ink"
+                        }`}
+                        style={{ fontSize: px(24), lineHeight: `${px(tightWh ? 26 : 28)}px` }}
+                      >
+                        {phase.title}
+                      </span>
+
+                      {isNow && showWhMeanwhile && phase.meanwhile && (
+                        <div
+                          data-passive-window={phase.meanwhile.key}
+                          className="flex flex-nowrap items-baseline gap-[calc(8*var(--cpx))] overflow-hidden"
+                        >
+                          <span
+                            data-movable-prep={phase.meanwhile.key}
+                            data-flip-id={isFirstMeanwhile ? "movable-prep" : phase.meanwhile.key}
+                            data-sand=""
+                            className="inline-flex min-w-0 items-baseline gap-[calc(6*var(--cpx))] overflow-hidden rounded-full bg-sand px-[calc(10*var(--cpx))] py-[calc(2*var(--cpx))]"
+                          >
+                            <span
+                              className="shrink-0 font-semibold text-ink"
+                              style={{ fontSize: px(22), lineHeight: `${px(24)}px` }}
+                            >
+                              Meanwhile ·
+                            </span>
+                            <span
+                              className="min-w-0 truncate font-medium text-ink"
+                              style={{ fontSize: px(22), lineHeight: `${px(24)}px` }}
+                            >
+                              {phase.meanwhile.text}
+                            </span>
+                            <span
+                              className="shrink-0 font-medium whitespace-nowrap text-ink-soft tabular-nums"
+                              style={{ fontSize: px(22), lineHeight: `${px(24)}px` }}
+                            >
+                              · {fmtMinutes(phase.meanwhile.minutes)}
+                            </span>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <span
+                      data-phase-status
+                      className={`shrink-0 whitespace-nowrap tabular-nums ${
+                        isDone
+                          ? "font-medium text-ink-soft"
+                          : isNow
+                            ? "font-semibold text-[color:var(--ember-700)]"
+                            : "font-medium text-ink-soft"
+                      }`}
+                      style={{ fontSize: px(22), lineHeight: `${px(tightWh ? 26 : 28)}px` }}
+                    >
+                      {isDone
+                        ? "done"
+                        : isNow
+                          ? `${fmtMinutes(phase.remainingMinutes)} left`
+                          : fmtMinutes(phase.minutes)}
+                    </span>
+
+                    <div className="pointer-events-none absolute inset-0 flex">
+                      {phase.kind === "prep" ? (
+                        <button
+                          type="button"
+                          data-prep-card
+                          tabIndex={tab}
+                          aria-label={`${prepMark ? prepWords(prepMark, false).aria : COOK_COPY.prepChapter}. Read it`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRead(readMark === "prep" ? null : "prep");
+                          }}
+                          className={`pointer-events-none h-full w-full cursor-pointer bg-transparent ${FOCUS}`}
+                        />
+                      ) : (
+                        pMarks.map((m) => (
+                          <button
+                            key={m.key}
+                            type="button"
+                            data-card={m.key}
+                            data-card-kind={m.pot ? "pot" : "hands-on"}
+                            data-card-state={m.state}
+                            tabIndex={tab}
+                            aria-label={`${cardName(m.label, !!m.pot, m.state)}. Read it`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRead(readMark === m.key ? null : m.key);
+                            }}
+                            className={`pointer-events-none h-full flex-1 cursor-pointer bg-transparent ${FOCUS}`}
+                          />
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+
+        {/* Level 2's header: back and the recipe's name; a read takes its place. */}
+        {wh && !read && (
+          <>
+            <button
+              type="button"
+              data-overview-back
+              tabIndex={tab}
+              aria-label="Back to step"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+              style={{ left: px(wh.back.x), top: px(wh.back.y), width: px(wh.back.w), height: px(wh.back.h), opacity: wordsOp }}
+              className={`pointer-events-auto absolute z-[7] inline-flex cursor-pointer items-center justify-center rounded-full text-ink after:absolute after:-inset-x-[calc(16*var(--cpx))] after:-inset-y-[calc(12*var(--cpx))] active:bg-sand ${FOCUS}`}
+            >
+              <Chevron size={px(26)} />
+            </button>
+            <p
+              data-whole-title
+              className="absolute z-[7] m-0 font-semibold whitespace-nowrap text-ink"
+              style={{ left: px(wh.title.x), top: px(wh.title.y), fontSize: px(24), lineHeight: `${px(28)}px`, opacity: wordsOp }}
+            >
+              {wh.title.text}
+            </p>
+          </>
+        )}
+        {wh && read && (
+          <div
+            data-read-step={read.key}
+            onClick={(e) => e.stopPropagation()}
+            className="pointer-events-auto absolute z-[7] rounded-[var(--radius-2)] bg-paper ring-1 ring-ink/[.11] ring-inset"
+            style={{ left: px(read.box.x), top: px(read.box.y), width: px(read.box.w), height: px(read.box.h), opacity: wordsOp }}
+          >
+            <p
+              role="button"
+              tabIndex={tab}
+              aria-label={readText ?? read.lines.join(" ")}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRead(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onRead(null);
+                }
+              }}
+              className={`absolute m-0 cursor-pointer font-medium text-ink ${FOCUS}`}
+              style={{ left: px(read.textX - read.box.x), top: px(read.textY - read.box.y), fontSize: px(read.size), lineHeight: 1.2 }}
+            >
+              {read.lines.map((ln, q) => (
+                <span key={q} className="block whitespace-nowrap">
+                  {q > 0 ? ` ${ln}` : ln}
+                </span>
+              ))}
+            </p>
+            {read.go && (
+              <button
+                type="button"
+                data-go-to-step
+                tabIndex={tab}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (read.key === "prep") {
+                    onGo(0);
+                    return;
+                  }
+                  const mark = markOf(read.key);
+                  if (mark) onGo(mark.screen);
+                }}
+                style={{ left: px(read.go.x - read.box.x), top: px(read.go.y - read.box.y), height: px(read.go.h) }}
+                className="absolute inline-flex cursor-pointer items-center rounded-full bg-sand px-[calc(20*var(--cpx))] text-[length:var(--type-meta)] font-semibold whitespace-nowrap text-ink active:bg-[color-mix(in_oklab,var(--sand),var(--ink)_8%)] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-ink"
+              >
+                {goLabel}
+              </button>
+            )}
+            <button
+              type="button"
+              data-whole-recipe-ghost
+              tabIndex={tab}
+              onClick={(e) => {
+                e.stopPropagation();
+                onWhole();
+              }}
+              style={{ left: px(read.whole.x - read.box.x), top: px(read.whole.y - read.box.y), width: px(read.whole.w), height: px(read.whole.h) }}
+              className="absolute inline-flex cursor-pointer items-center justify-center rounded-full border border-ink/[.14] bg-paper text-[length:var(--type-meta)] font-semibold whitespace-nowrap text-ink active:bg-sand focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ink"
+            >
+              {COOK_COPY.wholeRecipe}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A step as a screen reader hears it: "Garnish and serve, hands-on, in hand". */
+function cardName(label: string, pot: boolean, state: string): string {
+  const st = state === "in-hand" ? ", in hand" : state === "done" ? ", done" : state === "running" ? ", running" : "";
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)}, ${pot ? "pot" : "hands-on"}${st}`;
+}
+
+function Chevron({ size }: { size: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={{ width: size, height: size }}
+    >
+      <path d="M15 5l-7 7 7 7" />
+    </svg>
+  );
+}

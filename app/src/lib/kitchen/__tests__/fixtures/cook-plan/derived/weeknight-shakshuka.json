@@ -1,0 +1,265 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "965a3c74dd8692b6",
+  "recipeHash": "9f8da359a591e1ac",
+  "ms": 5761,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "prep-onion",
+        "kind": "mise",
+        "text": "Thinly slice the onion.",
+        "label": "slice onion",
+        "ingredientIdx": [
+          1
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "prep-peppers",
+        "kind": "mise",
+        "text": "Seed and slice the peppers.",
+        "label": "slice peppers",
+        "ingredientIdx": [
+          2
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 4,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "prep-garlic",
+        "kind": "mise",
+        "text": "Slice the garlic.",
+        "label": "slice garlic",
+        "ingredientIdx": [
+          3
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "prep-tomatoes",
+        "kind": "mise",
+        "text": "Crush the tomatoes by hand in their can.",
+        "label": "crush tomatoes",
+        "ingredientIdx": [
+          7
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "prep-feta",
+        "kind": "mise",
+        "text": "Crumble the feta.",
+        "label": "crumble feta",
+        "ingredientIdx": [
+          10
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "prep-parsley",
+        "kind": "mise",
+        "text": "Chopped the parsley.",
+        "label": "chop parsley",
+        "ingredientIdx": [
+          11
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "cook-peppers-onion",
+        "kind": "cook",
+        "text": "Warm the oil in a 12-inch skillet over medium heat and cook the onion and peppers for 10 minutes, stirring now and then, until soft and sweet.",
+        "label": "cook peppers",
+        "ingredientIdx": [
+          0,
+          1,
+          2
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [
+          "prep-onion",
+          "prep-peppers"
+        ],
+        "minutes": {
+          "est": 12,
+          "handsOff": true
+        },
+        "cue": "until soft and sweet",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "add-spices",
+        "kind": "cook",
+        "text": "Add the garlic, cumin, paprika, and cayenne and cook for 1 minute.",
+        "label": "add spices",
+        "ingredientIdx": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "cook-peppers-onion",
+          "prep-garlic"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "simmer-sauce",
+        "kind": "cook",
+        "text": "Pour in the tomatoes, add the salt, and simmer for 10 minutes, until thickened.",
+        "label": "simmer sauce",
+        "ingredientIdx": [
+          7,
+          8
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "add-spices",
+          "prep-tomatoes"
+        ],
+        "minutes": {
+          "est": 10,
+          "handsOff": true
+        },
+        "cue": "until thickened",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "crack-eggs",
+        "kind": "cook",
+        "text": "Make 6 wells in the sauce and crack an egg into each.",
+        "label": "crack eggs",
+        "ingredientIdx": [
+          9
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "simmer-sauce"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "cook-eggs",
+        "kind": "cook",
+        "text": "Cover and cook for 5 to 8 minutes, until the whites are set and the yolks still runny.",
+        "label": "cook eggs",
+        "ingredientIdx": [
+          9
+        ],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [
+          "crack-eggs"
+        ],
+        "minutes": {
+          "est": 8,
+          "handsOff": true
+        },
+        "cue": "until the whites are set and the yolks still runny",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "finish-and-serve",
+        "kind": "cook",
+        "text": "Scatter the feta and parsley over the top and serve from the pan with bread.",
+        "label": "garnish and serve",
+        "ingredientIdx": [
+          10,
+          11,
+          12
+        ],
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [
+          "cook-eggs",
+          "prep-feta",
+          "prep-parsley"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      }
+    ]
+  }
+}

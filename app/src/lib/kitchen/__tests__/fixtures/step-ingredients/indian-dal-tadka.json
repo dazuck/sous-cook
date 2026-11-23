@@ -1,0 +1,29 @@
+{
+  "description": "Dal tadka. Stresses the 'temper the whole spices' abstraction (mustard + cumin seeds) and a multi-step tempering sequence.",
+  "ingredients": [
+    { "amount": "1", "unit": "cup", "item": "toor dal" },
+    { "amount": "3", "unit": "cups", "item": "water" },
+    { "amount": "1/2", "unit": "tsp", "item": "turmeric" },
+    { "amount": "2", "unit": "tbsp", "item": "ghee" },
+    { "amount": "1", "unit": "tsp", "item": "mustard seeds" },
+    { "amount": "1", "unit": "tsp", "item": "cumin seeds" },
+    { "amount": "2", "item": "dried red chiles" },
+    { "amount": "4", "unit": "cloves", "item": "garlic, minced" },
+    { "amount": "1", "unit": "inch", "item": "ginger, grated" },
+    { "amount": "1", "item": "onion, finely chopped" },
+    { "amount": "2", "item": "tomatoes, chopped" },
+    { "amount": "1", "unit": "tsp", "item": "red chili powder" },
+    { "item": "salt to taste" },
+    { "amount": "2", "unit": "tbsp", "item": "cilantro, chopped" }
+  ],
+  "steps": [
+    "Rinse the toor dal and pressure cook with water and turmeric until soft.",
+    "Heat the ghee in a small pan for the tempering.",
+    "Temper the whole spices until they crackle and become fragrant.",
+    "Add the dried red chiles, garlic, and ginger, and saute until golden.",
+    "Add the onion and cook until translucent, then stir in the tomatoes and chili powder.",
+    "Pour the tempering into the cooked dal, add salt, and simmer for 5 minutes.",
+    "Garnish with fresh cilantro and serve with rice."
+  ],
+  "golden": [[0, 1, 2], [3], [4, 5], [6, 7, 8], [9, 10, 11], [0, 12], [13]]
+}

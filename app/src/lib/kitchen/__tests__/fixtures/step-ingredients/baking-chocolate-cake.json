@@ -1,0 +1,24 @@
+{
+  "description": "Chocolate cake. Stresses the 'whisk the dry ingredients' / 'wet ingredients' abstraction that the regex matcher cannot resolve.",
+  "ingredients": [
+    { "amount": "2", "unit": "cups", "item": "all-purpose flour" },
+    { "amount": "2", "unit": "cups", "item": "sugar" },
+    { "amount": "3/4", "unit": "cup", "item": "cocoa powder" },
+    { "amount": "2", "unit": "tsp", "item": "baking soda" },
+    { "amount": "1", "unit": "tsp", "item": "salt" },
+    { "amount": "2", "item": "eggs" },
+    { "amount": "1", "unit": "cup", "item": "buttermilk" },
+    { "amount": "1/2", "unit": "cup", "item": "vegetable oil" },
+    { "amount": "2", "unit": "tsp", "item": "vanilla extract" },
+    { "amount": "1", "unit": "cup", "item": "hot coffee" }
+  ],
+  "steps": [
+    "Preheat the oven to 350F and grease two cake pans.",
+    "In a large bowl, whisk together the dry ingredients.",
+    "In another bowl, beat the eggs, then add the buttermilk, oil, and vanilla.",
+    "Pour the wet mixture into the dry and stir until just combined.",
+    "Stir in the hot coffee until the batter is smooth and pourable.",
+    "Divide the batter between the pans and bake for 30 minutes."
+  ],
+  "golden": [[], [0, 1, 2, 3, 4], [5, 6, 7, 8], [], [9], []]
+}

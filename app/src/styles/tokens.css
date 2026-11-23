@@ -1,0 +1,118 @@
+/* Design tokens from DESIGN_SYSTEM.md v1.24 — the Counter subset, as
+ * written. Change protocol: never adjust these locally; proposals go to
+ * design/design-proposals.md. */
+
+@property --ambient-t {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 0%;
+}
+
+:root {
+  /* §1 color. Natural Stoneware palette (Direction 2, 2026-10-08).
+   * Luminous warm stoneware ground for glossy cool LCD panel, with crisp
+   * AAA contrast ink and evening light ramp (P67). One ember thing per screen;
+   * herb is the recording-LED of the palette — never a CTA, never decoration. */
+  --stoneware: #f6f4ee;
+  --ground-day: #f6f4ee;
+  --paper-day: #fdfcfb;
+  --sand-day: #eae3d5;
+  --ink-day: #23201d;
+  --ink-soft-day: #56504a; /* 7.23:1 on ground (AAA) */
+  --ember-day: #bf5a27;
+  --ember-700-day: #9c4316; /* 5.91:1 on ground (AA); accent text at paragraph size */
+  --herb: #7a8a5e;
+
+  /* Evening night stops (P67): gentle warm dusk, avoiding sepia mud. */
+  --ground-night: #eee9df; /* L=0.925 */
+  --paper-night: #f5f1e8;
+  --sand-night: #e2dbd0;
+  --ink-night: #1e1b19; /* 14.16:1 on night ground (AAA) */
+  --ink-soft-night: #5e5750; /* 5.87:1 on night ground (AA) */
+
+  /* Ambient progress: 0% = day, 100% = evening night stop. Eased over 90 min at sunset. */
+  --ambient-t: 0%;
+
+  /* Active color tokens interpolated via color-mix in oklab, never oklch.
+   * These stops are near-neutral, and Chromium drops the hue of a low-chroma
+   * colour once it is in oklch ("oklch(0.967 0.008 none)"), then paints it
+   * with hue 0: the stoneware goes pink (#F6F4EE as 249 242 244). Giving each
+   * stop its hue first, with oklch(from <hex> l c h), stopped working in
+   * Chrome 157, which drops it there too. Oklab has no hue to lose. At t = 0
+   * and t = 1 the result is the hex. */
+  --ground: color-mix(in oklab, var(--ground-night) var(--ambient-t, 0%), var(--ground-day));
+  --paper: color-mix(in oklab, var(--paper-night) var(--ambient-t, 0%), var(--paper-day));
+  --sand: color-mix(in oklab, var(--sand-night) var(--ambient-t, 0%), var(--sand-day));
+  --ink: color-mix(in oklab, var(--ink-night) var(--ambient-t, 0%), var(--ink-day));
+  --ink-soft: color-mix(in oklab, var(--ink-soft-night) var(--ambient-t, 0%), var(--ink-soft-day));
+  --ember: var(--ember-day);
+  --ember-700: var(--ember-700-day);
+
+  /* Legacy aliases for backward compatibility */
+  --parchment: var(--stoneware);
+
+  /* §2 the Counter scale: 960×600 logical canvas, 1 logical px = 0.227 mm.
+   * --cpx is one counter-px, so the contract's numbers are used verbatim.
+   * The canvas is fitted inside the viewport, whichever way it is turned:
+   * the Pixel Tablet's 1280×800 either way gives 1.333 CSS px, its 1280×680
+   * Chrome tab 1.133, a 390×844 phone 0.65. */
+  --cpx-full: min(max(100vw, 100vh) / 960, min(100vw, 100vh) / 600);
+  --cpx: var(--cpx-full); /* the idle shelf's covers scale it down at short bodies (FP1, D14) */
+  --font-display: 'Caprasimo', serif;
+  --font-text: 'Figtree', system-ui, sans-serif;
+  --type-step: calc(64 * var(--cpx)); /* weight 600 */
+  --type-title: calc(44 * var(--cpx)); /* weight 400; also timer digits */
+  --type-chip: calc(30 * var(--cpx)); /* weight 500 */
+  --type-meta: calc(22 * var(--cpx)); /* weight 500 — THE FLOOR: nothing smaller */
+
+  /* §3 spacing — on the counter every step doubles; spacious or cluttered,
+   * no middle. */
+  --space-1: calc(4.4 * var(--cpx));
+  --space-2: calc(8.8 * var(--cpx));
+  --space-3: calc(13.2 * var(--cpx));
+  --space-4: calc(17.6 * var(--cpx));
+  --space-5: calc(26.4 * var(--cpx));
+  --space-6: calc(35.2 * var(--cpx));
+
+  /* §3 radius — containers over-round; anything pressable is a pill. */
+  --radius-1: calc(8 * var(--cpx));
+  --radius-2: calc(16 * var(--cpx));
+  --radius-3: calc(28 * var(--cpx));
+  --radius-pill: 9999px;
+
+  /* §3 motion — things fade, slower than a phone; nothing slides or
+   * bounces. */
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-step: 320ms; /* step advance cross-fade */
+  --dur-wake: 900ms; /* wake fade-up */
+  --dur-breathe: 2400ms; /* listening dot */
+  --dur-pulse: 1000ms; /* a timer's last 10 s */
+
+  /* §0.3 messy hands: no target under 80 counter-px. */
+  --target: calc(80 * var(--cpx));
+  /* §5/§6 the borrowed screen's ledge band and the kitchen home's foot band: one height
+   * (P64, P60 a). `LEDGE_BAR_CPX` in BorrowedChrome.tsx is its JS twin. */
+  --band-foot: calc(96 * var(--cpx));
+
+  /* 60s smooth transition for ambient light shifts */
+  transition: --ambient-t 60s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    transition: none !important;
+  }
+}
+
+/* A browser without color-mix(in oklab) would drop the mixed tokens at use
+ * (an invalid var() is transparent for a background), leaving no ground and
+ * no ink. It keeps the day palette instead: static, valid, AAA. */
+@supports not (color: color-mix(in oklab, red, blue)) {
+  :root {
+    --ground: var(--ground-day);
+    --paper: var(--paper-day);
+    --sand: var(--sand-day);
+    --ink: var(--ink-day);
+    --ink-soft: var(--ink-soft-day);
+  }
+}

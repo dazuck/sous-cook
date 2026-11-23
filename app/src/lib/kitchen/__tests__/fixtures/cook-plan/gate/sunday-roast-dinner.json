@@ -1,0 +1,510 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "34ff405c9b3efb1d",
+  "recipeHash": "be4d6854f5d009d8",
+  "ms": 8217,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "dry-brine-chicken",
+        "kind": "ahead",
+        "text": "Pat the chicken dry, rub the flaky salt all over it, and refrigerate it uncovered overnight.",
+        "label": "dry brine chicken",
+        "ingredientIdx": [
+          0,
+          1
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 720,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": "overnight",
+        "branch": "Chicken"
+      },
+      {
+        "id": "room-temp-chicken",
+        "kind": "ahead",
+        "text": "Take the chicken out of the fridge 1 hour before roasting.",
+        "label": "warm chicken",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [
+          "dry-brine-chicken"
+        ],
+        "minutes": {
+          "est": 60,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": "1 hour before",
+        "branch": "Chicken"
+      },
+      {
+        "id": "heat-oven-220",
+        "kind": "cook",
+        "text": "Heat the oven to 220C (425F).",
+        "label": "heat oven",
+        "ingredientIdx": [],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 15,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Chicken"
+      },
+      {
+        "id": "prep-potatoes",
+        "kind": "mise",
+        "text": "Peel the potatoes and cut them into large chunks.",
+        "label": "prep potatoes",
+        "ingredientIdx": [
+          6
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 8,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Potatoes"
+      },
+      {
+        "id": "parboil-potatoes",
+        "kind": "cook",
+        "text": "Put the potatoes in a pot of cold salted water, bring to a boil, and simmer for 8 minutes.",
+        "label": "parboil potatoes",
+        "ingredientIdx": [
+          6,
+          15
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "prep-potatoes"
+        ],
+        "minutes": {
+          "est": 15,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Potatoes"
+      },
+      {
+        "id": "prep-lemon-garlic",
+        "kind": "mise",
+        "text": "Halve the lemon and cut the head of garlic in half across the middle.",
+        "label": "prep lemon garlic",
+        "ingredientIdx": [
+          2,
+          3
+        ],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Chicken"
+      },
+      {
+        "id": "stuff-chicken",
+        "kind": "cook",
+        "text": "Stuff the lemon, garlic, and thyme into the chicken, rub it with the olive oil, and set it in a roasting pan.",
+        "label": "stuff chicken",
+        "ingredientIdx": [
+          0,
+          2,
+          3,
+          4,
+          5
+        ],
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [
+          "room-temp-chicken",
+          "prep-lemon-garlic"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Chicken"
+      },
+      {
+        "id": "roast-chicken-initial",
+        "kind": "cook",
+        "text": "Roast the chicken for 20 minutes.",
+        "label": "roast chicken initial",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 7,
+        "implied": false,
+        "needs": [
+          "heat-oven-220",
+          "stuff-chicken"
+        ],
+        "minutes": {
+          "est": 20,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Chicken"
+      },
+      {
+        "id": "heat-duck-fat",
+        "kind": "cook",
+        "text": "Put the duck fat in a second roasting tin and heat it in the oven for 5 minutes.",
+        "label": "heat duck fat",
+        "ingredientIdx": [
+          7
+        ],
+        "sourceStep": 8,
+        "implied": false,
+        "needs": [
+          "heat-oven-220"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Potatoes"
+      },
+      {
+        "id": "drain-rough-potatoes",
+        "kind": "cook",
+        "text": "Drain the potatoes, let them steam dry for 2 minutes, then shake them in the pot to rough up the edges.",
+        "label": "rough up potatoes",
+        "ingredientIdx": [
+          6
+        ],
+        "sourceStep": 9,
+        "implied": false,
+        "needs": [
+          "parboil-potatoes"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Potatoes"
+      },
+      {
+        "id": "coat-potatoes",
+        "kind": "cook",
+        "text": "Tip the potatoes into the hot fat, turn to coat, and add the rosemary.",
+        "label": "coat potatoes",
+        "ingredientIdx": [
+          6,
+          7,
+          8
+        ],
+        "sourceStep": 10,
+        "implied": false,
+        "needs": [
+          "heat-duck-fat",
+          "drain-rough-potatoes"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Potatoes"
+      },
+      {
+        "id": "roast-chicken-potatoes",
+        "kind": "cook",
+        "text": "Turn the oven down to 190C (375F) and roast the chicken and potatoes together for 50 minutes more, turning the potatoes once.",
+        "label": "roast chicken potatoes",
+        "ingredientIdx": [
+          0,
+          6
+        ],
+        "sourceStep": 11,
+        "implied": false,
+        "needs": [
+          "roast-chicken-initial",
+          "coat-potatoes"
+        ],
+        "minutes": {
+          "est": 50,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Chicken"
+      },
+      {
+        "id": "trim-green-beans",
+        "kind": "mise",
+        "text": "Trim the green beans.",
+        "label": "trim beans",
+        "ingredientIdx": [
+          9
+        ],
+        "sourceStep": 12,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Vegetables"
+      },
+      {
+        "id": "chop-shallot",
+        "kind": "mise",
+        "text": "Finely chop the shallot.",
+        "label": "chop shallot",
+        "ingredientIdx": [
+          11
+        ],
+        "sourceStep": 13,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Gravy"
+      },
+      {
+        "id": "check-chicken",
+        "kind": "cook",
+        "text": "Check the chicken: the juices at the thigh should run clear, or a thermometer should read 74C (165F).",
+        "label": "check chicken",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 14,
+        "implied": false,
+        "needs": [
+          "roast-chicken-potatoes"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": "juices at the thigh should run clear, or a thermometer should read 74C (165F)",
+        "lead": null,
+        "branch": "Chicken"
+      },
+      {
+        "id": "rest-chicken",
+        "kind": "cook",
+        "text": "Lift the chicken onto a board and rest it, loosely covered, for 15 minutes.",
+        "label": "rest chicken",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 15,
+        "implied": false,
+        "needs": [
+          "check-chicken"
+        ],
+        "minutes": {
+          "est": 15,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Chicken"
+      },
+      {
+        "id": "crisp-potatoes",
+        "kind": "cook",
+        "text": "Turn the oven up to 220C (425F) and give the potatoes a final 10 minutes to crisp.",
+        "label": "crisp potatoes",
+        "ingredientIdx": [
+          6
+        ],
+        "sourceStep": 16,
+        "implied": false,
+        "needs": [
+          "roast-chicken-potatoes"
+        ],
+        "minutes": {
+          "est": 10,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Potatoes"
+      },
+      {
+        "id": "skim-pan",
+        "kind": "cook",
+        "text": "Spoon off all but 1 tablespoon of fat from the chicken pan and set the pan over medium heat.",
+        "label": "skim chicken pan",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 17,
+        "implied": false,
+        "needs": [
+          "check-chicken"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Gravy"
+      },
+      {
+        "id": "cook-shallot-flour",
+        "kind": "cook",
+        "text": "Add the shallot and cook for 2 minutes, then stir in the flour and cook for 1 minute more.",
+        "label": "cook shallot flour",
+        "ingredientIdx": [
+          11,
+          12
+        ],
+        "sourceStep": 18,
+        "implied": false,
+        "needs": [
+          "chop-shallot",
+          "skim-pan"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Gravy"
+      },
+      {
+        "id": "deglaze-pan",
+        "kind": "cook",
+        "text": "Pour in the wine and let it bubble, scraping up the browned bits, until almost gone.",
+        "label": "deglaze pan",
+        "ingredientIdx": [
+          13
+        ],
+        "sourceStep": 19,
+        "implied": false,
+        "needs": [
+          "cook-shallot-flour"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": "until almost gone",
+        "lead": null,
+        "branch": "Gravy"
+      },
+      {
+        "id": "simmer-gravy",
+        "kind": "cook",
+        "text": "Whisk in the stock and simmer for 5 minutes, until the gravy coats a spoon.",
+        "label": "simmer gravy",
+        "ingredientIdx": [
+          14
+        ],
+        "sourceStep": 20,
+        "implied": false,
+        "needs": [
+          "deglaze-pan"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": true
+        },
+        "cue": "until the gravy coats a spoon",
+        "lead": null,
+        "branch": "Gravy"
+      },
+      {
+        "id": "cook-beans",
+        "kind": "cook",
+        "text": "Boil the green beans in salted water for 5 minutes, then drain and toss with the butter.",
+        "label": "cook green beans",
+        "ingredientIdx": [
+          9,
+          10,
+          15
+        ],
+        "sourceStep": 21,
+        "implied": false,
+        "needs": [
+          "trim-green-beans"
+        ],
+        "minutes": {
+          "est": 8,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Vegetables"
+      },
+      {
+        "id": "carve-and-serve",
+        "kind": "cook",
+        "text": "Carve the chicken and serve with the potatoes, beans, and gravy.",
+        "label": "carve and serve",
+        "ingredientIdx": [
+          0,
+          6,
+          9,
+          14
+        ],
+        "sourceStep": 22,
+        "implied": false,
+        "needs": [
+          "rest-chicken",
+          "crisp-potatoes",
+          "simmer-gravy",
+          "cook-beans"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Chicken"
+      }
+    ]
+  },
+  "usage": {
+    "calls": 1,
+    "inputTokens": 3126,
+    "outputTokens": 2108
+  }
+}

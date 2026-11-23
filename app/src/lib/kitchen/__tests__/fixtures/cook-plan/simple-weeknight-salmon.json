@@ -1,0 +1,18 @@
+{
+  "description": "Pat dry is mise, seasoning is cook; '4 minutes per side' is a hands-off stretch with one turn.",
+  "prepStyles": [
+    "implied"
+  ],
+  "recipeFrom": "simple-weeknight-salmon",
+  "gold": {
+    "ahead": [],
+    "mise": [
+      0,
+      2,
+      5
+    ],
+    "handsOffSteps": [
+      3
+    ]
+  }
+}

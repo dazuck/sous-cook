@@ -1,0 +1,216 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "34ff405c9b3efb1d",
+  "recipeHash": "3b3e8f1bdc12ba5f",
+  "ms": 3927,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "simmer-chicken",
+        "kind": "cook",
+        "text": "For the chicken: place the chicken thighs in a pot with the quartered onion and bay leaves, cover with water, and simmer for 30 minutes.",
+        "label": "simmer chicken",
+        "ingredientIdx": [
+          18,
+          19,
+          20
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 35,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Chicken"
+      },
+      {
+        "id": "reserve-chicken",
+        "kind": "cook",
+        "text": "Remove the chicken and reserve the poaching liquid.",
+        "label": "reserve chicken",
+        "ingredientIdx": [],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [
+          "simmer-chicken"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Chicken"
+      },
+      {
+        "id": "toast-soak-chiles",
+        "kind": "cook",
+        "text": "For the mole: toast the ancho, pasilla, and guajillo chiles in a dry skillet until fragrant, then soak in hot water.",
+        "label": "toast and soak chiles",
+        "ingredientIdx": [
+          0,
+          1,
+          2
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 15,
+          "handsOff": true
+        },
+        "cue": "until fragrant",
+        "lead": null,
+        "branch": "Mole"
+      },
+      {
+        "id": "toast-seeds-nuts",
+        "kind": "cook",
+        "text": "In the same skillet, toast the sesame seeds, pumpkin seeds, and almonds.",
+        "label": "toast seeds and nuts",
+        "ingredientIdx": [
+          3,
+          4,
+          5
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "toast-soak-chiles"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Mole"
+      },
+      {
+        "id": "fry-tortillas-raisins",
+        "kind": "cook",
+        "text": "Fry the tortillas and raisins until the tortillas are crisp.",
+        "label": "fry tortillas and raisins",
+        "ingredientIdx": [
+          6,
+          7
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "toast-seeds-nuts"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": "until the tortillas are crisp",
+        "lead": null,
+        "branch": "Mole"
+      },
+      {
+        "id": "char-vegetables",
+        "kind": "cook",
+        "text": "Char the tomatoes, onion, and garlic under the broiler.",
+        "label": "char vegetables",
+        "ingredientIdx": [
+          8,
+          9,
+          10
+        ],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 10,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Mole"
+      },
+      {
+        "id": "blend-mole-paste",
+        "kind": "cook",
+        "text": "Blend the soaked chiles, toasted seeds, nuts, tortillas, raisins, charred vegetables, cinnamon, cloves, and cumin with some chicken broth into a smooth paste.",
+        "label": "blend mole paste",
+        "ingredientIdx": [
+          11,
+          12,
+          13,
+          15
+        ],
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [
+          "toast-soak-chiles",
+          "toast-seeds-nuts",
+          "fry-tortillas-raisins",
+          "char-vegetables"
+        ],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Mole"
+      },
+      {
+        "id": "fry-mole-paste",
+        "kind": "cook",
+        "text": "Heat the lard in a Dutch oven, fry the mole paste, then add the Mexican chocolate and remaining chicken broth.",
+        "label": "fry mole paste",
+        "ingredientIdx": [
+          14,
+          16
+        ],
+        "sourceStep": 7,
+        "implied": false,
+        "needs": [
+          "blend-mole-paste"
+        ],
+        "minutes": {
+          "est": 10,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Mole"
+      },
+      {
+        "id": "simmer-chicken-mole",
+        "kind": "cook",
+        "text": "Return the chicken to the pot, simmer in the mole for 20 minutes, and season with salt.",
+        "label": "simmer chicken in mole",
+        "ingredientIdx": [
+          17,
+          18
+        ],
+        "sourceStep": 8,
+        "implied": false,
+        "needs": [
+          "reserve-chicken",
+          "fry-mole-paste"
+        ],
+        "minutes": {
+          "est": 22,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Mole"
+      }
+    ]
+  },
+  "usage": {
+    "calls": 1,
+    "inputTokens": 2937,
+    "outputTokens": 860
+  }
+}

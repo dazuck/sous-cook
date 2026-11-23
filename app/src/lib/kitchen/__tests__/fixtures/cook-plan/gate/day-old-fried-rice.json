@@ -1,0 +1,253 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "34ff405c9b3efb1d",
+  "recipeHash": "207a512322d6cad1",
+  "ms": 4331,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "chill-cooked-jasmine-rice",
+        "kind": "ahead",
+        "text": "3 cups cooked jasmine rice, chilled overnight",
+        "label": "chill rice",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 480,
+          "handsOff": true
+        },
+        "cue": null,
+        "lead": "overnight",
+        "branch": "Cook"
+      },
+      {
+        "id": "break-up-rice",
+        "kind": "mise",
+        "text": "Break up any clumps in the cold rice with your fingers.",
+        "label": "break up rice",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [
+          "chill-cooked-jasmine-rice"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "beat-eggs",
+        "kind": "mise",
+        "text": "Beat the eggs.",
+        "label": "beat eggs",
+        "ingredientIdx": [
+          2
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "scramble-eggs",
+        "kind": "cook",
+        "text": "Heat 1 tablespoon of the oil in a wok over high heat, scramble the eggs until just set, and tip them onto a plate.",
+        "label": "scramble eggs",
+        "ingredientIdx": [
+          1,
+          2
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "beat-eggs"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": "until just set",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "dice-carrot-char-siu-slice-green-onions",
+        "kind": "mise",
+        "text": "Dice the carrot and the char siu, and thinly slice the green onions, keeping the whites and greens apart.",
+        "label": "dice and slice",
+        "ingredientIdx": [
+          3,
+          6,
+          10
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 5,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "mince-garlic",
+        "kind": "mise",
+        "text": "Mince the garlic.",
+        "label": "mince garlic",
+        "ingredientIdx": [
+          4
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "stir-fry-carrot-and-onion-whites",
+        "kind": "cook",
+        "text": "Add the remaining oil to the wok, then the carrot and the green onion whites, and stir-fry for 2 minutes.",
+        "label": "stir-fry carrots",
+        "ingredientIdx": [
+          1,
+          3,
+          6
+        ],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [
+          "scramble-eggs",
+          "dice-carrot-char-siu-slice-green-onions"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "stir-fry-garlic-and-char-siu",
+        "kind": "cook",
+        "text": "Add the garlic and char siu and stir-fry for 30 seconds.",
+        "label": "add garlic and char siu",
+        "ingredientIdx": [
+          4,
+          10
+        ],
+        "sourceStep": 6,
+        "implied": false,
+        "needs": [
+          "stir-fry-carrot-and-onion-whites",
+          "mince-garlic"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "add-rice",
+        "kind": "cook",
+        "text": "Add the rice and press it against the wok, tossing, for 3 minutes, until hot and starting to crisp.",
+        "label": "crisp rice",
+        "ingredientIdx": [
+          0
+        ],
+        "sourceStep": 7,
+        "implied": false,
+        "needs": [
+          "stir-fry-garlic-and-char-siu",
+          "break-up-rice"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": "until hot and starting to crisp",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "add-peas",
+        "kind": "cook",
+        "text": "Add the peas straight from the freezer and toss for 1 minute.",
+        "label": "add peas",
+        "ingredientIdx": [
+          5
+        ],
+        "sourceStep": 8,
+        "implied": false,
+        "needs": [
+          "add-rice"
+        ],
+        "minutes": {
+          "est": 1,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "finish-fried-rice",
+        "kind": "cook",
+        "text": "Season with the soy sauce, sesame oil, and white pepper, fold the eggs back in, and scatter over the green onion greens.",
+        "label": "season and serve",
+        "ingredientIdx": [
+          2,
+          3,
+          7,
+          8,
+          9
+        ],
+        "sourceStep": 9,
+        "implied": false,
+        "needs": [
+          "add-peas"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      }
+    ]
+  },
+  "usage": {
+    "calls": 1,
+    "inputTokens": 2716,
+    "outputTokens": 998
+  }
+}

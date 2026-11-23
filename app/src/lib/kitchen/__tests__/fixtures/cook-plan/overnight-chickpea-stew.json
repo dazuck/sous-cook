@@ -1,0 +1,94 @@
+{
+  "description": "A stated overnight soak (ahead) against a 1-hour simmer that is not ahead. Draining the soaked chickpeas is mise on the day.",
+  "prepStyles": [
+    "front-loaded"
+  ],
+  "recipe": {
+    "ingredients": [
+      {
+        "amount": "1",
+        "unit": "cup",
+        "item": "dried chickpeas"
+      },
+      {
+        "amount": "2",
+        "unit": "tbsp",
+        "item": "olive oil"
+      },
+      {
+        "amount": "1",
+        "item": "onion"
+      },
+      {
+        "amount": "3",
+        "unit": "cloves",
+        "item": "garlic"
+      },
+      {
+        "amount": "1",
+        "item": "carrot"
+      },
+      {
+        "amount": "1",
+        "unit": "tsp",
+        "item": "ground cumin"
+      },
+      {
+        "amount": "1",
+        "unit": "tsp",
+        "item": "smoked paprika"
+      },
+      {
+        "amount": "1",
+        "unit": "can (14 oz)",
+        "item": "crushed tomatoes"
+      },
+      {
+        "amount": "4",
+        "unit": "cups",
+        "item": "vegetable stock"
+      },
+      {
+        "amount": "2",
+        "unit": "cups",
+        "item": "spinach"
+      },
+      {
+        "item": "salt"
+      }
+    ],
+    "steps": [
+      "The night before, cover the chickpeas with plenty of cold water and leave them to soak for at least 8 hours.",
+      "Drain and rinse the soaked chickpeas.",
+      "Dice the onion and carrot and slice the garlic.",
+      "Warm the olive oil in a heavy pot over medium heat and cook the onion and carrot for 8 minutes, stirring now and then, until soft.",
+      "Add the garlic, cumin, and paprika and stir for 1 minute.",
+      "Add the chickpeas, crushed tomatoes, and stock, bring to a boil, then cover and simmer gently for 1 hour, until the chickpeas are tender.",
+      "Stir in the spinach until it wilts and season with salt."
+    ]
+  },
+  "gold": {
+    "ahead": [
+      {
+        "what": "soak the chickpeas",
+        "ingredients": [
+          0
+        ],
+        "steps": [
+          0
+        ]
+      }
+    ],
+    "mise": [
+      0,
+      2,
+      3,
+      4
+    ],
+    "handsOffSteps": [
+      0,
+      3,
+      5
+    ]
+  }
+}

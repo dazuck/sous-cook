@@ -1,0 +1,200 @@
+{
+  "model": "google/gemini-3.5-flash",
+  "thinkingBudget": 0,
+  "promptHash": "965a3c74dd8692b6",
+  "recipeHash": "6a4bc9df70206e2c",
+  "ms": 4608,
+  "error": null,
+  "raw": {
+    "tasks": [
+      {
+        "id": "slice-garlic",
+        "kind": "mise",
+        "text": "Thinly slice 4 cloves garlic.",
+        "label": "slice garlic",
+        "ingredientIdx": [
+          3
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "grate-parmesan",
+        "kind": "mise",
+        "text": "Grate 1/2 cup Parmesan.",
+        "label": "grate parmesan",
+        "ingredientIdx": [
+          6
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "chop-basil",
+        "kind": "mise",
+        "text": "Chop 2 tbsp basil.",
+        "label": "chop basil",
+        "ingredientIdx": [
+          8
+        ],
+        "sourceStep": null,
+        "implied": true,
+        "needs": [],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "boil-rigatoni",
+        "kind": "cook",
+        "text": "Bring a large pot of salted water to a boil and cook the rigatoni until al dente.",
+        "label": "boil rigatoni",
+        "ingredientIdx": [
+          0,
+          7
+        ],
+        "sourceStep": 0,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 20,
+          "handsOff": true
+        },
+        "cue": "until al dente",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "warm-harissa-oil",
+        "kind": "cook",
+        "text": "Warm the 3 tbsp harissa olive oil in a skillet and stir in the 2 tbsp tomato paste.",
+        "label": "warm harissa oil",
+        "ingredientIdx": [
+          1,
+          2
+        ],
+        "sourceStep": 1,
+        "implied": false,
+        "needs": [],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "cook-garlic",
+        "kind": "cook",
+        "text": "Add the sliced garlic and 1/2 tsp red-pepper flakes and cook until fragrant.",
+        "label": "cook garlic",
+        "ingredientIdx": [
+          3,
+          4
+        ],
+        "sourceStep": 2,
+        "implied": false,
+        "needs": [
+          "slice-garlic",
+          "warm-harissa-oil"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": "until fragrant",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "combine-pasta",
+        "kind": "cook",
+        "text": "Add the 1/4 cup heavy cream and a splash of pasta water, then toss in the drained rigatoni.",
+        "label": "combine pasta",
+        "ingredientIdx": [
+          0,
+          5
+        ],
+        "sourceStep": 3,
+        "implied": false,
+        "needs": [
+          "boil-rigatoni",
+          "cook-garlic"
+        ],
+        "minutes": {
+          "est": 3,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "melt-parmesan",
+        "kind": "cook",
+        "text": "Remove from heat and stir in the Parmesan until melted.",
+        "label": "melt parmesan",
+        "ingredientIdx": [
+          6
+        ],
+        "sourceStep": 4,
+        "implied": false,
+        "needs": [
+          "grate-parmesan",
+          "combine-pasta"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": "until melted",
+        "lead": null,
+        "branch": "Cook"
+      },
+      {
+        "id": "finish-and-serve",
+        "kind": "cook",
+        "text": "Season with salt, garnish with torn basil, and serve.",
+        "label": "season and serve",
+        "ingredientIdx": [
+          7,
+          8
+        ],
+        "sourceStep": 5,
+        "implied": false,
+        "needs": [
+          "chop-basil",
+          "melt-parmesan"
+        ],
+        "minutes": {
+          "est": 2,
+          "handsOff": false
+        },
+        "cue": null,
+        "lead": null,
+        "branch": "Cook"
+      }
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@sous/pack",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Pack Format v0 (design/pack-format-v0.md) as one schema: parsers and ref checks shared by the app, Player and Studio",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./media-file": "./src/media-file.ts",
+    "./quantity": "./src/quantity.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.2.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^20",
+    "eslint": "^9",
+    "typescript": "^5",
+    "typescript-eslint": "^8.50.1",
+    "vitest": "^4.0.16"
+  }
+}

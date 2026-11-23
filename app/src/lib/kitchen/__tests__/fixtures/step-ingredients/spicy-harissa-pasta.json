@@ -1,0 +1,23 @@
+{
+  "description": "Harissa rigatoni. Stresses 'harissa oil' vs the ingredient 'harissa olive oil', a hyphen variant (red-pepper vs red pepper), and pervasive salt only on first use.",
+  "ingredients": [
+    { "amount": "12", "unit": "oz", "item": "rigatoni" },
+    { "amount": "3", "unit": "tbsp", "item": "harissa olive oil" },
+    { "amount": "2", "unit": "tbsp", "item": "tomato paste" },
+    { "amount": "4", "unit": "cloves", "item": "garlic, thinly sliced" },
+    { "amount": "1/2", "unit": "tsp", "item": "red-pepper flakes" },
+    { "amount": "1/4", "unit": "cup", "item": "heavy cream" },
+    { "amount": "1/2", "unit": "cup", "item": "grated Parmesan" },
+    { "item": "salt to taste" },
+    { "amount": "2", "unit": "tbsp", "item": "chopped basil" }
+  ],
+  "steps": [
+    "Bring a large pot of salted water to a boil and cook the rigatoni until al dente.",
+    "Meanwhile, warm the harissa oil in a skillet and stir in the tomato paste.",
+    "Add the sliced garlic and red pepper flakes and cook until fragrant.",
+    "Add the heavy cream and a splash of pasta water, then toss in the drained rigatoni.",
+    "Remove from heat and stir in the Parmesan until melted.",
+    "Season with salt, garnish with torn basil, and serve."
+  ],
+  "golden": [[0, 7], [1, 2], [3, 4], [0, 5], [6], [8]]
+}
