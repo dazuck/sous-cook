@@ -752,7 +752,14 @@ describe("syncRecipesFromDoc", () => {
 
     await syncRecipesFromDoc(KITCHEN_ID);
 
-    expect(extractRecipeFromText).toHaveBeenCalledWith(CHUTNEY_TEXT);
+    expect(extractRecipeFromText).toHaveBeenCalledWith(CHUTNEY_TEXT, {
+      meter: {
+        kind: "kitchen",
+        kitchenId: KITCHEN_ID,
+        memberId: null,
+        feature: "library-refresh",
+      },
+    });
     expect(db.transaction).toHaveBeenCalledTimes(1);
     expect(txSteps).toEqual([
       {

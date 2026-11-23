@@ -17,6 +17,7 @@ import type {
   ChatResponse,
   FinishReason,
   VisionOptions,
+  VisionResponse,
 } from "../types";
 
 /** Map Anthropic's stop_reason to our normalized FinishReason. */
@@ -187,7 +188,7 @@ export function createAnthropicProvider(apiKey: string): AIProvider {
       };
     },
 
-    async vision(options: VisionOptions): Promise<string> {
+    async vision(options: VisionOptions): Promise<VisionResponse> {
       const model = options.model || DEFAULT_MODEL;
       const maxTokens = options.maxTokens ?? DEFAULT_MAX_TOKENS;
 
@@ -244,7 +245,13 @@ export function createAnthropicProvider(apiKey: string): AIProvider {
         throw new Error("No text content in Anthropic vision response");
       }
 
-      return textContent.text;
+      return {
+        content: textContent.text,
+        usage: {
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+        },
+      };
     },
   };
 }

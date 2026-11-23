@@ -2,6 +2,13 @@ import { eq } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import * as schema from "../../../drizzle/schema";
 import { db, invites, kitchens, members } from "@/lib/db";
+import { getConfig } from "@/lib/ai/config";
+import {
+  MODEL_PRICES,
+  getModelPrice,
+  parseUsdToMicrosResult,
+  type ModelPrice,
+} from "@/lib/ai/prices";
 import { connected } from "@/lib/hooks/connected";
 import { HOOK_NAMES } from "@/lib/hooks/types";
 
@@ -89,12 +96,88 @@ export function getBetterAuthOrigin(
   return parsed.origin;
 }
 
+const CAP_ENV_VARS = [
+  "SOUS_AI_KITCHEN_CAP_USD",
+  "SOUS_AI_TOTAL_CAP_USD",
+] as const;
+
+function validateCapEnvVars(
+  mode: DeploymentMode,
+  env: Record<string, string | undefined>,
+): void {
+  for (const varName of CAP_ENV_VARS) {
+    const raw = env[varName];
+    if (raw === undefined) {
+      // Required in sign-in mode (already checked above); optional in single-kitchen mode.
+      if (mode === "sign-in") {
+        throw new DeploymentConfigError(
+          `Invalid ${varName}: expected a plain non-negative dollar amount with at most two decimals (for example, 2 or 0.25).`,
+          `Invalid ${varName}: value is unset in sign-in mode; expected a plain non-negative dollar amount matching ^\\d+(\\.\\d{1,2})?$.`,
+        );
+      }
+      continue;
+    }
+    const parsed = parseUsdToMicrosResult(raw);
+    if (!parsed.ok) {
+      if (parsed.reason === "too-large") {
+        throw new DeploymentConfigError(
+          `Invalid ${varName}: dollar amount is too large to store.`,
+          `Invalid ${varName} value "${raw}": dollar amount is too large to store.`,
+        );
+      }
+      throw new DeploymentConfigError(
+        `Invalid ${varName}: expected a plain non-negative dollar amount with at most two decimals (for example, 2 or 0.25).`,
+        `Invalid ${varName} value "${raw}": expected a plain non-negative dollar amount matching ^\\d+(\\.\\d{1,2})?$.`,
+      );
+    }
+  }
+}
+
+function validateConfiguredModelPrices(
+  mode: DeploymentMode,
+  env: Record<string, string | undefined>,
+  prices: Readonly<Record<string, ModelPrice>>,
+): void {
+  const config = getConfig(env);
+  const configured: Array<{ envVar: string; model: string }> = [
+    { envVar: "AI_TEXT_MODEL", model: config.textModel },
+    { envVar: "AI_COOK_CHAT_MODEL", model: config.cookChatModel },
+    { envVar: "AI_VISION_MODEL", model: config.visionModel },
+  ];
+
+  const missingModels: string[] = [];
+  const missingDetails: string[] = [];
+  const seenMissing = new Set<string>();
+
+  for (const { envVar, model } of configured) {
+    if (getModelPrice(model, prices) !== null) continue;
+    missingDetails.push(`${envVar}="${model}"`);
+    if (!seenMissing.has(model)) {
+      seenMissing.add(model);
+      missingModels.push(model);
+    }
+  }
+
+  if (missingModels.length > 0) {
+    const context =
+      mode === "sign-in"
+        ? "Sign-in mode"
+        : "Single-kitchen mode with an AI cap set";
+    throw new DeploymentConfigError(
+      `${context} cannot start: configured AI model(s) have no price row: ${missingModels.join(", ")}.`,
+      `${context} cannot start: configured AI model(s) have no price row in app/src/lib/ai/prices.ts (${missingDetails.join(", ")}). Add a price entry before starting.`,
+    );
+  }
+}
+
 /**
- * Validates deployment environment variables and hook configuration without
- * touching the database. Safe to call in `instrumentation.ts` `register()`.
+ * Validates deployment environment variables, cap formats, model price rows,
+ * and hook configuration without touching the database. Safe to call in
+ * `instrumentation.ts` `register()`.
  */
 export function checkDeploymentEnv(
   env: Record<string, string | undefined> = process.env,
+  prices: Readonly<Record<string, ModelPrice>> = MODEL_PRICES,
 ): DeploymentMode {
   const mode = getDeploymentMode(env);
 
@@ -120,12 +203,25 @@ export function checkDeploymentEnv(
     // Validate BETTER_AUTH_URL syntax and scheme early.
     getBetterAuthOrigin(env);
 
+    // Validate cap variable syntax before checking hooks and model prices.
+    validateCapEnvVars(mode, env);
+
     const enabledHooks = HOOK_NAMES.filter((name) => connected[name]);
     if (enabledHooks.length > 0) {
       throw new DeploymentConfigError(
         `Sign-in mode cannot start with instance-wide hook(s) connected: ${enabledHooks.join(", ")}. ` +
           `Disconnect them in app/src/lib/hooks/connected.ts, or set SOUS_SIGN_IN=off for one household.`,
       );
+    }
+
+    validateConfiguredModelPrices(mode, env, prices);
+  } else {
+    validateCapEnvVars(mode, env);
+    if (
+      env.SOUS_AI_KITCHEN_CAP_USD !== undefined ||
+      env.SOUS_AI_TOTAL_CAP_USD !== undefined
+    ) {
+      validateConfiguredModelPrices(mode, env, prices);
     }
   }
 
@@ -189,10 +285,20 @@ export async function checkDeploymentDatabase(
   }
 }
 
+function encodeEnvValue(value: string | undefined): string {
+  return value === undefined ? "\x01" : value;
+}
+
 function deploymentEnvKey(env: Record<string, string | undefined>): string {
   const envParts = [
-    env.SOUS_SIGN_IN ?? "",
-    ...REQUIRED_SIGN_IN_ENV_VARS.map((k) => env[k] ?? ""),
+    encodeEnvValue(env.SOUS_SIGN_IN),
+    ...REQUIRED_SIGN_IN_ENV_VARS.map((k) => encodeEnvValue(env[k])),
+    ...CAP_ENV_VARS.map((k) => encodeEnvValue(env[k])),
+    encodeEnvValue(env.AI_TEXT_PROVIDER),
+    encodeEnvValue(env.AI_TEXT_MODEL),
+    encodeEnvValue(env.AI_COOK_CHAT_MODEL),
+    encodeEnvValue(env.AI_VISION_PROVIDER),
+    encodeEnvValue(env.AI_VISION_MODEL),
   ];
   const hookParts = HOOK_NAMES.map((name) => (connected[name] ? "1" : "0"));
   return `${envParts.join("\0")}|${hookParts.join("")}`;

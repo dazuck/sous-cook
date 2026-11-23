@@ -20,13 +20,22 @@ import {
   type CookPlan,
 } from "./kitchen/cook-plan";
 import {
+  CookPlanCapReached,
+  CookPlanDerivationError,
   deriveCookPlanOutcome,
   type CookPlanRejection,
+  type DerivedCookPlan,
 } from "./kitchen/cook-plan-derive";
+import { isAllowanceUsed, kitchenMeter } from "./ai";
 import { isSettledPlanError, type PlanCopy } from "./kitchen/cook-plan-stamp";
 import { callCostUsd, formatUsd } from "./cook-plan-cost";
 import { storedEstimate } from "./pack-convert/convert";
-import { intakeStamp, runIntake, type IntakeRejection } from "./pack-convert/intake";
+import {
+  intakeStamp,
+  runIntake,
+  type IntakeOutcome,
+  type IntakeRejection,
+} from "./pack-convert/intake";
 import {
   INTAKE_FOR_NOW,
   INTAKE_MAX_TRIES,
@@ -573,21 +582,39 @@ export async function selectCookPlanBackfill(
 export async function deriveAndStoreCookPlan(
   kitchenId: string,
   queueId: string,
+  memberId: string | null = null,
 ): Promise<CookPlanOutcome> {
-  return deriveAndStore(kitchenId, queueId, false);
+  return deriveAndStore(kitchenId, queueId, false, memberId);
 }
 
 async function deriveAndStore(
   kitchenId: string,
   queueId: string,
   again: boolean,
+  memberId: string | null,
 ): Promise<CookPlanOutcome> {
   const item = await getQueueItemOrThrow(kitchenId, queueId);
   const settled = cookPlanWithoutDerive(item);
   if (settled) return settled;
 
-  const derived = await deriveCookPlanOutcome(queueIntake(item).recipe ?? {});
-  await logCookPlanRejections(kitchenId, `cook-plan:${queueId}`, randomUUID(), derived.rejections);
+  const sessionId = `cook-plan:${queueId}`;
+  const derivation = randomUUID();
+  let derived: DerivedCookPlan;
+  try {
+    derived = await deriveCookPlanOutcome(queueIntake(item).recipe ?? {}, {
+      meter: kitchenMeter(kitchenId, memberId, "cook-plan"),
+    });
+  } catch (err) {
+    if (
+      (err instanceof CookPlanCapReached ||
+        err instanceof CookPlanDerivationError) &&
+      err.rejections.length > 0
+    ) {
+      await logCookPlanRejections(kitchenId, sessionId, derivation, err.rejections);
+    }
+    throw err;
+  }
+  await logCookPlanRejections(kitchenId, sessionId, derivation, derived.rejections);
   /** The cut landed since the read: this derive planned a recipe the cook no longer meets. */
   const cutSince = (winner: KitchenQueueItem) =>
     !again && item.intakeRecipe === null && winner.intakeRecipe !== null;
@@ -598,7 +625,7 @@ async function deriveAndStore(
     }
     const winner = await getQueueItemOrThrow(kitchenId, queueId);
     if (isCurrentCookPlan(winner.cookPlan)) return { plan: winner.cookPlan, error: null };
-    if (cutSince(winner)) return deriveAndStore(kitchenId, queueId, true);
+    if (cutSince(winner)) return deriveAndStore(kitchenId, queueId, true, memberId);
     // A plan from a newer version is left alone but can't be read here.
     return { plan: derived.plan, error: null };
   }
@@ -609,7 +636,7 @@ async function deriveAndStore(
     if (isCurrentCookPlan(winner.cookPlan)) {
       return { plan: winner.cookPlan, error: null };
     }
-    if (cutSince(winner)) return deriveAndStore(kitchenId, queueId, true);
+    if (cutSince(winner)) return deriveAndStore(kitchenId, queueId, true, memberId);
   }
   return { plan: null, error };
 }
@@ -705,8 +732,9 @@ export async function ensureIntake(
   kitchenId: string,
   queueId: string,
   ask: IntakeAsk = "background",
+  memberId: string | null = null,
 ): Promise<QueueIntake> {
-  return (await ensureIntakeForCook(kitchenId, queueId, ask)).intake;
+  return (await ensureIntakeForCook(kitchenId, queueId, ask, memberId)).intake;
 }
 
 /**
@@ -728,7 +756,12 @@ export async function ensureIntakeForCook(
   kitchenId: string,
   queueId: string,
   ask: IntakeAsk,
-): Promise<{ intake: QueueIntake; item: KitchenQueueItem }> {
+  memberId: string | null = null,
+): Promise<{
+  intake: QueueIntake;
+  item: KitchenQueueItem;
+  skippedForAllowance?: true;
+}> {
   const item = await getQueueItemOrThrow(kitchenId, queueId);
   const before = queueIntake(item);
   if (before.state !== "pending" || item.recipeData === null) return { intake: before, item };
@@ -779,16 +812,30 @@ export async function ensureIntakeForCook(
   }
 
   const usage = { calls: 0, input: 0, output: 0 };
-  const outcome = await runIntake(item.recipeData, {
-    servesEstimate: storedEstimate(item),
-    onUsage: (u) => {
-      // A call that reported nothing (or threw) is counted at its bound.
-      const reported = u.inputTokens > 0 || u.outputTokens > 0;
-      usage.calls++;
-      usage.input += reported ? u.inputTokens : u.bound.inputTokens;
-      usage.output += reported ? u.outputTokens : u.bound.outputTokens;
-    },
-  });
+  let outcome: IntakeOutcome;
+  try {
+    outcome = await runIntake(item.recipeData, {
+      meter: kitchenMeter(kitchenId, memberId, "intake"),
+      servesEstimate: storedEstimate(item),
+      onUsage: (u) => {
+        if (u.sent === false) return;
+        // A call that reported nothing (or threw) is counted at its bound.
+        const reported = u.inputTokens > 0 || u.outputTokens > 0;
+        usage.calls++;
+        usage.input += reported ? u.inputTokens : u.bound.inputTokens;
+        usage.output += reported ? u.outputTokens : u.bound.outputTokens;
+      },
+    });
+  } catch (err) {
+    if (isAllowanceUsed(err)) {
+      if (ask === "background") {
+        console.warn(`[ai-cap] intake not run for ${queueId}`);
+        return { intake: before, item, skippedForAllowance: true };
+      }
+      throw err;
+    }
+    throw err;
+  }
   const nudges = outcome.error === null ? outcome.nudges.map((n) => `${n.rule}: ${n.detail}`) : [];
   const error =
     outcome.error === null
@@ -864,10 +911,11 @@ async function logIntakeRejections(
 export async function cookPlanForCook(
   kitchenId: string,
   queueId: string,
+  memberId: string | null = null,
 ): Promise<CookPlanOutcome> {
   const item = await getQueueItemOrThrow(kitchenId, queueId);
   if (queueIntake(item).state === "pending") return { plan: null, error: INTAKE_STATE_ERRORS.waiting };
-  return deriveAndStoreCookPlan(kitchenId, queueId);
+  return deriveAndStoreCookPlan(kitchenId, queueId, memberId);
 }
 
 /**
@@ -901,11 +949,24 @@ export async function prepareQueueItemInBackground(
   queueId: string,
 ): Promise<void> {
   try {
-    const { intake, plan } = await prepareQueueItem(kitchenId, queueId);
+    const { intake, skippedForAllowance } = await ensureIntakeForCook(
+      kitchenId,
+      queueId,
+      "background",
+    );
+    if (skippedForAllowance) return;
+    if (intake.state === "pending") {
+      console.warn(`Queue item ${queueId} not cut yet, tries again on open: ${intake.error}`);
+      return;
+    }
     if (intake.state === "as-sent") console.warn(`Queue item ${queueId} shown as sent: ${intake.error}`);
-    if (plan === null) console.warn(`Queue item ${queueId} not cut yet, tries again on open: ${intake.error}`);
-    else if (plan.error) console.warn(`No cook plan for queue item ${queueId}: ${plan.error}`);
+    const plan = await deriveAndStoreCookPlan(kitchenId, queueId);
+    if (plan.error) console.warn(`No cook plan for queue item ${queueId}: ${plan.error}`);
   } catch (err) {
+    if (isAllowanceUsed(err)) {
+      console.warn(`[ai-cap] cook plan not derived for ${queueId}`);
+      return;
+    }
     console.error(`Preparing queue item ${queueId} failed:`, err);
   }
 }

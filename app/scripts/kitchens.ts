@@ -11,22 +11,32 @@
  *   pnpm --dir app kitchens token create --kitchen <slug> --label <text>
  *   pnpm --dir app kitchens token revoke --id <id>
  *   pnpm --dir app kitchens token list [--kitchen <slug>]
+ *   pnpm --dir app kitchens spend [--month YYYY-MM]
+ *   pnpm --dir app kitchens cap set --kitchen <slug> --usd <amount>
+ *   pnpm --dir app kitchens cap clear --kitchen <slug>
  */
 
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "../drizzle/schema";
+import { formatMicrosAsUsd } from "../src/lib/ai/prices";
 import {
   KitchenAdminError,
   assertSignInModeForAdmin,
+  clearKitchenCap,
   createInvite,
   createWebhookToken,
+  formatClearKitchenCapSummary,
+  formatKitchenCap,
   formatRemoveMemberSummary,
+  formatSpendReport,
+  getKitchenSpend,
   listKitchens,
   listWebhookTokens,
   removeMember,
   renameKitchen,
   revokeWebhookToken,
+  setKitchenCap,
   uninviteEmail,
   type CreateInviteInput,
 } from "../src/lib/kitchens/admin";
@@ -42,6 +52,9 @@ const USAGE = [
   "  pnpm --dir app kitchens token create --kitchen <slug> --label <text>",
   "  pnpm --dir app kitchens token revoke --id <id>",
   "  pnpm --dir app kitchens token list [--kitchen <slug>]",
+  "  pnpm --dir app kitchens spend [--month YYYY-MM]",
+  "  pnpm --dir app kitchens cap set --kitchen <slug> --usd <amount>",
+  "  pnpm --dir app kitchens cap clear --kitchen <slug>",
 ].join("\n");
 
 interface ParsedFlags {
@@ -104,11 +117,6 @@ function formatDate(value: Date | null): string {
   return value === null ? "-" : value.toISOString();
 }
 
-function formatCap(capMicros: number | null): string {
-  if (capMicros === null) return "default";
-  return `$${(capMicros / 1_000_000).toFixed(2)}/mo`;
-}
-
 type ParsedCommand =
   | { kind: "invite"; input: CreateInviteInput }
   | { kind: "uninvite"; input: { email: string } }
@@ -120,7 +128,10 @@ type ParsedCommand =
   | { kind: "rename"; input: { kitchenSlug: string; name: string } }
   | { kind: "token-create"; input: { kitchenSlug: string; label: string } }
   | { kind: "token-revoke"; input: { id: string } }
-  | { kind: "token-list"; input: { kitchenSlug?: string } };
+  | { kind: "token-list"; input: { kitchenSlug?: string } }
+  | { kind: "spend"; input: { month?: string } }
+  | { kind: "cap-set"; input: { kitchenSlug: string; usd: string } }
+  | { kind: "cap-clear"; input: { kitchenSlug: string } };
 
 function parseCommand(args: readonly string[]): ParsedCommand {
   const [command, ...rest] = args;
@@ -258,6 +269,40 @@ function parseCommand(args: readonly string[]): ParsedCommand {
     );
   }
 
+  if (command === "spend") {
+    const flags = parseFlags(rest, new Set(["month"]));
+    return {
+      kind: "spend",
+      input: { month: flags.values.get("month") },
+    };
+  }
+
+  if (command === "cap") {
+    const [subcommand, ...capRest] = rest;
+    if (subcommand === "set") {
+      const flags = parseFlags(capRest, new Set(["kitchen", "usd"]));
+      return {
+        kind: "cap-set",
+        input: {
+          kitchenSlug: requireFlag(flags, "kitchen"),
+          usd: requireFlag(flags, "usd"),
+        },
+      };
+    }
+    if (subcommand === "clear") {
+      const flags = parseFlags(capRest, new Set(["kitchen"]));
+      return {
+        kind: "cap-clear",
+        input: {
+          kitchenSlug: requireFlag(flags, "kitchen"),
+        },
+      };
+    }
+    throw new KitchenAdminError(
+      `Unknown cap subcommand "${subcommand ?? ""}".\n${USAGE}`,
+    );
+  }
+
   throw new KitchenAdminError(
     `Unknown command "${args.join(" ")}".\n${USAGE}`,
   );
@@ -340,7 +385,7 @@ async function main(): Promise<void> {
         } else {
           for (const k of listed.kitchens) {
             console.log(
-              `${k.slug}\t${k.name}\tcap=${formatCap(k.aiMonthlyCapMicros)}`,
+              `${k.slug}\t${k.name}\tcap=${formatKitchenCap(k.aiMonthlyCapMicros)}`,
             );
             for (const m of k.members) {
               console.log(`  member\t${m.email}\t${m.role}`);
@@ -412,6 +457,27 @@ async function main(): Promise<void> {
             ].join("\t"),
           );
         }
+        return;
+      }
+
+      case "spend": {
+        const report = await getKitchenSpend(parsed.input, db);
+        console.log(formatSpendReport(report));
+        return;
+      }
+
+      case "cap-set": {
+        const updated = await setKitchenCap(parsed.input, db);
+        console.log(
+          `Set monthly AI cap for kitchen "${updated.slug}" to ${formatMicrosAsUsd(updated.newCapMicros)} (was ${formatKitchenCap(updated.previousCapMicros)}).`,
+        );
+        return;
+      }
+
+      case "cap-clear": {
+        const cleared = await clearKitchenCap(parsed.input, db);
+        console.log(formatClearKitchenCapSummary(cleared));
+        return;
       }
     }
   } finally {

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { chat, vision } from "./ai";
+import { chat, isAllowanceUsed, vision, type AiMeter } from "./ai";
 import { isFoodInventoryHeading } from "./hooks/pantry";
 import type { PantrySection } from "./hooks/types";
 
@@ -89,6 +89,7 @@ function cleanJsonResponse(response: string): string {
  */
 export async function reconcileRecipeIngredients(
   options: ReconcileOptions,
+  meter: AiMeter,
 ): Promise<PantryReconciliationCandidate[]> {
   const foodSections = options.docSections.filter((s) =>
     isFoodInventoryHeading(s.heading),
@@ -119,12 +120,15 @@ ${inventorySummary}
 `;
 
   try {
-    const aiResponse = await chat({
-      messages: [{ role: "user", content: prompt }],
-      responseFormat: "json",
-      thinkingBudget: 0,
-      maxTokens: 4096,
-    });
+    const aiResponse = await chat(
+      {
+        messages: [{ role: "user", content: prompt }],
+        responseFormat: "json",
+        thinkingBudget: 0,
+        maxTokens: 4096,
+      },
+      meter,
+    );
 
     const parsed = JSON.parse(cleanJsonResponse(aiResponse.content));
     const validated = ReconciliationReplySchema.safeParse(parsed);
@@ -148,6 +152,7 @@ ${inventorySummary}
       validDocItems.has(cand.docItemText.trim().toLowerCase()),
     );
   } catch (error) {
+    if (isAllowanceUsed(error)) throw error;
     console.error("Failed to reconcile recipe ingredients against pantry:", error);
     return [];
   }
@@ -200,6 +205,7 @@ Return ONLY valid JSON matching:
 
 export async function parseGroceryInput(
   options: ParseGroceryInputOptions,
+  meter: AiMeter,
 ): Promise<ParsedGroceryItem[]> {
   const content = options.content.trim();
   if (!content) return [];
@@ -207,12 +213,15 @@ export async function parseGroceryInput(
   try {
     let rawResponse = "";
     if (options.type === "image") {
-      rawResponse = await vision({
-        imageBase64: content,
-        prompt: GROCERY_PARSING_PROMPT,
-        thinkingBudget: 0,
-        maxTokens: 4096,
-      });
+      rawResponse = await vision(
+        {
+          imageBase64: content,
+          prompt: GROCERY_PARSING_PROMPT,
+          thinkingBudget: 0,
+          maxTokens: 4096,
+        },
+        meter,
+      );
     } else {
       const typeLabel = options.type === "voice" ? "voice transcript" : "typed text";
       const prompt = `${GROCERY_PARSING_PROMPT}
@@ -221,12 +230,15 @@ INPUT TYPE: ${typeLabel}
 INPUT CONTENT:
 ${content}
 `;
-      const response = await chat({
-        messages: [{ role: "user", content: prompt }],
-        responseFormat: "json",
-        thinkingBudget: 0,
-        maxTokens: 4096,
-      });
+      const response = await chat(
+        {
+          messages: [{ role: "user", content: prompt }],
+          responseFormat: "json",
+          thinkingBudget: 0,
+          maxTokens: 4096,
+        },
+        meter,
+      );
       rawResponse = response.content;
     }
 
@@ -238,6 +250,7 @@ ${content}
     }
     return validated.data.items;
   } catch (error) {
+    if (isAllowanceUsed(error)) throw error;
     console.error("Failed to parse grocery input:", error);
     return [];
   }

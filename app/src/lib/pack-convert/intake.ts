@@ -49,6 +49,7 @@
 
 import { createHash } from "node:crypto";
 import type { ChatRecipeIngredient, KitchenQueueRecipeData } from "../../../drizzle/schema";
+import { isAllowanceUsed, type AiMeter } from "../ai";
 import { quantitiesIn } from "../kitchen/cook-plan";
 import { ingredientToString } from "../kitchen/step-ingredients";
 import { groundingWords } from "../recipe-grounding";
@@ -507,6 +508,8 @@ export type IntakeOutcome =
   | { recipe: null; error: string; rejections: IntakeRejection[] };
 
 export interface IntakeOptions {
+  /** Metering context for each model call made by this intake pass. */
+  meter: AiMeter;
   /** The row's serving estimate, so the cut is read as the cook page reads it. */
   servesEstimate?: ServesEstimateInput;
   onUsage?: (usage: IntakeUsage) => void;
@@ -516,14 +519,14 @@ export interface IntakeOptions {
  * Cuts the recipe to the import rules: at most two extractions (the second
  * told what the first got wrong), each checked by `checkIntake`. A cut that
  * trips only notes is kept at once, and a second cut that trips only soft
- * rules is kept, with them as its nudges; a note is never sent back. Never
- * throws: a failed call, a deadline passed, a reply with no recipe or a cut
- * refused twice comes back as the error to store, a failed call and a
- * deadline as errors for now (`INTAKE_FOR_NOW`).
+ * rules is kept, with them as its nudges; a note is never sent back. Throws
+ * only `AllowanceUsedError`; a failed call, a deadline passed, a reply with
+ * no recipe or a cut refused twice comes back as the error to store, a failed
+ * call and a deadline as errors for now (`INTAKE_FOR_NOW`).
  */
 export async function runIntake(
   original: KitchenQueueRecipeData,
-  { servesEstimate, onUsage }: IntakeOptions = {},
+  { meter, servesEstimate, onUsage }: IntakeOptions,
 ): Promise<IntakeOutcome> {
   const text = intakeText(original);
   const deadline = new AbortController();
@@ -535,6 +538,7 @@ export async function runIntake(
     let correction: string | undefined;
     for (let attempt = 1; attempt <= 2; attempt++) {
       const extraction = await extractRecipeFromText(text, {
+        meter,
         correction,
         onUsage: count,
         signal: deadline.signal,
@@ -556,6 +560,7 @@ export async function runIntake(
     const refused = rejections[1]!.violations.find((v) => !v.soft)!;
     return { recipe: null, error: rejectedIntakeError(refused), rejections };
   } catch (err) {
+    if (isAllowanceUsed(err)) throw err;
     if (deadline.signal.aborted) {
       return { recipe: null, error: `${INTAKE_FOR_NOW}Intake timed out after ${INTAKE_TIMEOUT_MS / 1000} s`, rejections };
     }

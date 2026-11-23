@@ -12,6 +12,14 @@ import {
   type MemberRole,
 } from "../db";
 import { getDeploymentMode } from "./deployment";
+import {
+  formatMicrosAsUsd,
+  parseUsdToMicrosResult,
+} from "../ai/prices";
+import {
+  getMonthlySpendReport,
+  type MonthlySpendReport,
+} from "../ai/spend";
 import { normalizeEmail } from "./invites";
 import { isValidKitchenSlug, slugFromName } from "./slug";
 import { generateWebhookToken } from "./webhook-tokens";
@@ -916,4 +924,232 @@ export async function listWebhookTokens(
         );
 
   return rows;
+}
+
+export interface SetKitchenCapResult {
+  id: string;
+  slug: string;
+  name: string;
+  previousCapMicros: number | null;
+  newCapMicros: number;
+}
+
+export interface ClearKitchenCapResult {
+  id: string;
+  slug: string;
+  name: string;
+  previousCapMicros: number | null;
+}
+
+/**
+ * Formats a kitchen's stored monthly AI cap for operator CLI output using
+ * integer micro-dollar arithmetic (no floating-point rounding).
+ */
+export function formatKitchenCap(capMicros: number | null): string {
+  if (capMicros === null) return "default";
+  return `${formatMicrosAsUsd(capMicros)}/mo`;
+}
+
+/**
+ * Formats the operator CLI summary line for `cap clear`.
+ */
+export function formatClearKitchenCapSummary(
+  result: ClearKitchenCapResult,
+): string {
+  if (result.previousCapMicros === null) {
+    return `Kitchen "${result.slug}" had no monthly AI cap of its own; nothing changed.`;
+  }
+  return `Cleared monthly AI cap override for kitchen "${result.slug}" (was ${formatKitchenCap(result.previousCapMicros)}); now uses the deployment default.`;
+}
+
+/**
+ * Sets a per-kitchen monthly AI cap (`kitchens.ai_monthly_cap_micros`) from a
+ * dollar string matching `^\d+(\.\d{1,2})?$`.
+ */
+export async function setKitchenCap(
+  input: { kitchenSlug: string; usd: string },
+  database: AdminDb = db,
+): Promise<SetKitchenCapResult> {
+  const parsedCap = parseUsdToMicrosResult(input.usd);
+  if (!parsedCap.ok) {
+    if (parsedCap.reason === "too-large") {
+      throw new KitchenAdminError(
+        `Invalid cap "${input.usd}". Dollar amount is too large to store.`,
+      );
+    }
+    throw new KitchenAdminError(
+      `Invalid cap "${input.usd}". Expected a plain non-negative dollar amount with at most two decimals (for example, 2, 2.5, 0.25, or 0).`,
+    );
+  }
+  const newCapMicros = parsedCap.micros;
+  const normalizedSlug = input.kitchenSlug.trim();
+  if (!normalizedSlug) {
+    throw new KitchenAdminError("Kitchen slug is required.");
+  }
+  const [kitchen] = await database
+    .select({
+      id: kitchens.id,
+      slug: kitchens.slug,
+      name: kitchens.name,
+      aiMonthlyCapMicros: kitchens.aiMonthlyCapMicros,
+    })
+    .from(kitchens)
+    .where(eq(kitchens.slug, normalizedSlug))
+    .limit(1);
+  if (!kitchen) {
+    throw new KitchenAdminError(`Kitchen "${normalizedSlug}" not found.`);
+  }
+
+  await database
+    .update(kitchens)
+    .set({ aiMonthlyCapMicros: newCapMicros })
+    .where(eq(kitchens.id, kitchen.id));
+
+  return {
+    id: kitchen.id,
+    slug: kitchen.slug,
+    name: kitchen.name,
+    previousCapMicros: kitchen.aiMonthlyCapMicros,
+    newCapMicros,
+  };
+}
+
+/**
+ * Clears a kitchen's per-kitchen AI cap so it falls back to the deployment default.
+ */
+export async function clearKitchenCap(
+  input: { kitchenSlug: string },
+  database: AdminDb = db,
+): Promise<ClearKitchenCapResult> {
+  const normalizedSlug = input.kitchenSlug.trim();
+  if (!normalizedSlug) {
+    throw new KitchenAdminError("Kitchen slug is required.");
+  }
+  const [kitchen] = await database
+    .select({
+      id: kitchens.id,
+      slug: kitchens.slug,
+      name: kitchens.name,
+      aiMonthlyCapMicros: kitchens.aiMonthlyCapMicros,
+    })
+    .from(kitchens)
+    .where(eq(kitchens.slug, normalizedSlug))
+    .limit(1);
+  if (!kitchen) {
+    throw new KitchenAdminError(`Kitchen "${normalizedSlug}" not found.`);
+  }
+
+  if (kitchen.aiMonthlyCapMicros !== null) {
+    await database
+      .update(kitchens)
+      .set({ aiMonthlyCapMicros: null })
+      .where(eq(kitchens.id, kitchen.id));
+  }
+
+  return {
+    id: kitchen.id,
+    slug: kitchen.slug,
+    name: kitchen.name,
+    previousCapMicros: kitchen.aiMonthlyCapMicros,
+  };
+}
+
+/**
+ * Reads the monthly AI spend report for the operator script.
+ */
+export async function getKitchenSpend(
+  input: { month?: string; clock?: Date } = {},
+  database: AdminDb = db,
+  env: Record<string, string | undefined> = process.env,
+): Promise<MonthlySpendReport> {
+  try {
+    return await getMonthlySpendReport({
+      month: input.month,
+      clock: input.clock,
+      database,
+      env,
+    });
+  } catch (err) {
+    if (err instanceof Error && /Invalid (month|SOUS_AI_)/.test(err.message)) {
+      throw new KitchenAdminError(err.message);
+    }
+    throw err;
+  }
+}
+
+const CAP_UNSET_IN_SHELL_NOTE =
+  "not set in this shell's environment (may differ from the server's)";
+
+/**
+ * Formats a `MonthlySpendReport` for operator CLI output.
+ */
+export function formatSpendReport(report: MonthlySpendReport): string {
+  const capText = (micros: number | null) =>
+    micros === null ? CAP_UNSET_IN_SHELL_NOTE : formatMicrosAsUsd(micros);
+
+  const lines: string[] = [
+    `AI spend for ${report.month} (UTC; resets ${report.resetsAt.toISOString()})`,
+    `Overall: ${formatMicrosAsUsd(report.totalSpentMicros)} / ${capText(report.totalCapMicros)}`,
+    "",
+    "By kitchen:",
+    ["slug", "name", "spent", "cap", "calls"].join("\t"),
+  ];
+
+  for (const k of report.byKitchen) {
+    const capSuffix =
+      k.overrideCapMicros !== null
+        ? `${formatMicrosAsUsd(k.overrideCapMicros)} (override)`
+        : k.effectiveCapMicros !== null
+          ? `${formatMicrosAsUsd(k.effectiveCapMicros)} (default)`
+          : CAP_UNSET_IN_SHELL_NOTE;
+    lines.push(
+      [
+        k.slug,
+        k.name,
+        formatMicrosAsUsd(k.spentMicros),
+        capSuffix,
+        String(k.callCount),
+      ].join("\t"),
+    );
+  }
+
+  lines.push("", "By feature:");
+  if (report.byFeature.length === 0) {
+    lines.push("  (no calls recorded)");
+  } else {
+    lines.push(["feature", "spent", "calls"].join("\t"));
+    for (const f of report.byFeature) {
+      lines.push(
+        [f.feature, formatMicrosAsUsd(f.spentMicros), String(f.callCount)].join(
+          "\t",
+        ),
+      );
+    }
+  }
+
+  lines.push("", "Still reserved after 1 hour:");
+  if (report.staleReserved.length === 0) {
+    lines.push("  (none)");
+  } else {
+    lines.push(
+      ["id", "kitchen", "feature", "provider", "model", "reserved", "created"].join(
+        "\t",
+      ),
+    );
+    for (const r of report.staleReserved) {
+      lines.push(
+        [
+          r.id,
+          r.kitchenSlug,
+          r.feature,
+          r.provider,
+          r.model,
+          formatMicrosAsUsd(r.reservedMicros),
+          r.createdAt.toISOString(),
+        ].join("\t"),
+      );
+    }
+  }
+
+  return lines.join("\n");
 }

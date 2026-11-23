@@ -245,7 +245,7 @@ describe("ensureCookPlan", () => {
     await expect(caller.ensureCookPlan({ queueId: QUEUE_ID })).resolves.toEqual(
       outcome,
     );
-    expect(cookPlanForCook).toHaveBeenCalledWith(HOME.id, QUEUE_ID);
+    expect(cookPlanForCook).toHaveBeenCalledWith(HOME.id, QUEUE_ID, null);
     expect(after).not.toHaveBeenCalled();
   });
 
@@ -605,7 +605,7 @@ describe("ensureIntake", () => {
 
     const item = await caller.ensureIntake({ queueId: QUEUE_ID, ask: "opening" });
 
-    expect(ensureIntakeForCook).toHaveBeenCalledWith(HOME.id, QUEUE_ID, "opening");
+    expect(ensureIntakeForCook).toHaveBeenCalledWith(HOME.id, QUEUE_ID, "opening", null);
     expect(item.recipeData).toEqual(CUT);
     expect(item.packRecipe?.steps.map((s) => s.text)).toEqual(["Toast the bread.", "Butter it."]);
     expect(item.intake).toEqual({ state: "normalized", error: null });
@@ -638,7 +638,7 @@ describe("ensureIntake", () => {
 
     const item = await caller.ensureIntake({ queueId: QUEUE_ID, ask: "started" });
 
-    expect(ensureIntakeForCook).toHaveBeenCalledWith(HOME.id, QUEUE_ID, "started");
+    expect(ensureIntakeForCook).toHaveBeenCalledWith(HOME.id, QUEUE_ID, "started", null);
     expect(item.intake.state).toBe("as-sent");
     expect(item.recipeData).toEqual(SENT);
   });

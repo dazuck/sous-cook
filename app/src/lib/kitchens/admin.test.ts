@@ -15,6 +15,7 @@ vi.mock("@/lib/db", async () =>
 
 import * as dbModule from "@/lib/db";
 import {
+  aiUsage,
   authSession,
   authUser,
   db,
@@ -33,14 +34,20 @@ import { resetDeploymentCheckForTests } from "./deployment";
 import { resolveAccess } from "./access";
 import {
   KitchenAdminError,
+  clearKitchenCap,
   createInvite,
   createWebhookToken,
+  formatClearKitchenCapSummary,
+  formatKitchenCap,
   formatRemoveMemberSummary,
+  formatSpendReport,
+  getKitchenSpend,
   listKitchens,
   listWebhookTokens,
   removeMember,
   renameKitchen,
   revokeWebhookToken,
+  setKitchenCap,
   uninviteEmail,
 } from "./admin";
 import { authenticateWebhookRequest } from "./webhook-tokens";
@@ -65,9 +72,11 @@ beforeEach(async () => {
   stubSignInEnv();
   resetDeploymentCheckForTests(db);
   await client.exec(
-    "delete from kitchen_webhook_tokens; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_user;",
+    "delete from ai_usage; delete from kitchen_webhook_tokens; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_user;",
   );
-  await client.exec("delete from kitchens where slug <> 'home'");
+  await client.exec(
+    "delete from kitchens where slug <> 'home'; update kitchens set ai_monthly_cap_micros = null where slug = 'home';",
+  );
   await client.exec("update kitchens set name = 'Home' where slug = 'home'");
 });
 
@@ -515,5 +524,181 @@ describe("Kitchen, invite, and member admin commands", () => {
     expect(
       await db.select().from(members).where(eq(members.userId, "u-dup-1")),
     ).toHaveLength(1);
+  });
+
+  it("setKitchenCap and clearKitchenCap update ai_monthly_cap_micros and validate dollar formats", async () => {
+    const clearedUnset = await clearKitchenCap({ kitchenSlug: "home" }, db);
+    expect(clearedUnset).toMatchObject({
+      slug: "home",
+      previousCapMicros: null,
+    });
+    const unsetSummary = formatClearKitchenCapSummary(clearedUnset);
+    expect(unsetSummary).toContain('Kitchen "home" had no monthly AI cap of its own');
+    expect(unsetSummary).toContain("nothing changed");
+    expect(unsetSummary).not.toContain("Cleared");
+    expect(unsetSummary).not.toContain("was default");
+
+    const updated = await setKitchenCap(
+      { kitchenSlug: "home", usd: "3.5" },
+      db,
+    );
+    expect(updated).toMatchObject({
+      slug: "home",
+      previousCapMicros: null,
+      newCapMicros: 3_500_000,
+    });
+
+    const zeroed = await setKitchenCap({ kitchenSlug: "home", usd: "0" }, db);
+    expect(zeroed).toMatchObject({
+      slug: "home",
+      previousCapMicros: 3_500_000,
+      newCapMicros: 0,
+    });
+
+    const cleared = await clearKitchenCap({ kitchenSlug: "home" }, db);
+    expect(cleared).toMatchObject({
+      slug: "home",
+      previousCapMicros: 0,
+    });
+    expect(formatClearKitchenCapSummary(cleared)).toBe(
+      'Cleared monthly AI cap override for kitchen "home" (was $0.00/mo); now uses the deployment default.',
+    );
+    expect((await homeKitchen(db)).aiMonthlyCapMicros).toBeNull();
+
+    for (const badUsd of ["", "-1", "NaN", "1e3", "2.555"]) {
+      await expectKitchenAdminError(
+        setKitchenCap({ kitchenSlug: "home", usd: badUsd }, db),
+        /at most two decimals/,
+      );
+    }
+
+    // An amount too large to store gives its own reason, not the decimal-format reason.
+    let tooLargeErr: unknown;
+    try {
+      await setKitchenCap(
+        { kitchenSlug: "home", usd: "99999999999999" },
+        db,
+      );
+    } catch (err) {
+      tooLargeErr = err;
+    }
+    expect(tooLargeErr).toBeInstanceOf(KitchenAdminError);
+    expect((tooLargeErr as Error).message).toMatch(/too large/i);
+    expect((tooLargeErr as Error).message).not.toMatch(/at most two decimals/i);
+
+    await expectKitchenAdminError(
+      setKitchenCap({ kitchenSlug: "no-such-kitchen", usd: "2" }, db),
+      /not found/i,
+    );
+    await expectKitchenAdminError(
+      clearKitchenCap({ kitchenSlug: "no-such-kitchen" }, db),
+      /not found/i,
+    );
+  });
+
+  it("formatKitchenCap formats micro-dollar caps with integer arithmetic and preserves sub-cent precision", () => {
+    expect(formatKitchenCap(null)).toBe("default");
+    expect(formatKitchenCap(0)).toBe("$0.00/mo");
+    expect(formatKitchenCap(1)).toBe("$0.000001/mo");
+    expect(formatKitchenCap(50)).toBe("$0.00005/mo");
+    expect(formatKitchenCap(500)).toBe("$0.0005/mo");
+    expect(formatKitchenCap(15_000)).toBe("$0.015/mo");
+    expect(formatKitchenCap(250_000)).toBe("$0.25/mo");
+    expect(formatKitchenCap(999_999)).toBe("$0.999999/mo");
+    expect(formatKitchenCap(2_500_000)).toBe("$2.50/mo");
+  });
+
+  it("getKitchenSpend and formatSpendReport summarize per-kitchen spend, features, caps, and stale reservations", async () => {
+    const home = await homeKitchen(db);
+    const { kitchen: other } = await seedKitchen(db, {
+      slug: "north",
+      name: "North Kitchen",
+      aiMonthlyCapMicros: 5_000_000,
+    });
+
+    const now = new Date("2026-11-15T12:00:00.000Z");
+    const twoHoursAgo = new Date("2026-11-15T10:00:00.000Z");
+
+    await db.insert(aiUsage).values([
+      {
+        kitchenId: home.id,
+        feature: "ask",
+        provider: "google",
+        model: "gemini-3.5-flash",
+        status: "settled",
+        reservedMicros: 30_000,
+        costMicros: 15_000,
+        createdAt: twoHoursAgo,
+        settledAt: twoHoursAgo,
+      },
+      {
+        kitchenId: other.id,
+        feature: "cook-plan",
+        provider: "google",
+        model: "gemini-3.5-flash",
+        status: "reserved",
+        reservedMicros: 50_000,
+        costMicros: null,
+        createdAt: twoHoursAgo,
+        settledAt: null,
+      },
+    ]);
+
+    const report = await getKitchenSpend(
+      { month: "2026-11", clock: now },
+      db,
+      { SOUS_AI_KITCHEN_CAP_USD: "2", SOUS_AI_TOTAL_CAP_USD: "10" },
+    );
+    expect(report.totalSpentMicros).toBe(65_000);
+    expect(report.staleReserved).toHaveLength(1);
+    expect(report.staleReserved[0]?.kitchenSlug).toBe("north");
+
+    const text = formatSpendReport(report);
+    expect(text).toContain("AI spend for 2026-11");
+    expect(text).toContain("Overall: $0.065 / $10.00");
+    expect(text).toContain("home\tHome\t$0.015\t$2.00 (default)\t1");
+    expect(text).toContain("north\tNorth Kitchen\t$0.05\t$5.00 (override)\t1");
+    expect(text).toContain("ask\t$0.015\t1");
+    expect(text).toContain("cook-plan\t$0.05\t1");
+    expect(text).toContain("Still reserved after 1 hour:");
+
+    // When cap env variables are unset in this shell, say so instead of printing "uncapped".
+    const unsetEnvReport = await getKitchenSpend(
+      { month: "2026-11", clock: now },
+      db,
+      {},
+    );
+    const unsetEnvText = formatSpendReport(unsetEnvReport);
+    expect(unsetEnvText).not.toMatch(/\buncapped\b/i);
+    expect(unsetEnvText).toContain(
+      "Overall: $0.065 / not set in this shell's environment (may differ from the server's)",
+    );
+    expect(unsetEnvText).toContain(
+      "home\tHome\t$0.015\tnot set in this shell's environment (may differ from the server's)\t1",
+    );
+    expect(unsetEnvText).toContain(
+      "north\tNorth Kitchen\t$0.05\t$5.00 (override)\t1",
+    );
+
+    // Month validation refuses years outside 2000–2999 and invalid months with a plain error.
+    for (const badMonth of [
+      "0000-01",
+      "1999-12",
+      "3000-01",
+      "2026-00",
+      "2026-13",
+      "2026-1",
+    ]) {
+      await expectKitchenAdminError(
+        getKitchenSpend({ month: badMonth }, db, {}),
+        /Invalid month.*2000.*2999/,
+      );
+    }
+
+    // Boundary years 2000-01 and 2999-12 are accepted cleanly.
+    const y2000 = await getKitchenSpend({ month: "2000-01", clock: now }, db, {});
+    expect(y2000.month).toBe("2000-01");
+    const y2999 = await getKitchenSpend({ month: "2999-12", clock: now }, db, {});
+    expect(y2999.month).toBe("2999-12");
   });
 });

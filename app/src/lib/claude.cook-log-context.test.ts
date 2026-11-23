@@ -17,7 +17,8 @@ vi.mock("./db", () => ({
 }));
 
 const mockAiChat = vi.fn();
-vi.mock("./ai", () => ({
+vi.mock("./ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ai")>()),
   chat: (...args: unknown[]) => mockAiChat(...args),
   getConfig: () => ({
     textProvider: "google",

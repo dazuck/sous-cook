@@ -591,4 +591,132 @@ describe("Database migrations", () => {
       await client.close();
     }
   }, 15_000);
+
+  it("0005 ai_usage constraints: feature, provider, status, nonnegative amounts, settled_at pairing, and member_id set null hold", async () => {
+    const expectConstraint = async (
+      promise: Promise<unknown>,
+      constraintName: string,
+    ) => {
+      try {
+        await promise;
+      } catch (err) {
+        const messages: string[] = [];
+        let cur: unknown = err;
+        const seen = new Set<unknown>();
+        while (cur instanceof Error && !seen.has(cur)) {
+          seen.add(cur);
+          messages.push(cur.message);
+          cur = cur.cause;
+        }
+        expect(messages.join("\n")).toContain(constraintName);
+        return;
+      }
+      throw new Error(`Expected query to fail with constraint "${constraintName}"`);
+    };
+
+    const { client, db } = await migratedTestDb();
+    try {
+      const { kitchen, member, user } = await seedKitchen(db, {
+        slug: "meter-kitchen",
+        name: "Meter Kitchen",
+      });
+
+      const [reserved] = await db
+        .insert(schema.aiUsage)
+        .values({
+          kitchenId: kitchen.id,
+          memberId: member.id,
+          feature: "ask",
+          provider: "google",
+          model: "gemini-3.5-flash",
+          status: "reserved",
+          reservedMicros: 1500,
+        })
+        .returning();
+      expect(reserved?.status).toBe("reserved");
+      expect(reserved?.settledAt).toBeNull();
+
+      // Settled row without settled_at violates ai_usage_settled_has_time.
+      await expectConstraint(
+        db.insert(schema.aiUsage).values({
+          kitchenId: kitchen.id,
+          feature: "ask",
+          provider: "google",
+          model: "gemini-3.5-flash",
+          status: "settled",
+          reservedMicros: 1500,
+          costMicros: 900,
+          settledAt: null,
+        }),
+        "ai_usage_settled_has_time",
+      );
+
+      // Reserved row with settled_at violates ai_usage_settled_has_time.
+      await expectConstraint(
+        db.insert(schema.aiUsage).values({
+          kitchenId: kitchen.id,
+          feature: "ask",
+          provider: "google",
+          model: "gemini-3.5-flash",
+          status: "reserved",
+          reservedMicros: 1500,
+          settledAt: new Date("2026-11-22T00:00:00.000Z"),
+        }),
+        "ai_usage_settled_has_time",
+      );
+
+      // Negative reserved_micros or cost_micros fails check constraints.
+      await expectConstraint(
+        db.insert(schema.aiUsage).values({
+          kitchenId: kitchen.id,
+          feature: "ask",
+          provider: "google",
+          model: "gemini-3.5-flash",
+          status: "reserved",
+          reservedMicros: -1,
+        }),
+        "ai_usage_reserved_nonnegative",
+      );
+      await expectConstraint(
+        db.insert(schema.aiUsage).values({
+          kitchenId: kitchen.id,
+          feature: "ask",
+          provider: "google",
+          model: "gemini-3.5-flash",
+          status: "settled",
+          reservedMicros: 100,
+          costMicros: -1,
+          settledAt: new Date("2026-11-22T00:00:00.000Z"),
+        }),
+        "ai_usage_cost_nonnegative",
+      );
+
+      // Unknown feature or provider fails check constraints.
+      await expectConstraint(
+        client.exec(
+          `INSERT INTO "ai_usage" ("kitchen_id", "feature", "provider", "model", "status", "reserved_micros") VALUES ('${kitchen.id}', 'unknown', 'google', 'm', 'reserved', 0)`,
+        ),
+        "ai_usage_feature_known",
+      );
+      await expectConstraint(
+        client.exec(
+          `INSERT INTO "ai_usage" ("kitchen_id", "feature", "provider", "model", "status", "reserved_micros") VALUES ('${kitchen.id}', 'ask', 'openai', 'm', 'reserved', 0)`,
+        ),
+        "ai_usage_provider_known",
+      );
+
+      // Deleting the user cascades to members and sets ai_usage.member_id to null.
+      await db.delete(schema.authUser).where(eq(schema.authUser.id, user.id));
+      const updated = await snapshotRow(db, schema.aiUsage, reserved!.id);
+      expect(updated?.memberId).toBeNull();
+
+      // Deleting the kitchen is restricted while ai_usage rows reference it.
+      await expectConstraint(
+        db.delete(schema.kitchens).where(eq(schema.kitchens.id, kitchen.id)),
+        "ai_usage_kitchen_id_kitchens_id_fk",
+      );
+    } finally {
+      await client.close();
+    }
+  }, 15_000);
 });

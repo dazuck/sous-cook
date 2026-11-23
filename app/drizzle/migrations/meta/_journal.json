@@ -36,6 +36,13 @@
       "when": 1795414546354,
       "tag": "0004_sign_in",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795421552474,
+      "tag": "0005_ai_usage",
+      "breakpoints": true
     }
   ]
 }

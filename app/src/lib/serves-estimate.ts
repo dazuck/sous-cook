@@ -15,8 +15,14 @@
 
 import { z } from "zod";
 import { parseNumber } from "@sous/pack/quantity";
-import { chat as defaultChat } from "./ai";
-import type { ChatOptions, ChatResponse, ResponseSchema } from "./ai";
+import { chat as defaultChat, isAllowanceUsed } from "./ai";
+import type {
+  AiMeter,
+  ChatOptions,
+  ChatResponse,
+  PublicChatOptions,
+  ResponseSchema,
+} from "./ai";
 import type { ChatRecipeIngredient } from "../../drizzle/schema";
 
 export const SERVES_ESTIMATE_MIN = 1;
@@ -67,10 +73,16 @@ export type ServesEstimateResult = (
   usage?: { inputTokens: number; outputTokens: number };
 };
 
-export interface ServesEstimateDeps {
-  chat?: (options: ChatOptions) => Promise<ChatResponse>;
-  timeoutMs?: number;
-}
+export type ServesEstimateDeps =
+  | {
+      meter: AiMeter;
+      chat?: undefined;
+      timeoutMs?: number;
+    }
+  | {
+      chat: (options: PublicChatOptions) => Promise<ChatResponse>;
+      timeoutMs?: number;
+    };
 
 export const SERVES_ESTIMATE_SYSTEM_PROMPT = `You are Sous, a home kitchen assistant. You estimate how many people a recipe serves when the recipe doesn't say. The cook sees your number marked as Sous's estimate, so make it the number a careful home cook would give.
 
@@ -295,30 +307,33 @@ export function servesCorrectionPrompt(reason: string): string {
 /**
  * Sous's estimate of the count, or why there is none. One call; a reply
  * that breaks a basis rule is asked again once with the rule named, then
- * fails. Both calls share the one abort deadline. Never throws.
+ * fails. Both calls share the one abort deadline. Throws only `AllowanceUsedError`.
  */
 export async function estimateServes(
   input: ServesEstimateInput,
-  deps: ServesEstimateDeps = {},
+  deps: ServesEstimateDeps,
 ): Promise<ServesEstimateResult> {
-  const chat = deps.chat ?? defaultChat;
   const signal = AbortSignal.timeout(deps.timeoutMs ?? ESTIMATE_TIMEOUT_MS);
   const messages: ChatOptions["messages"] = [{ role: "user", content: servesEstimatePrompt(input) }];
   let usage: { inputTokens: number; outputTokens: number } | undefined;
   for (let call = 1; ; call += 1) {
     let response: ChatResponse;
+    const callOptions: PublicChatOptions = {
+      systemPrompt: SERVES_ESTIMATE_SYSTEM_PROMPT,
+      messages: [...messages],
+      responseFormat: "json",
+      responseSchema: RESPONSE_SCHEMA,
+      temperature: 0,
+      thinkingBudget: ESTIMATE_THINKING_BUDGET,
+      maxTokens: ESTIMATE_MAX_TOKENS,
+      signal,
+    };
     try {
-      response = await chat({
-        systemPrompt: SERVES_ESTIMATE_SYSTEM_PROMPT,
-        messages: [...messages],
-        responseFormat: "json",
-        responseSchema: RESPONSE_SCHEMA,
-        temperature: 0,
-        thinkingBudget: ESTIMATE_THINKING_BUDGET,
-        maxTokens: ESTIMATE_MAX_TOKENS,
-        signal,
-      });
+      response = deps.chat
+        ? await deps.chat(callOptions)
+        : await defaultChat(callOptions, deps.meter);
     } catch (error) {
+      if (isAllowanceUsed(error)) throw error;
       return {
         ok: false,
         reason: `the estimate call failed: ${error instanceof Error ? error.message : String(error)}`,

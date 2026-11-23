@@ -20,6 +20,107 @@ export class MissingApiKeyError extends Error {
   }
 }
 
+export type AllowanceScope = "kitchen" | "overall";
+
+const UTC_MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+
+/**
+ * Formats a reset instant as "<day> <Month>" in UTC (for example, "1 December")
+ * so the server's local time zone never shifts the date into the previous month.
+ */
+export function formatResetDateUtc(resetsAt: Date): string {
+  return `${resetsAt.getUTCDate()} ${UTC_MONTH_NAMES[resetsAt.getUTCMonth()]!}`;
+}
+
+/**
+ * Raised when a kitchen or the deployment as a whole has used up its monthly
+ * AI allowance. Never stored as a recipe, plan, or intake error.
+ */
+export class AllowanceUsedError extends Error {
+  readonly scope: AllowanceScope;
+  readonly resetsAt: Date;
+
+  constructor(scope: AllowanceScope, resetsAt: Date) {
+    const resetDate = formatResetDateUtc(resetsAt);
+    const message =
+      scope === "kitchen"
+        ? `This kitchen's AI allowance for this month is used up. It resets on ${resetDate}. Cooking from saved plans still works.`
+        : `Sous's AI allowance for this month is used up for everyone. It resets on ${resetDate}. Cooking from saved plans still works.`;
+    super(message);
+    this.name = "AllowanceUsedError";
+    this.scope = scope;
+    this.resetsAt = resetsAt;
+  }
+}
+
+/**
+ * Walks an error and its `cause` chain looking for an `AllowanceUsedError`.
+ */
+export function findAllowanceUsed(err: unknown): AllowanceUsedError | null {
+  const seen = new Set<unknown>();
+  let cur: unknown = err;
+  while (cur && typeof cur === "object" && !seen.has(cur)) {
+    seen.add(cur);
+    if (cur instanceof AllowanceUsedError) {
+      return cur;
+    }
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+/**
+ * Returns true when `err` or any error in its `cause` chain is an
+ * `AllowanceUsedError`.
+ */
+export function isAllowanceUsed(err: unknown): boolean {
+  return findAllowanceUsed(err) !== null;
+}
+
+/**
+ * Raised when a kitchen-metered call targets a model with no price row while
+ * a monthly cap is in force.
+ */
+export class UnpricedModelError extends Error {
+  readonly model: string;
+
+  constructor(model: string) {
+    super(`no price for model ${model}; add it to app/src/lib/ai/prices.ts`);
+    this.name = "UnpricedModelError";
+    this.model = model;
+  }
+}
+
+/**
+ * Returns true when `err` or any error in its `cause` chain is an
+ * `UnpricedModelError`.
+ */
+export function isUnpricedModel(err: unknown): boolean {
+  const seen = new Set<unknown>();
+  let cur: unknown = err;
+  while (cur && typeof cur === "object" && !seen.has(cur)) {
+    seen.add(cur);
+    if (cur instanceof UnpricedModelError) {
+      return true;
+    }
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 // =============================================================================
 // Message Types
 // =============================================================================
@@ -110,12 +211,19 @@ export interface ChatResponse {
   finishReason?: FinishReason;
   /** Web grounding sources returned by the provider, deduplicated by URL. */
   sources?: GroundingSource[];
+  /** Number of web search queries reported by the provider's grounding metadata. */
+  searchQueries?: number;
   usage?: {
     inputTokens: number;
     /** Every token billed as output, thinking included. */
     outputTokens: number;
   };
 }
+
+/** Public `chat()` options: callers must specify `maxTokens` for metering. */
+export type PublicChatOptions = Omit<ChatOptions, "maxTokens"> & {
+  maxTokens: number;
+};
 
 // =============================================================================
 // Vision Types
@@ -130,6 +238,20 @@ export interface VisionOptions {
   thinkingBudget?: number;
 }
 
+/** Public `vision()` options: callers must specify `maxTokens` for metering. */
+export type PublicVisionOptions = Omit<VisionOptions, "maxTokens"> & {
+  maxTokens: number;
+};
+
+export interface VisionResponse {
+  content: string;
+  usage?: {
+    inputTokens: number;
+    /** Every token billed as output, thinking included. */
+    outputTokens: number;
+  };
+}
+
 // =============================================================================
 // Provider Types
 // =============================================================================
@@ -139,7 +261,7 @@ export type ProviderName = "anthropic" | "google";
 export interface AIProvider {
   name: ProviderName;
   chat: (options: ChatOptions) => Promise<ChatResponse>;
-  vision: (options: VisionOptions) => Promise<string>;
+  vision: (options: VisionOptions) => Promise<VisionResponse>;
 }
 
 // =============================================================================

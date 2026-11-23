@@ -26,6 +26,7 @@ import { packPlanFor, readPackPlanFile } from "@/lib/pack-cook-plans";
 import { storedPlanToCopy, type StoredPlan } from "@/lib/kitchen/cook-plan-stamp";
 import { canonicalJson } from "@/lib/serves-estimate-plan";
 import { authenticateWebhookRequest } from "@/lib/kitchens/webhook-tokens";
+import { findAllowanceUsed, kitchenMeter } from "@/lib/ai";
 
 /**
  * The pack recipe's id for the queue-time check. The queue row's id, the one
@@ -311,7 +312,26 @@ export async function POST(request: Request): Promise<Response> {
   // couldn't read is refused here, where the sender sees why. The payload is
   // stored as received; the cook page converts the stored row again.
   let conversion: ConversionReport["counts"] | undefined;
-  const serves = await servesForQueue(recipeData, { mayEstimate: true });
+  let serves: Awaited<ReturnType<typeof servesForQueue>>;
+  try {
+    serves = await servesForQueue(recipeData, {
+      mayEstimate: true,
+      meter: kitchenMeter(kitchen.id, null, "serves-estimate"),
+    });
+  } catch (error) {
+    const allowance = findAllowanceUsed(error);
+    if (allowance) {
+      return NextResponse.json(
+        {
+          error: "ai_allowance_used",
+          message: allowance.message,
+          resetsAt: allowance.resetsAt.toISOString(),
+        },
+        { status: 429 },
+      );
+    }
+    throw error;
+  }
   if (!serves.ok) {
     console.error(`[webhook] ${CANT_ESTIMATE_SERVES}: ${serves.reason}`);
     return NextResponse.json(

@@ -73,6 +73,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { db, docRecipes } from "./db";
+import { isAllowanceUsed, kitchenMeter, type AiMeter } from "./ai";
 import {
   NO_PLAN,
   libraryRecipeLockKey,
@@ -289,7 +290,11 @@ type ExtractionOutcome = { chunk: RecipeChunk; notices: ExtractionNotice[] } & (
   { recipe: ImportedRecipe; error: null } | { recipe: null; error: string }
 );
 
-/** Runs `fn` over `items` with at most `limit` in flight, preserving order. */
+/**
+ * Runs `fn` over `items` with at most `limit` in flight, preserving order.
+ * Once any worker throws, stops handing out new items, waits for calls in
+ * flight to settle, and rethrows the first error.
+ */
 async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
@@ -297,20 +302,38 @@ async function mapWithConcurrency<T, R>(
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let cursor = 0;
+  let firstError: { value: unknown } | null = null;
+  const setFirstError = (err: unknown) => {
+    if (firstError === null) {
+      firstError = { value: err };
+    }
+  };
   async function worker(): Promise<void> {
-    while (cursor < items.length) {
+    while (firstError === null && cursor < items.length) {
       const index = cursor++;
-      results[index] = await fn(items[index]);
+      try {
+        results[index] = await fn(items[index]);
+      } catch (err) {
+        setFirstError(err);
+        return;
+      }
     }
   }
   const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
   await Promise.all(workers);
+  const failed = firstError as { value: unknown } | null;
+  if (failed !== null) {
+    throw failed.value;
+  }
   return results;
 }
 
-async function extractChunk(chunk: RecipeChunk): Promise<ExtractionOutcome> {
+async function extractChunk(
+  chunk: RecipeChunk,
+  meter: AiMeter,
+): Promise<ExtractionOutcome> {
   try {
-    const extraction = await extractRecipeFromText(chunk.rawText);
+    const extraction = await extractRecipeFromText(chunk.rawText, { meter });
     if (extraction === null) {
       return {
         chunk,
@@ -321,6 +344,7 @@ async function extractChunk(chunk: RecipeChunk): Promise<ExtractionOutcome> {
     }
     return { chunk, ...extraction, error: null };
   } catch (error) {
+    if (isAllowanceUsed(error)) throw error;
     return {
       chunk,
       recipe: null,
@@ -363,6 +387,8 @@ export interface SyncPlans {
 export interface SyncRecipesOptions {
   /** When to stop starting plan derivations; defaults to the Refresh budget from the call. */
   planBudget?: PlanBudget;
+  /** Signed-in member triggering the sync, for AI usage attribution. */
+  memberId?: string | null;
 }
 
 function keptMessage(lost: RecipePart[]): string {
@@ -409,6 +435,7 @@ async function servesForChunk(
   kitchenId: string,
   chunk: RecipeChunk,
   recipe: ImportedRecipe,
+  meter: AiMeter,
 ): Promise<ChunkServes> {
   if (recipe.serves != null) return { ok: true, servesEstimate: null };
   const saved = await savedEstimate(kitchenId, chunk.docSlug);
@@ -425,14 +452,17 @@ async function servesForChunk(
     { ...recipe, name: chunk.name },
     { id: chunk.docSlug, servesEstimate: { count: 1, basis: "probe" } },
   );
-  const result = await estimateServes({
-    name: chunk.name,
-    ingredients: recipe.ingredients ?? [],
-    steps: recipe.steps ?? [],
-    sourceText: chunk.rawText,
-    category: chunk.category,
-    hasAmounts: report.hasAmounts,
-  });
+  const result = await estimateServes(
+    {
+      name: chunk.name,
+      ingredients: recipe.ingredients ?? [],
+      steps: recipe.steps ?? [],
+      sourceText: chunk.rawText,
+      category: chunk.category,
+      hasAmounts: report.hasAmounts,
+    },
+    { meter },
+  );
   return result.ok
     ? { ok: true, servesEstimate: result.estimate }
     : { ok: false, reason: result.reason };
@@ -681,16 +711,27 @@ export async function syncRecipesFromDoc(
   // The Doc's order first: free, and kept even if the run is cut short.
   await writeDocOrder(kitchenId, chunks);
 
+  const aiMeter = kitchenMeter(
+    kitchenId,
+    options.memberId ?? null,
+    "library-refresh",
+  );
+
   const outcomes = await mapWithConcurrency(
     chunks,
     EXTRACTION_CONCURRENCY,
     async (chunk) => {
-      const extraction = await extractChunk(chunk);
+      const extraction = await extractChunk(chunk, aiMeter);
       if (extraction.recipe === null) {
         const saveError = await saveRecipe(kitchenId, extraction);
         return { name: chunk.name, error: extraction.error ?? saveError, notices: extraction.notices, plan: null };
       }
-      const serves = await servesForChunk(kitchenId, chunk, extraction.recipe);
+      const serves = await servesForChunk(
+        kitchenId,
+        chunk,
+        extraction.recipe,
+        aiMeter,
+      );
       if (!serves.ok) {
         // Saved as a failed extraction: a saved recipe is kept whole (the
         // upsert only overwrites a row that never extracted).
@@ -704,6 +745,7 @@ export async function syncRecipesFromDoc(
         extraction.recipe,
         await readSavedPlan(kitchenId, chunk.docSlug),
         budget,
+        aiMeter,
       );
       const saveError = await saveRecipe(kitchenId, extraction, serves.servesEstimate, plan.columns);
       // A kept recipe (or a failed write) didn't take this plan.

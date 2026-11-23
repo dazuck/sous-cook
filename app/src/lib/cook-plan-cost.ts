@@ -130,9 +130,12 @@ export class CostLedger {
 
   /** A call `beforeCall` allowed has reported: release its reservation, charge its tokens (its bound when none). */
   record(usage: DerivationUsage): void {
-    this.calls++;
     this.pendingInput -= usage.bound.inputTokens;
     this.pendingOutput -= usage.bound.outputTokens;
+    if (usage.sent === false) {
+      return;
+    }
+    this.calls++;
     if (usage.inputTokens === 0 && usage.outputTokens === 0) {
       this.unreported++;
       this.inputTokens += usage.bound.inputTokens;

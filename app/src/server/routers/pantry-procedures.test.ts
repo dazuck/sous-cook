@@ -66,10 +66,18 @@ describe("Pantry & Grocery tRPC procedures", () => {
 
       expect(res.items).toHaveLength(2);
       expect(res.items[0].text).toBe("2 avocados");
-      expect(parseGroceryInput).toHaveBeenCalledWith({
-        type: "voice",
-        content: "two avocados and sour cream",
-      });
+      expect(parseGroceryInput).toHaveBeenCalledWith(
+        {
+          type: "voice",
+          content: "two avocados and sour cream",
+        },
+        {
+          kind: "kitchen",
+          kitchenId: HOME.id,
+          memberId: null,
+          feature: "grocery-parse",
+        },
+      );
     });
   });
 
@@ -129,11 +137,19 @@ describe("Pantry & Grocery tRPC procedures", () => {
       expect(res.candidates).toHaveLength(1);
       expect(res.candidates[0].docItemText).toBe("2 avocados");
       expect(reconcileRecipeIngredients).toHaveBeenCalledTimes(1);
-      expect(reconcileRecipeIngredients).toHaveBeenCalledWith({
-        docSections: sections,
-        recipeIngredients: [{ item: "avocado", amount: "2" }],
-        recipeName: "Guacamole",
-      });
+      expect(reconcileRecipeIngredients).toHaveBeenCalledWith(
+        {
+          docSections: sections,
+          recipeIngredients: [{ item: "avocado", amount: "2" }],
+          recipeName: "Guacamole",
+        },
+        {
+          kind: "kitchen",
+          kitchenId: HOME.id,
+          memberId: null,
+          feature: "pantry-reconcile",
+        },
+      );
     });
   });
 

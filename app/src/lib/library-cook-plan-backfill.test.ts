@@ -14,7 +14,10 @@ import type { PGlite } from "@electric-sql/pglite";
 import { chat } from "./ai";
 import { ZUCCHINI_PLAN, ZUCCHINI_RECIPE, zucchiniRaw } from "./kitchen/__tests__/zucchini-wraps";
 
-vi.mock("./ai", () => ({ chat: vi.fn() }));
+vi.mock("./ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ai")>()),
+  chat: vi.fn(),
+}));
 
 vi.mock("@/lib/db", async () =>
   (await import("./__tests__/test-db")).mockDbModule(),
@@ -228,12 +231,12 @@ describe("runLibraryBackfill", () => {
     for (const slug of ["a", "b", "c", "d", "e"]) await insertRow(slug);
     let inFlight = 0;
     let most = 0;
-    const slow: DeriveLibraryRow = async (kitchenId, slug, recipe, meter) => {
+    const slow: DeriveLibraryRow = async (kitchenId, slug, recipe, meter, aiMeter) => {
       inFlight++;
       most = Math.max(most, inFlight);
       await new Promise((resolve) => setTimeout(resolve, 5));
       inFlight--;
-      return deriveLibraryPlan(kitchenId, slug, recipe, meter);
+      return deriveLibraryPlan(kitchenId, slug, recipe, meter, aiMeter);
     };
     const result = await runLibraryBackfill(homeId, await targets(), OPEN(), { derive: slow });
     expect(result.rows).toHaveLength(5);
@@ -376,9 +379,9 @@ describe("runLibraryBackfill", () => {
     stubChat();
     await insertRow("a");
     await insertRow("b");
-    const flaky: DeriveLibraryRow = async (kitchenId, slug, recipe, meter) => {
+    const flaky: DeriveLibraryRow = async (kitchenId, slug, recipe, meter, aiMeter) => {
       if (slug === "a") throw new Error("connection reset");
-      return deriveLibraryPlan(kitchenId, slug, recipe, meter);
+      return deriveLibraryPlan(kitchenId, slug, recipe, meter, aiMeter);
     };
     const result = await runLibraryBackfill(homeId, await targets(), OPEN(), { derive: flaky, concurrency: 1 });
     expect(result.rows.map((r) => [r.slug, r.outcome, r.stored, r.detail])).toEqual([

@@ -169,7 +169,7 @@ describe("Sign-in and deployment access rules", () => {
     ).toThrow(/BETTER_AUTH_URL/);
   });
 
-  it("a memoized single-kitchen start-up pass is not reused after the environment changes to sign-in", async () => {
+  it("a memoized start-up pass is not reused after the environment or cap variables change", async () => {
     expect(await ensureDeploymentReady(db, { SOUS_SIGN_IN: "off" })).toBe(
       "single-kitchen",
     );
@@ -182,6 +182,41 @@ describe("Sign-in and deployment access rules", () => {
     }
     expect(caught).toBeInstanceOf(DeploymentConfigError);
     expect((caught as Error).message).toMatch(/BETTER_AUTH_SECRET/);
+
+    // Changing either cap variable from unset to empty or invalid re-runs the check.
+    for (const badCapEnv of [
+      { SOUS_SIGN_IN: "off", SOUS_AI_KITCHEN_CAP_USD: "" },
+      { SOUS_SIGN_IN: "off", SOUS_AI_KITCHEN_CAP_USD: "-1" },
+      { SOUS_SIGN_IN: "off", SOUS_AI_TOTAL_CAP_USD: "" },
+      { SOUS_SIGN_IN: "off", SOUS_AI_TOTAL_CAP_USD: "2.555" },
+    ]) {
+      let capErr: unknown;
+      try {
+        await ensureDeploymentReady(db, badCapEnv);
+      } catch (err) {
+        capErr = err;
+      }
+      expect(capErr, JSON.stringify(badCapEnv)).toBeInstanceOf(
+        DeploymentConfigError,
+      );
+      expect((capErr as Error).message).toMatch(/SOUS_AI_(KITCHEN|TOTAL)_CAP_USD/);
+    }
+
+    // Same in sign-in mode: passing once does not mask a later cap change.
+    expect(await ensureDeploymentReady(db, { ...TEST_AUTH_ENV })).toBe(
+      "sign-in",
+    );
+    let signInCapErr: unknown;
+    try {
+      await ensureDeploymentReady(db, {
+        ...TEST_AUTH_ENV,
+        SOUS_AI_TOTAL_CAP_USD: "-1",
+      });
+    } catch (err) {
+      signInCapErr = err;
+    }
+    expect(signInCapErr).toBeInstanceOf(DeploymentConfigError);
+    expect((signInCapErr as Error).message).toContain("SOUS_AI_TOTAL_CAP_USD");
   });
 
   it("a new-kitchen invite whose slug matches an existing non-home kitchen is refused at invite time and writes no row", async () => {

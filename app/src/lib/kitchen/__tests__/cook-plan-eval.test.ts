@@ -12,7 +12,10 @@ import {
 } from "./load-cook-plan-fixtures";
 
 // Only the prompt is needed from cook-plan-derive; keep the provider SDKs out.
-vi.mock("../../ai", () => ({ chat: vi.fn() }));
+vi.mock("../../ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../ai")>()),
+  chat: vi.fn(),
+}));
 
 /**
  * The eval gate, re-scored offline from the snapshots `scripts/eval-cook-plan.ts`

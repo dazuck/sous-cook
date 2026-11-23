@@ -234,15 +234,40 @@ describe("Google provider", () => {
     expect(response.sources).toBeUndefined();
   });
 
-  it("supports vision and throws on max_tokens truncation", async () => {
-    respond(gemini("STOP", "Two lemons and a lime."));
-    const text = await provider().vision({
+  it("reports webSearchQueries count from groundingMetadata", async () => {
+    respond({
+      candidates: [
+        {
+          content: { role: "model", parts: [{ text: "Simmer gently." }] },
+          finishReason: "STOP",
+          index: 0,
+          groundingMetadata: {
+            webSearchQueries: ["safe chicken temp", "carryover cooking"],
+          },
+        },
+      ],
+    });
+    const response = await provider().chat({ ...message, googleSearch: true });
+    expect(response.searchQueries).toBe(2);
+  });
+
+  it("supports vision, returns usage including thinking tokens, and throws on max_tokens truncation", async () => {
+    respond({
+      ...gemini("STOP", "Two lemons and a lime."),
+      usageMetadata: {
+        promptTokenCount: 250,
+        candidatesTokenCount: 100,
+        thoughtsTokenCount: 400,
+      },
+    });
+    const res = await provider().vision({
       imageBase64: "data:image/png;base64,aGVsbG8=",
       prompt: "What is on the counter?",
       maxTokens: 200,
       thinkingBudget: 0,
     });
-    expect(text).toBe("Two lemons and a lime.");
+    expect(res.content).toBe("Two lemons and a lime.");
+    expect(res.usage).toEqual({ inputTokens: 250, outputTokens: 500 });
 
     respond(gemini("MAX_TOKENS", "Truncated..."));
     await expect(
@@ -286,5 +311,21 @@ describe("Anthropic provider", () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     controller.abort();
     await expect(call).rejects.toThrow(/abort/i);
+  });
+
+  it("returns usage from Anthropic vision responses", async () => {
+    respond({
+      ...claude("end_turn", "A carton of eggs."),
+      usage: { input_tokens: 320, output_tokens: 45 },
+    });
+    const res = await provider().vision({
+      imageBase64: "data:image/png;base64,aGVsbG8=",
+      prompt: "What is in the fridge?",
+      maxTokens: 200,
+    });
+    expect(res).toEqual({
+      content: "A carton of eggs.",
+      usage: { inputTokens: 320, outputTokens: 45 },
+    });
   });
 });

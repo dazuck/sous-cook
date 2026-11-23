@@ -16,6 +16,7 @@ import {
 import type { PackFiles } from "../shelf/registry";
 import { readPackRow } from "./native-read";
 import { EMPTY_LIBRARY, type RecipeLibrary, type RecipeReading, type SourcePackInfo } from "./recipe-library";
+import type { AiMeter } from "../ai";
 import {
   estimateServes as defaultEstimateServes,
   queueSourceText,
@@ -163,23 +164,32 @@ export type QueueServes =
  * - A library send never estimates (the sync owns library estimates): with no
  *   carried estimate, the check refuses it ("Sous hasn't estimated one yet").
  */
+export type ServesForQueueOptions =
+  | {
+      carried?: ServesEstimateInput;
+      mayEstimate: false;
+    }
+  | {
+      carried?: ServesEstimateInput;
+      mayEstimate: true;
+      meter: AiMeter;
+      estimateServes?: undefined;
+    }
+  | {
+      carried?: ServesEstimateInput;
+      mayEstimate: true;
+      estimateServes: (input: Parameters<typeof defaultEstimateServes>[0]) => Promise<ServesEstimateResult>;
+    };
+
 export async function servesForQueue(
   recipeData: KitchenQueueRecipeData | null | undefined,
-  {
-    carried,
-    mayEstimate,
-    estimateServes = defaultEstimateServes,
-  }: {
-    carried?: ServesEstimateInput;
-    mayEstimate: boolean;
-    estimateServes?: (input: Parameters<typeof defaultEstimateServes>[0]) => Promise<ServesEstimateResult>;
-  },
+  options: ServesForQueueOptions,
 ): Promise<QueueServes> {
   if (recipeData == null || typeof recipeData.serves === "number") {
     return { ok: true, servesEstimate: undefined };
   }
-  if (carried !== undefined) return { ok: true, servesEstimate: carried };
-  if (!mayEstimate) return { ok: true, servesEstimate: undefined };
+  if (options.carried !== undefined) return { ok: true, servesEstimate: options.carried };
+  if (!options.mayEstimate) return { ok: true, servesEstimate: undefined };
   const read = readLegacyRecipe(recipeData);
   if (!read.ok) return { ok: true, servesEstimate: undefined };
   // Read with a placeholder count first: a recipe refused for another reason
@@ -189,13 +199,16 @@ export async function servesForQueue(
     servesEstimate: { count: 1, basis: "probe" },
   });
   if (!probe.ok) return { ok: true, servesEstimate: undefined };
-  const result = await estimateServes({
+  const estimateInput = {
     name: read.value.name,
     ingredients: read.value.ingredients ?? [],
     steps: read.value.steps ?? [],
     sourceText: queueSourceText(recipeData),
     hasAmounts: probe.report.hasAmounts,
-  });
+  };
+  const result = options.estimateServes
+    ? await options.estimateServes(estimateInput)
+    : await defaultEstimateServes(estimateInput, { meter: options.meter });
   if (!result.ok) return { ok: false, reason: result.reason };
   return { ok: true, servesEstimate: result.estimate };
 }

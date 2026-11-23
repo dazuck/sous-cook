@@ -20,7 +20,8 @@ const mockGetConfig = vi.fn(() => ({
   visionProvider: "google" as const,
   visionModel: "gemini-2.5-flash",
 }));
-vi.mock("./ai", () => ({
+vi.mock("./ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ai")>()),
   chat: (...args: unknown[]) => mockAiChat(...args),
   getConfig: () => mockGetConfig(),
 }));

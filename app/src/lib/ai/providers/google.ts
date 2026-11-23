@@ -21,6 +21,7 @@ import type {
   GroundingSource,
   ResponseSchema,
   VisionOptions,
+  VisionResponse,
 } from "../types";
 
 /** Our schema in the SDK's types; the wire format is the same. */
@@ -263,15 +264,18 @@ export function createGoogleProvider(apiKey: string): AIProvider {
         text = "";
       }
 
-      const sources = extractGroundingSources(
-        response.candidates?.[0]?.groundingMetadata?.groundingChunks,
-      );
+      const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
+      const sources = extractGroundingSources(groundingMetadata?.groundingChunks);
+      const searchQueries = Array.isArray(groundingMetadata?.webSearchQueries)
+        ? groundingMetadata.webSearchQueries.length
+        : undefined;
       const usageMetadata = response.usageMetadata;
 
       return {
         content: text,
         finishReason,
         ...(sources ? { sources } : {}),
+        ...(searchQueries !== undefined ? { searchQueries } : {}),
         usage: usageMetadata
           ? {
               inputTokens: usageMetadata.promptTokenCount || 0,
@@ -282,7 +286,7 @@ export function createGoogleProvider(apiKey: string): AIProvider {
       };
     },
 
-    async vision(options: VisionOptions): Promise<string> {
+    async vision(options: VisionOptions): Promise<VisionResponse> {
       const modelName = options.model || DEFAULT_VISION_MODEL;
 
       const config: GenerateContentConfig = {
@@ -324,7 +328,19 @@ export function createGoogleProvider(apiKey: string): AIProvider {
         );
       }
 
-      return response.text ?? "";
+      const usageMetadata = response.usageMetadata;
+      return {
+        content: response.text ?? "",
+        usage: usageMetadata
+          ? {
+              inputTokens: usageMetadata.promptTokenCount || 0,
+              // Thinking is billed as output, beside the answer.
+              outputTokens:
+                (usageMetadata.candidatesTokenCount || 0) +
+                (usageMetadata.thoughtsTokenCount || 0),
+            }
+          : undefined,
+      };
     },
   };
 }

@@ -29,14 +29,16 @@ const DEFAULT_VISION_MODEL = "gemini-2.5-flash";
  * Reads AI configuration from environment variables.
  * Does NOT validate - call validateConfig() separately if needed.
  */
-export function getConfig(): AIConfig {
+export function getConfig(
+  env: Record<string, string | undefined> = process.env,
+): AIConfig {
   const textProvider =
-    (process.env.AI_TEXT_PROVIDER as ProviderName) || DEFAULT_TEXT_PROVIDER;
-  const textModel = process.env.AI_TEXT_MODEL || DEFAULT_TEXT_MODEL;
-  const cookChatModel = process.env.AI_COOK_CHAT_MODEL || textModel;
+    (env.AI_TEXT_PROVIDER as ProviderName) || DEFAULT_TEXT_PROVIDER;
+  const textModel = env.AI_TEXT_MODEL || DEFAULT_TEXT_MODEL;
+  const cookChatModel = env.AI_COOK_CHAT_MODEL || textModel;
   const visionProvider =
-    (process.env.AI_VISION_PROVIDER as ProviderName) || DEFAULT_VISION_PROVIDER;
-  const visionModel = process.env.AI_VISION_MODEL || DEFAULT_VISION_MODEL;
+    (env.AI_VISION_PROVIDER as ProviderName) || DEFAULT_VISION_PROVIDER;
+  const visionModel = env.AI_VISION_MODEL || DEFAULT_VISION_MODEL;
 
   return {
     textProvider,
@@ -44,8 +46,8 @@ export function getConfig(): AIConfig {
     cookChatModel,
     visionProvider,
     visionModel,
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-    googleApiKey: process.env.GOOGLE_AI_API_KEY,
+    anthropicApiKey: env.ANTHROPIC_API_KEY,
+    googleApiKey: env.GOOGLE_AI_API_KEY,
   };
 }
 

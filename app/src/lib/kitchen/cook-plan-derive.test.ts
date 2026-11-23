@@ -14,9 +14,11 @@ import {
   OUTPUT_TOKENS_RETRY,
   REASK_HINTS,
   correctionPrompt,
-  deriveCookPlan,
-  deriveCookPlanOutcome,
+  deriveCookPlan as rawDeriveCookPlan,
+  deriveCookPlanOutcome as rawDeriveCookPlanOutcome,
+  type DeriveOptions,
 } from "./cook-plan-derive";
+import { scriptMeter } from "../ai/meter";
 import { CostLedger, callCostUsd } from "../cook-plan-cost";
 import { isSettledPlanError } from "./cook-plan-stamp";
 import {
@@ -49,7 +51,20 @@ import {
   loadCookPlanSnapshots,
 } from "./__tests__/load-cook-plan-fixtures";
 
-vi.mock("../ai", () => ({ chat: vi.fn() }));
+vi.mock("../ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../ai")>()),
+  chat: vi.fn(),
+}));
+
+const TEST_METER = scriptMeter("cook-plan-derive-test");
+const deriveCookPlan = (
+  recipe: Parameters<typeof rawDeriveCookPlan>[0],
+  options: Omit<DeriveOptions, "meter"> = {},
+) => rawDeriveCookPlan(recipe, { ...options, meter: TEST_METER });
+const deriveCookPlanOutcome = (
+  recipe: Parameters<typeof rawDeriveCookPlanOutcome>[0],
+  options: Omit<DeriveOptions, "meter"> = {},
+) => rawDeriveCookPlanOutcome(recipe, { ...options, meter: TEST_METER });
 
 const mockChat = chat as ReturnType<typeof vi.fn>;
 

@@ -10,7 +10,12 @@ import { parseCookPlan, stepIngredientBounds, type RecipeForPlan } from "./cook-
 import { COOK_PLAN_SYSTEM_PROMPT, REASK_HINTS, deriveCookPlan } from "./cook-plan-derive";
 import { ZUCCHINI_RECIPE, zucchiniRaw } from "./__tests__/zucchini-wraps";
 
-vi.mock("../ai", () => ({ chat: vi.fn() }));
+vi.mock("../ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../ai")>()),
+  chat: vi.fn(),
+}));
+import { scriptMeter } from "../ai/meter";
+const TEST_METER = scriptMeter("cook-plan-bound-test");
 const mockChat = chat as ReturnType<typeof vi.fn>;
 
 beforeEach(() => mockChat.mockReset());
@@ -105,7 +110,7 @@ describe("the derive with a mapping", () => {
 
   it("ends each step with its ingredients, 'none' for a step with none", async () => {
     reply(zucchiniRaw());
-    await deriveCookPlan(MAPPED);
+    await deriveCookPlan(MAPPED, { meter: TEST_METER });
     const prompt = mockChat.mock.calls[0]![0].messages[0].content as string;
     expect(prompt).toContain(`[0] ${MAPPED.steps![0]} (ingredients: 0, 1, 2, 3)\n`);
     expect(prompt).toContain(`[3] ${MAPPED.steps![3]} (ingredients: none)\n`);
@@ -114,7 +119,7 @@ describe("the derive with a mapping", () => {
 
   it("leaves the steps as written without one", async () => {
     reply(zucchiniRaw());
-    await deriveCookPlan(ZUCCHINI_RECIPE);
+    await deriveCookPlan(ZUCCHINI_RECIPE, { meter: TEST_METER });
     const prompt = mockChat.mock.calls[0]![0].messages[0].content as string;
     expect(prompt).not.toContain("(ingredients:");
     expect(prompt).toContain(`[3] ${ZUCCHINI_RECIPE.steps![3]}\n`);
@@ -123,7 +128,7 @@ describe("the derive with a mapping", () => {
   it("re-asks a stray cook task once with the rule and its hint, and keeps the corrected plan", async () => {
     reply(listing("stir", [4, 6]));
     reply(zucchiniRaw());
-    const { result, rejections } = await deriveCookPlan(MAPPED);
+    const { result, rejections } = await deriveCookPlan(MAPPED, { meter: TEST_METER });
     expect(result.ok).toBe(true);
     expect(rejections.map((r) => r.rule)).toEqual(["ingredient-outside-step"]);
     const correction = mockChat.mock.calls[1]![0].messages[2].content as string;

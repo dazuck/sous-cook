@@ -30,7 +30,14 @@ import { eq, isNull, and, sql } from "drizzle-orm";
 import { db, docRecipes } from "./db";
 import { hasStepsToPlan, parseCookPlan, type CookPlan, type RecipeForPlan } from "./kitchen/cook-plan";
 import { COOK_PLAN_GATES } from "./kitchen/cook-plan-scorer";
-import { CookPlanCapReached, deriveCookPlanOutcome, type DeriveMeter, type DerivedCookPlan } from "./kitchen/cook-plan-derive";
+import {
+  CookPlanCapReached,
+  CookPlanDerivationError,
+  deriveCookPlanOutcome,
+  type DeriveMeter,
+  type DerivedCookPlan,
+} from "./kitchen/cook-plan-derive";
+import type { AiMeter } from "./ai";
 import { CostLedger } from "./cook-plan-cost";
 import {
   cookPlanStamp,
@@ -163,14 +170,23 @@ export async function deriveLibraryPlan(
   docSlug: string,
   recipe: RecipeForPlan,
   meter: DeriveMeter,
+  aiMeter: AiMeter,
 ): Promise<LibraryPlanColumns> {
   const sessionId = `cook-plan:doc:${docSlug}`;
   const derivation = randomUUID();
   let derived: DerivedCookPlan;
   try {
-    derived = await deriveCookPlanOutcome(recipe, { beforeCall: meter.beforeCall, onUsage: meter.onUsage });
+    derived = await deriveCookPlanOutcome(recipe, {
+      beforeCall: meter.beforeCall,
+      onUsage: meter.onUsage,
+      meter: aiMeter,
+    });
   } catch (err) {
-    if (err instanceof CookPlanCapReached && err.rejections.length > 0) {
+    if (
+      (err instanceof CookPlanCapReached ||
+        err instanceof CookPlanDerivationError) &&
+      err.rejections.length > 0
+    ) {
       await logCookPlanRejections(kitchenId, sessionId, derivation, err.rejections);
     }
     throw err;
@@ -201,6 +217,7 @@ export async function planForChunk(
   recipe: RecipeForPlan,
   saved: SavedPlan | undefined,
   budget: PlanBudget,
+  aiMeter: AiMeter,
 ): Promise<ChunkPlan> {
   if (!hasStepsToPlan(recipe)) return { outcome: "none", columns: NO_PLAN };
 
@@ -228,7 +245,7 @@ export async function planForChunk(
   try {
     return {
       outcome: "derived",
-      columns: await deriveLibraryPlan(kitchenId, docSlug, recipe, meter),
+      columns: await deriveLibraryPlan(kitchenId, docSlug, recipe, meter, aiMeter),
     };
   } catch (err) {
     if (err instanceof CookPlanCapReached) return { outcome: "pending", columns: NO_PLAN };

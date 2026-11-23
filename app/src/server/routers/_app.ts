@@ -75,6 +75,7 @@ import {
   extractRecipeFromText,
   extractRecipeFromImage,
 } from "../../lib/recipe-import";
+import { isAllowanceUsed, kitchenMeter } from "../../lib/ai";
 
 // Zod schema for chat messages (with optional image support)
 const MessageSchema = z.object({
@@ -367,7 +368,14 @@ export const appRouter = router({
   addToKitchenQueue: kitchenProcedure
     .input(AddToKitchenQueueSchema)
     .mutation(async ({ ctx, input }) => {
-      const servesEstimate = await servesEstimateFor(input.recipeData, { mayEstimate: true });
+      const servesEstimate = await servesEstimateFor(input.recipeData, {
+        mayEstimate: true,
+        meter: kitchenMeter(
+          ctx.kitchen.id,
+          ctx.member?.id ?? null,
+          "serves-estimate",
+        ),
+      });
       refuseUnreadable(input.recipeData, servesEstimate);
       const item = await addToKitchenQueue(ctx.kitchen.id, {
         recipeNotionId: input.recipeNotionId,
@@ -426,6 +434,7 @@ export const appRouter = router({
         ctx.kitchen.id,
         input.queueId,
         input.ask,
+        ctx.member?.id ?? null,
       );
       return readForCook(stored);
     }),
@@ -438,7 +447,11 @@ export const appRouter = router({
     .input(z.object({ queueId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
-      return cookPlanForCook(ctx.kitchen.id, input.queueId);
+      return cookPlanForCook(
+        ctx.kitchen.id,
+        input.queueId,
+        ctx.member?.id ?? null,
+      );
     }),
 
   // Update the status of a queue item. A real transition into "completed"
@@ -623,8 +636,11 @@ export const appRouter = router({
   // Import a recipe from a URL
   importRecipeFromUrl: kitchenProcedure
     .input(z.object({ url: z.string().url() }))
-    .mutation(async ({ input }) => {
-      const extraction = await extractRecipeFromUrl(input.url);
+    .mutation(async ({ ctx, input }) => {
+      const extraction = await extractRecipeFromUrl(
+        input.url,
+        kitchenMeter(ctx.kitchen.id, ctx.member?.id ?? null, "import-url"),
+      );
       return {
         recipe: extraction?.recipe ?? null,
         notices: extraction?.notices ?? [],
@@ -635,8 +651,14 @@ export const appRouter = router({
   // Import a recipe from pasted text
   importRecipeFromText: kitchenProcedure
     .input(z.object({ text: z.string().min(10) }))
-    .mutation(async ({ input }) => {
-      const extraction = await extractRecipeFromText(input.text);
+    .mutation(async ({ ctx, input }) => {
+      const extraction = await extractRecipeFromText(input.text, {
+        meter: kitchenMeter(
+          ctx.kitchen.id,
+          ctx.member?.id ?? null,
+          "import-text",
+        ),
+      });
       return {
         recipe: extraction?.recipe ?? null,
         notices: extraction?.notices ?? [],
@@ -647,8 +669,11 @@ export const appRouter = router({
   // Import a recipe from an image (photo of recipe)
   importRecipeFromImage: kitchenProcedure
     .input(z.object({ imageBase64: z.string() }))
-    .mutation(async ({ input }) => {
-      const extraction = await extractRecipeFromImage(input.imageBase64);
+    .mutation(async ({ ctx, input }) => {
+      const extraction = await extractRecipeFromImage(
+        input.imageBase64,
+        kitchenMeter(ctx.kitchen.id, ctx.member?.id ?? null, "import-photo"),
+      );
       return {
         recipe: extraction?.recipe ?? null,
         notices: extraction?.notices ?? [],
@@ -715,7 +740,9 @@ export const appRouter = router({
         message: "Recipe sync is not available: no recipe library is connected",
       });
     }
-    return syncRecipesFromDoc(ctx.kitchen.id);
+    return syncRecipesFromDoc(ctx.kitchen.id, {
+      memberId: ctx.member?.id ?? null,
+    });
   }),
 
   // Queues a recipe from a pack with the plan worked out ahead for it, or
@@ -877,11 +904,14 @@ export const appRouter = router({
         content: z.string().min(1),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       if (!connected.pantry) {
         return { items: [] };
       }
-      const items = await parseGroceryInput(input);
+      const items = await parseGroceryInput(
+        input,
+        kitchenMeter(ctx.kitchen.id, ctx.member?.id ?? null, "grocery-parse"),
+      );
       return { items };
     }),
 
@@ -920,13 +950,21 @@ export const appRouter = router({
       try {
         const docSections = await hook("pantry").readSections();
         const recipeIngredients = item.recipeData?.ingredients ?? [];
-        const candidates = await reconcileRecipeIngredients({
-          docSections,
-          recipeIngredients,
-          recipeName: item.recipeData?.name,
-        });
+        const candidates = await reconcileRecipeIngredients(
+          {
+            docSections,
+            recipeIngredients,
+            recipeName: item.recipeData?.name,
+          },
+          kitchenMeter(
+            ctx.kitchen.id,
+            ctx.member?.id ?? null,
+            "pantry-reconcile",
+          ),
+        );
         return { candidates };
       } catch (error) {
+        if (isAllowanceUsed(error)) throw error;
         console.warn("Could not read the pantry for reconciliation:", error);
         return { candidates: [] };
       }

@@ -153,7 +153,7 @@ beforeEach(async () => {
   vi.stubEnv("AI_TEXT_MODEL", "gemini-3.5-flash");
 
   await client.exec(
-    "delete from conversation_logs; delete from cook_reports; delete from doc_recipes; delete from recipe_ideas_cache; truncate table kitchen_queue; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_user;",
+    "delete from ai_usage; delete from conversation_logs; delete from cook_reports; delete from doc_recipes; delete from recipe_ideas_cache; truncate table kitchen_queue; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_user;",
   );
   await client.exec("delete from kitchens where slug <> 'home'");
 

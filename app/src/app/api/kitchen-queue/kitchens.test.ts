@@ -105,7 +105,7 @@ beforeEach(async () => {
   stubSignInEnv();
   resetDeploymentCheckForTests(db);
   await client.exec(
-    "delete from conversation_logs; delete from kitchen_queue; delete from kitchen_webhook_tokens; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_user;",
+    "delete from ai_usage; delete from conversation_logs; delete from kitchen_queue; delete from kitchen_webhook_tokens; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_user;",
   );
   await client.exec("delete from kitchens where slug <> 'home'");
 

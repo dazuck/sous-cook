@@ -3,6 +3,7 @@ import { db, conversationLogs } from "./db";
 import {
   chat as aiChat,
   getConfig,
+  kitchenMeter,
   type AIMessage,
   type ChatResponse as AIChatResponse,
   type GroundingSource,
@@ -454,15 +455,18 @@ export async function chat(
 
   // Make API call using AI abstraction layer
   const maxTokens = options.maxTokens ?? 4096;
-  const response = await aiChat({
-    messages: aiMessages,
-    systemPrompt,
-    model: options.model,
-    maxTokens,
-    temperature: options.temperature ?? 0.7,
-    googleSearch: options.googleSearch,
-    thinkingBudget: options.thinkingBudget,
-  });
+  const response = await aiChat(
+    {
+      messages: aiMessages,
+      systemPrompt,
+      model: options.model,
+      maxTokens,
+      temperature: options.temperature ?? 0.7,
+      googleSearch: options.googleSearch,
+      thinkingBudget: options.thinkingBudget,
+    },
+    kitchenMeter(kitchenId, memberId, "ask"),
+  );
 
   // A reply that didn't stop normally fails below; say why in the server log
   // (Vercel's runtime logs), never with its words, so a cut shows up there.

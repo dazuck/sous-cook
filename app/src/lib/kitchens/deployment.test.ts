@@ -191,6 +191,186 @@ describe("Deployment modes and start-up checks", () => {
     expect(checkDeploymentEnv({ ...TEST_AUTH_ENV })).toBe("sign-in");
   });
 
+  it("MODE-3 (price rows): refuses when a configured model has no row in prices.ts, naming the model, and starts when the row exists", () => {
+    const customModel = "made-up-anthropic-model";
+    let caught: unknown;
+    try {
+      checkDeploymentEnv({
+        ...TEST_AUTH_ENV,
+        AI_TEXT_PROVIDER: "anthropic",
+        AI_TEXT_MODEL: customModel,
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(DeploymentConfigError);
+    const configErr = caught as DeploymentConfigError;
+    expect(configErr.message).toContain(customModel);
+    expect(configErr.logMessage).toContain("AI_TEXT_MODEL");
+    expect(configErr.logMessage).toContain("app/src/lib/ai/prices.ts");
+
+    // Also catches AI_COOK_CHAT_MODEL and AI_VISION_MODEL missing from prices.ts.
+    expect(() =>
+      checkDeploymentEnv({
+        ...TEST_AUTH_ENV,
+        AI_COOK_CHAT_MODEL: "made-up-cook-chat-model",
+      }),
+    ).toThrow(/made-up-cook-chat-model/);
+    expect(() =>
+      checkDeploymentEnv({
+        ...TEST_AUTH_ENV,
+        AI_VISION_MODEL: "made-up-vision-model",
+      }),
+    ).toThrow(/made-up-vision-model/);
+
+    // Starts cleanly when a price row exists for the configured model.
+    expect(
+      checkDeploymentEnv(
+        {
+          ...TEST_AUTH_ENV,
+          AI_TEXT_PROVIDER: "anthropic",
+          AI_TEXT_MODEL: customModel,
+        },
+        {
+          "gemini-2.5-flash": {
+            inputUsdPerMillion: 0.3,
+            outputUsdPerMillion: 2.5,
+            searchUsdPerQuery: 0.014,
+            checkedAt: "2026-11-22",
+            sourceUrl: "https://example.com/pricing",
+          },
+          [customModel]: {
+            inputUsdPerMillion: 3,
+            outputUsdPerMillion: 15,
+            searchUsdPerQuery: 0,
+            checkedAt: "2026-11-22",
+            sourceUrl: "https://example.com/pricing",
+          },
+        },
+      ),
+    ).toBe("sign-in");
+  });
+
+  it("MODE-3 (single-kitchen price rows): refuses an unpriced configured model when a cap is set and starts when no cap is set", () => {
+    const customModel = "made-up-single-kitchen-model";
+
+    // With either cap variable set, single-kitchen mode refuses an unpriced model,
+    // keeping source paths and env variable names in logMessage rather than caller message.
+    for (const capEnv of [
+      { SOUS_AI_KITCHEN_CAP_USD: "2" },
+      { SOUS_AI_TOTAL_CAP_USD: "10" },
+    ]) {
+      let caught: unknown;
+      try {
+        checkDeploymentEnv({
+          SOUS_SIGN_IN: "off",
+          ...capEnv,
+          AI_TEXT_MODEL: customModel,
+        });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(DeploymentConfigError);
+      const configErr = caught as DeploymentConfigError;
+      expect(configErr.message).toContain(customModel);
+      expect(configErr.message).not.toContain("app/src/lib/ai/prices.ts");
+      expect(configErr.logMessage).toContain(customModel);
+      expect(configErr.logMessage).toContain("AI_TEXT_MODEL");
+      expect(configErr.logMessage).toContain("app/src/lib/ai/prices.ts");
+    }
+
+    // With no cap variable set, single-kitchen mode starts with any model.
+    expect(
+      checkDeploymentEnv({
+        SOUS_SIGN_IN: "off",
+        AI_TEXT_MODEL: customModel,
+      }),
+    ).toBe("single-kitchen");
+  });
+
+  it("MODE-6: accepts valid cap formats (2, 2.5, 0.25, 0) and refuses empty, negative, NaN, scientific notation, and 3-decimal values", () => {
+    for (const valid of ["2", "2.5", "0.25", "0"]) {
+      expect(
+        checkDeploymentEnv({
+          ...TEST_AUTH_ENV,
+          SOUS_AI_KITCHEN_CAP_USD: valid,
+          SOUS_AI_TOTAL_CAP_USD: valid,
+        }),
+        `sign-in valid=${valid}`,
+      ).toBe("sign-in");
+      expect(
+        checkDeploymentEnv({
+          SOUS_SIGN_IN: "off",
+          SOUS_AI_KITCHEN_CAP_USD: valid,
+          SOUS_AI_TOTAL_CAP_USD: valid,
+        }),
+        `single-kitchen valid=${valid}`,
+      ).toBe("single-kitchen");
+    }
+
+    // Empty cap variable refuses in both sign-in and single-kitchen modes, naming the variable.
+    for (const varName of [
+      "SOUS_AI_KITCHEN_CAP_USD",
+      "SOUS_AI_TOTAL_CAP_USD",
+    ] as const) {
+      let signInEmpty: unknown;
+      try {
+        checkDeploymentEnv({ ...TEST_AUTH_ENV, [varName]: "" });
+      } catch (err) {
+        signInEmpty = err;
+      }
+      expect(signInEmpty, `sign-in empty ${varName}`).toBeInstanceOf(
+        DeploymentConfigError,
+      );
+      expect((signInEmpty as DeploymentConfigError).message).toContain(varName);
+
+      let singleEmpty: unknown;
+      try {
+        checkDeploymentEnv({ SOUS_SIGN_IN: "off", [varName]: "" });
+      } catch (err) {
+        singleEmpty = err;
+      }
+      expect(singleEmpty, `single-kitchen empty ${varName}`).toBeInstanceOf(
+        DeploymentConfigError,
+      );
+      expect((singleEmpty as DeploymentConfigError).message).toContain(varName);
+    }
+
+    // Invalid cap formats refuse in both sign-in and single-kitchen modes, naming the variable,
+    // while keeping the rejected raw value in logMessage rather than caller message.
+    for (const invalid of ["-1", "NaN", "1e3", "2.555"]) {
+      for (const varName of [
+        "SOUS_AI_KITCHEN_CAP_USD",
+        "SOUS_AI_TOTAL_CAP_USD",
+      ] as const) {
+        let signInErr: unknown;
+        try {
+          checkDeploymentEnv({ ...TEST_AUTH_ENV, [varName]: invalid });
+        } catch (err) {
+          signInErr = err;
+        }
+        expect(signInErr, `sign-in ${varName}=${invalid}`).toBeInstanceOf(
+          DeploymentConfigError,
+        );
+        const sErr = signInErr as DeploymentConfigError;
+        expect(sErr.message).toContain(varName);
+        expect(sErr.message).not.toContain(invalid);
+        expect(sErr.logMessage).toContain(invalid);
+
+        let singleErr: unknown;
+        try {
+          checkDeploymentEnv({ SOUS_SIGN_IN: "off", [varName]: invalid });
+        } catch (err) {
+          singleErr = err;
+        }
+        expect(singleErr, `single-kitchen ${varName}=${invalid}`).toBeInstanceOf(
+          DeploymentConfigError,
+        );
+        expect((singleErr as DeploymentConfigError).message).toContain(varName);
+      }
+    }
+  });
+
   it("MODE-4: sign-in mode refuses when any hook is connected, naming the hook", () => {
     for (const hookName of HOOK_NAMES) {
       for (const n of HOOK_NAMES) connected[n] = false;
@@ -206,9 +386,9 @@ describe("Deployment modes and start-up checks", () => {
   });
 
   it("MODE-5: route modules and instrumentation load cleanly with an empty environment; register runs checks only in nodejs runtime", async () => {
-    vi.stubEnv("SOUS_SIGN_IN", "");
+    vi.stubEnv("SOUS_SIGN_IN", undefined);
     for (const varName of REQUIRED_SIGN_IN_ENV_VARS) {
-      vi.stubEnv(varName, "");
+      vi.stubEnv(varName, undefined);
     }
     vi.stubEnv("NEXT_RUNTIME", "");
 
@@ -310,7 +490,7 @@ describe("Deployment modes and start-up checks", () => {
   it("MODE-7: single-kitchen mode answers 404 on /api/auth/get-session without calling getAuth()", async () => {
     vi.stubEnv("SOUS_SIGN_IN", "off");
     for (const varName of REQUIRED_SIGN_IN_ENV_VARS) {
-      vi.stubEnv(varName, "");
+      vi.stubEnv(varName, undefined);
     }
 
     const res = await authGet(

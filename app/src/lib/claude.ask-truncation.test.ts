@@ -12,28 +12,26 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { PGlite } from "@electric-sql/pglite";
 
-const inserts: Array<{ role: string; content: string }> = [];
-vi.mock("./db", () => ({
-  db: {
-    insert: () => ({
-      values: async (v: { role: string; content: string }) => {
-        inserts.push(v);
-      },
-    }),
-  },
-  conversationLogs: {},
-}));
-// Never reached (no queueId); mocked so the database modules behind them
-// aren't loaded.
+vi.mock("@/lib/db", async () =>
+  (await import("./__tests__/test-db")).mockDbModule(),
+);
+// Never reached (no queueId); mocked so the queue/shelf helpers aren't invoked.
 vi.mock("./kitchen-queue", () => ({ getQueueItemForKitchen: vi.fn() }));
 vi.mock("./shelf/load", () => ({ loadAppPackFiles: vi.fn() }));
 
 const fetchMock = vi.fn<(url: unknown, init?: RequestInit) => Promise<Response>>();
 vi.stubGlobal("fetch", fetchMock);
 
+import * as dbModule from "./db";
+import { conversationLogs, db } from "./db";
+import { homeKitchen } from "./__tests__/kitchens";
 import { chatCookingAssistant, COOKING_MAX_TOKENS } from "./claude";
 import { AnswerCutOff } from "./kitchen/ask-failure";
+
+const client = (dbModule as unknown as { client: PGlite }).client;
+let homeKitchenId: string;
 
 const QUESTION = "The stock is still cold. Can the noodles go in now?";
 const WHOLE = "Bring it back to a simmer first, then add the noodles.";
@@ -73,15 +71,23 @@ function geminiReply(
 
 function ask() {
   return chatCookingAssistant(
-    "00000000-0000-4000-8000-000000000001",
+    homeKitchenId,
     "ask-session",
     [{ role: "user", content: QUESTION }],
     "Noodle soup",
   );
 }
 
-beforeEach(() => {
-  inserts.length = 0;
+async function loggedMessages() {
+  return db
+    .select({ role: conversationLogs.role, content: conversationLogs.content })
+    .from(conversationLogs)
+    .orderBy(conversationLogs.createdAt, conversationLogs.id);
+}
+
+beforeEach(async () => {
+  await client.exec("delete from ai_usage; delete from conversation_logs;");
+  homeKitchenId = (await homeKitchen(db)).id;
   fetchMock.mockReset();
   // The default provider and model (google, gemini-3.5-flash), whatever the
   // shell has set; the key is a placeholder, since fetch never leaves.
@@ -89,6 +95,8 @@ beforeEach(() => {
   vi.stubEnv("AI_TEXT_PROVIDER", "");
   vi.stubEnv("AI_TEXT_MODEL", "");
   vi.stubEnv("AI_COOK_CHAT_MODEL", "");
+  vi.stubEnv("SOUS_AI_KITCHEN_CAP_USD", undefined);
+  vi.stubEnv("SOUS_AI_TOTAL_CAP_USD", undefined);
 });
 
 afterEach(() => {
@@ -110,7 +118,7 @@ describe("Ask Sous on Gemini: no thinking, and a cut reply is an error", () => {
     expect(body.tools).toEqual([{ googleSearch: {} }]);
 
     expect(result.content).toBe(WHOLE);
-    expect(inserts.map(({ role, content }) => ({ role, content }))).toEqual([
+    expect(await loggedMessages()).toEqual([
       { role: "user", content: QUESTION },
       { role: "assistant", content: WHOLE },
     ]);
@@ -144,8 +152,9 @@ describe("Ask Sous on Gemini: no thinking, and a cut reply is an error", () => {
     // Output tokens count thinking beside the answer (the intake pass's
     // billing rule, `providers/google.ts`): 338 + 12, all of the cap.
     expect((failure as AnswerCutOff).outputTokens).toBe(COOKING_MAX_TOKENS);
-    expect(inserts.map((i) => i.role)).toEqual(["user"]);
-    expect(JSON.stringify(inserts)).not.toContain(CUT);
+    const stored = await loggedMessages();
+    expect(stored.map((i) => i.role)).toEqual(["user"]);
+    expect(JSON.stringify(stored)).not.toContain(CUT);
     expect(said).toHaveBeenCalledOnce();
     const logged = String(said.mock.calls[0][0]);
     expect(logged).toContain("[AskSous]");
@@ -164,7 +173,7 @@ describe("Ask Sous on Gemini: no thinking, and a cut reply is an error", () => {
 
       await expect(ask()).rejects.toThrow(/ended without finishing \(other\)/);
 
-      expect(inserts.map((i) => i.role)).toEqual(["user"]);
+      expect((await loggedMessages()).map((i) => i.role)).toEqual(["user"]);
       expect(String(said.mock.calls[0][0])).toContain("finish other");
       said.mockRestore();
     },

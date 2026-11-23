@@ -62,7 +62,11 @@ function currentFile(pack: Pack): PackPlanFile {
   };
 }
 
-vi.mock("./ai", () => ({ chat: vi.fn() }));
+vi.mock("./ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ai")>()),
+  chat: vi.fn(),
+}));
+import { scriptMeter } from "./ai/meter";
 const mockChat = chat as Mock;
 
 beforeEach(() => {
@@ -71,7 +75,11 @@ beforeEach(() => {
 
 /** The derive `generate-pack-cook-plans --propose` runs: the real one, metered by the run's ledger. */
 const derive: DeriveForProposal = (recipeData, meter) =>
-  deriveCookPlanOutcome(recipeData, { beforeCall: meter.beforeCall, onUsage: meter.onUsage });
+  deriveCookPlanOutcome(recipeData, {
+    beforeCall: meter.beforeCall,
+    onUsage: meter.onUsage,
+    meter: scriptMeter("pack-cook-plans-test"),
+  });
 
 type Answer = "plan" | "refused" | "for now";
 

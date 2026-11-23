@@ -6,12 +6,16 @@ import {
 } from "./pantry-reconciliation";
 import type { PantrySection } from "./hooks/types";
 
-vi.mock("./ai", () => ({
+vi.mock("./ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ai")>()),
   chat: vi.fn(),
   vision: vi.fn(),
 }));
 
 import { chat, vision } from "./ai";
+import { scriptMeter } from "./ai/meter";
+
+const TEST_METER = scriptMeter("pantry-reconciliation-test");
 
 const mockChat = vi.mocked(chat);
 const mockVision = vi.mocked(vision);
@@ -93,7 +97,7 @@ describe("reconcileRecipeIngredients", () => {
       ],
     };
 
-    const candidates = await reconcileRecipeIngredients(options);
+    const candidates = await reconcileRecipeIngredients(options, TEST_METER);
 
     expect(candidates).toHaveLength(3);
     expect(candidates[0].action).toBe("delete");
@@ -134,10 +138,13 @@ describe("reconcileRecipeIngredients", () => {
       finishReason: "stop",
     });
 
-    const candidates = await reconcileRecipeIngredients({
-      docSections: sampleSections,
-      recipeIngredients: [{ item: "avocado" }],
-    });
+    const candidates = await reconcileRecipeIngredients(
+      {
+        docSections: sampleSections,
+        recipeIngredients: [{ item: "avocado" }],
+      },
+      TEST_METER,
+    );
 
     expect(candidates).toHaveLength(1);
     expect(candidates[0].docItemText).toBe("2 avocados");
@@ -146,10 +153,13 @@ describe("reconcileRecipeIngredients", () => {
   it("fails safe and returns empty array on invalid JSON or AI error", async () => {
     mockChat.mockRejectedValueOnce(new Error("AI rate limit"));
 
-    const candidates = await reconcileRecipeIngredients({
-      docSections: sampleSections,
-      recipeIngredients: [{ item: "avocado" }],
-    });
+    const candidates = await reconcileRecipeIngredients(
+      {
+        docSections: sampleSections,
+        recipeIngredients: [{ item: "avocado" }],
+      },
+      TEST_METER,
+    );
 
     expect(candidates).toEqual([]);
   });
@@ -173,10 +183,13 @@ describe("reconcileRecipeIngredients", () => {
       finishReason: "stop",
     });
 
-    const candidates = await reconcileRecipeIngredients({
-      docSections: sampleSections,
-      recipeIngredients: [{ item: "cilantro" }],
-    });
+    const candidates = await reconcileRecipeIngredients(
+      {
+        docSections: sampleSections,
+        recipeIngredients: [{ item: "cilantro" }],
+      },
+      TEST_METER,
+    );
 
     expect(candidates).toHaveLength(1);
     expect(candidates[0].docItemText).toBe("cilantro");
@@ -204,10 +217,13 @@ describe("parseGroceryInput", () => {
       finishReason: "stop",
     });
 
-    const items = await parseGroceryInput({
-      type: "voice",
-      content: "I got two avocados, cilantro, sour cream, and corn tortillas",
-    });
+    const items = await parseGroceryInput(
+      {
+        type: "voice",
+        content: "I got two avocados, cilantro, sour cream, and corn tortillas",
+      },
+      TEST_METER,
+    );
 
     expect(items).toHaveLength(4);
     expect(items[0].text).toBe("2 avocados");
@@ -225,10 +241,13 @@ describe("parseGroceryInput", () => {
 
     mockVision.mockResolvedValueOnce(JSON.stringify(payload));
 
-    const items = await parseGroceryInput({
-      type: "image",
-      content: "data:image/jpeg;base64,...",
-    });
+    const items = await parseGroceryInput(
+      {
+        type: "image",
+        content: "data:image/jpeg;base64,...",
+      },
+      TEST_METER,
+    );
 
     expect(items).toHaveLength(2);
     expect(items[0].text).toBe("1 lb ground beef");
@@ -236,7 +255,7 @@ describe("parseGroceryInput", () => {
   });
 
   it("returns empty array when content is empty", async () => {
-    const items = await parseGroceryInput({ type: "text", content: "" });
+    const items = await parseGroceryInput({ type: "text", content: "" }, TEST_METER);
     expect(items).toEqual([]);
     expect(mockChat).not.toHaveBeenCalled();
   });

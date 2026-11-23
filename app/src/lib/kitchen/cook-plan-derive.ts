@@ -14,7 +14,14 @@
  * re-run `scripts/eval-cook-plan.ts`.
  */
 
-import { chat, type AIMessage, type ResponseSchema } from "../ai";
+import {
+  chat,
+  isAllowanceUsed,
+  isUnpricedModel,
+  type AIMessage,
+  type AiMeter,
+  type ResponseSchema,
+} from "../ai";
 import {
   hasStepsToPlan,
   parseCookPlan,
@@ -289,6 +296,8 @@ export interface DerivationUsage {
   inputTokens: number;
   outputTokens: number;
   bound: CallBound;
+  /** False when the call was refused before reaching the provider (allowance or unpriced model). */
+  sent?: false;
 }
 
 /**
@@ -304,6 +313,8 @@ export interface DeriveMeter {
 export interface DeriveOptions extends Partial<DeriveMeter> {
   /** Defaults to COOK_PLAN_THINKING_BUDGET; the eval script varies it. */
   thinkingBudget?: number;
+  /** Metering context for each model call made by this derivation. */
+  meter: AiMeter;
 }
 
 /**
@@ -419,7 +430,7 @@ ${[...hints, correct].join(" ")}`;
  */
 export async function deriveCookPlan(
   recipe: RecipeForPlan,
-  options: DeriveOptions = {},
+  options: DeriveOptions,
 ): Promise<CookPlanDerivation> {
   if (!hasStepsToPlan(recipe)) {
     throw new Error("Cannot derive a cook plan: the recipe has no steps");
@@ -431,11 +442,12 @@ export async function deriveCookPlan(
     return await derive(recipe, options, deadline.signal, rejections);
   } catch (err) {
     if (err instanceof CookPlanCapReached) throw err;
-    const error = deadline.signal.aborted
-      ? new Error(
-          `Cook plan derivation timed out after ${COOK_PLAN_TIMEOUT_MS / 1000} s`,
-        )
-      : err;
+    const error =
+      deadline.signal.aborted && !isAllowanceUsed(err)
+        ? new Error(
+            `Cook plan derivation timed out after ${COOK_PLAN_TIMEOUT_MS / 1000} s`,
+          )
+        : err;
     if (rejections.length === 0) throw error;
     throw new CookPlanDerivationError(
       error instanceof Error ? error.message : String(error),
@@ -452,7 +464,8 @@ export async function deriveCookPlan(
  * names why there is none (`rejected (<rule>): <detail>` when the validator
  * refused, else the thrown message), with every rejected reply for the log.
  * The error text is what `isSettledPlanError` classifies. Never throws,
- * except `CookPlanCapReached` when a `beforeCall` refuses a call.
+ * except `CookPlanCapReached` when a `beforeCall` refuses a call or
+ * `AllowanceUsedError` when a monthly AI cap is reached.
  */
 export type DerivedCookPlan =
   | { plan: CookPlan; error: null; rejections: CookPlanRejection[] }
@@ -460,7 +473,7 @@ export type DerivedCookPlan =
 
 export async function deriveCookPlanOutcome(
   recipe: RecipeForPlan,
-  options: DeriveOptions = {},
+  options: DeriveOptions,
 ): Promise<DerivedCookPlan> {
   try {
     const { result, rejections } = await deriveCookPlan(recipe, options);
@@ -468,7 +481,7 @@ export async function deriveCookPlanOutcome(
       ? { plan: result.plan, error: null, rejections }
       : { plan: null, error: rejectedPlanError(result.rule, result.detail), rejections };
   } catch (err) {
-    if (err instanceof CookPlanCapReached) throw err;
+    if (err instanceof CookPlanCapReached || isAllowanceUsed(err)) throw err;
     return {
       plan: null,
       error: err instanceof Error ? err.message : String(err),
@@ -497,19 +510,30 @@ async function derive(
     }
     let response: Awaited<ReturnType<typeof chat>>;
     try {
-      response = await chat({
-        systemPrompt: COOK_PLAN_SYSTEM_PROMPT,
-        messages: [...messages],
-        responseFormat: "json",
-        responseSchema: COOK_PLAN_RESPONSE_SCHEMA,
-        thinkingBudget,
-        maxTokens,
-        signal,
-      });
+      response = await chat(
+        {
+          systemPrompt: COOK_PLAN_SYSTEM_PROMPT,
+          messages: [...messages],
+          responseFormat: "json",
+          responseSchema: COOK_PLAN_RESPONSE_SCHEMA,
+          thinkingBudget,
+          maxTokens,
+          signal,
+        },
+        options.meter,
+      );
     } catch (err) {
       // A call that failed (a timeout may still be billed) reports no
-      // tokens, so a paid run's ledger charges it at its bound.
-      options.onUsage?.({ call, inputTokens: 0, outputTokens: 0, bound });
+      // tokens, so a paid run's ledger charges it at its bound. A call
+      // refused before reaching the provider releases its bound with sent: false.
+      const notSent = isAllowanceUsed(err) || isUnpricedModel(err);
+      options.onUsage?.({
+        call,
+        inputTokens: 0,
+        outputTokens: 0,
+        bound,
+        ...(notSent ? { sent: false as const } : {}),
+      });
       throw err;
     }
     options.onUsage?.({

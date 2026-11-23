@@ -19,7 +19,10 @@ import {
   zucchiniRaw,
 } from "./kitchen/__tests__/zucchini-wraps";
 
-vi.mock("./ai", () => ({ chat: vi.fn() }));
+vi.mock("./ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ai")>()),
+  chat: vi.fn(),
+}));
 
 vi.mock("@/lib/db", async () =>
   (await import("./__tests__/test-db")).mockDbModule(),

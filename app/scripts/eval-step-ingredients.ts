@@ -51,6 +51,7 @@ async function llmAssign(
   fixture: StepIngredientFixture,
 ): Promise<number[][] | null> {
   const { chat } = await import("../src/lib/ai");
+  const { scriptMeter } = await import("../src/lib/ai/meter");
 
   const ingredientStrings = fixtureIngredientStrings(fixture);
   const ingredientList = ingredientStrings
@@ -77,12 +78,15 @@ Rules:
 
 Return ONLY JSON: {"stepIngredients": [[..], [..], ...]} with EXACTLY ${fixture.steps.length} arrays, one per step in order.`;
 
-  const response = await chat({
-    messages: [{ role: "user", content: prompt }],
-    responseFormat: "json",
-    thinkingBudget: 0,
-    maxTokens: 4096,
-  });
+  const response = await chat(
+    {
+      messages: [{ role: "user", content: prompt }],
+      responseFormat: "json",
+      thinkingBudget: 0,
+      maxTokens: 4096,
+    },
+    scriptMeter("eval-step-ingredients"),
+  );
 
   let parsed: unknown;
   try {

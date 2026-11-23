@@ -586,3 +586,76 @@ export const cookReports = pgTable(
     index("cook_reports_kitchen_created_idx").on(t.kitchenId, t.createdAt),
   ],
 ).enableRLS();
+
+// =============================================================================
+// AI usage ledger
+// =============================================================================
+
+export type AiFeature =
+  | "ask"
+  | "import-url"
+  | "import-text"
+  | "import-photo"
+  | "serves-estimate"
+  | "cook-plan"
+  | "intake"
+  | "grocery-parse"
+  | "pantry-reconcile"
+  | "library-refresh";
+
+export type AiUsageProvider = "google" | "anthropic";
+
+export type AiUsageStatus = "reserved" | "settled" | "failed";
+
+/**
+ * One row per kitchen-metered model call. Created as `reserved` before the
+ * provider call under an advisory lock and updated to `settled` or `failed`
+ * afterwards. Monetary amounts are whole micro-dollars (1 USD = 1,000,000).
+ */
+export const aiUsage = pgTable(
+  "ai_usage",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kitchenId: uuid("kitchen_id")
+      .notNull()
+      .references(() => kitchens.id, { onDelete: "restrict" }),
+    memberId: uuid("member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    feature: text("feature").$type<AiFeature>().notNull(),
+    provider: text("provider").$type<AiUsageProvider>().notNull(),
+    model: text("model").notNull(),
+    status: text("status").$type<AiUsageStatus>().notNull(),
+    reservedMicros: bigint("reserved_micros", { mode: "number" }).notNull(),
+    costMicros: bigint("cost_micros", { mode: "number" }),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    searchQueries: integer("search_queries"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      "ai_usage_feature_known",
+      sql`${t.feature} in ('ask', 'import-url', 'import-text', 'import-photo', 'serves-estimate', 'cook-plan', 'intake', 'grocery-parse', 'pantry-reconcile', 'library-refresh')`,
+    ),
+    check("ai_usage_provider_known", sql`${t.provider} in ('google', 'anthropic')`),
+    check(
+      "ai_usage_status_known",
+      sql`${t.status} in ('reserved', 'settled', 'failed')`,
+    ),
+    check("ai_usage_reserved_nonnegative", sql`${t.reservedMicros} >= 0`),
+    check(
+      "ai_usage_cost_nonnegative",
+      sql`${t.costMicros} is null or ${t.costMicros} >= 0`,
+    ),
+    check(
+      "ai_usage_settled_has_time",
+      sql`(${t.status} = 'reserved') = (${t.settledAt} is null)`,
+    ),
+    index("ai_usage_kitchen_created_idx").on(t.kitchenId, t.createdAt),
+    index("ai_usage_created_idx").on(t.createdAt),
+  ],
+).enableRLS();

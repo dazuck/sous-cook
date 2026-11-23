@@ -18,6 +18,7 @@
  *   recorded and the run goes on.
  */
 
+import { kitchenMeter, type AiMeter } from "./ai";
 import type { CostLedger } from "./cook-plan-cost";
 import type { RecipeForPlan } from "./kitchen/cook-plan";
 import { CookPlanCapReached, type DeriveMeter } from "./kitchen/cook-plan-derive";
@@ -134,6 +135,7 @@ export type DeriveLibraryRow = (
   slug: string,
   recipe: RecipeForPlan,
   meter: DeriveMeter,
+  aiMeter: AiMeter,
 ) => Promise<LibraryPlanColumns>;
 
 function outcomeOf(columns: LibraryPlanColumns): BackfillOutcome {
@@ -151,12 +153,14 @@ export async function runLibraryBackfill(
     concurrency = BACKFILL_CONCURRENCY,
     stopAfter = VALID_RATE_STOP_AFTER,
     onRow,
+    aiMeter = kitchenMeter(kitchenId, null, "library-refresh"),
   }: {
     derive?: DeriveLibraryRow;
     store?: typeof storeLibraryPlan;
     concurrency?: number;
     stopAfter?: number;
     onRow?: (row: BackfilledRow) => void;
+    aiMeter?: AiMeter;
   } = {},
 ): Promise<BackfillResult> {
   const rows: BackfilledRow[] = [];
@@ -171,7 +175,7 @@ export async function runLibraryBackfill(
     const base = { slug: target.slug, name: target.name };
     let columns: LibraryPlanColumns;
     try {
-      columns = await derive(kitchenId, target.slug, target.recipe, ledger.meter());
+      columns = await derive(kitchenId, target.slug, target.recipe, ledger.meter(), aiMeter);
     } catch (err) {
       if (err instanceof CookPlanCapReached) return null;
       ledger.finishRecipe();

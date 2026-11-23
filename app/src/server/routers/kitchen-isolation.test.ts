@@ -80,6 +80,7 @@ vi.mock("@/lib/db", async () =>
 
 import * as dbModule from "@/lib/db";
 import {
+  aiUsage,
   authUser,
   conversationLogs,
   cookReports,
@@ -203,7 +204,7 @@ beforeEach(async () => {
   resetDeploymentCheckForTests(db);
 
   await client.exec(
-    "delete from conversation_logs; delete from cook_reports; delete from doc_recipes; delete from recipe_ideas_cache; delete from kitchen_queue; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_verification; delete from auth_user;",
+    "delete from ai_usage; delete from conversation_logs; delete from cook_reports; delete from doc_recipes; delete from recipe_ideas_cache; delete from kitchen_queue; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_verification; delete from auth_user;",
   );
   await client.exec("delete from kitchens where slug <> 'home'");
 
@@ -936,6 +937,13 @@ describe("ISO-18: importRecipeFromUrl", () => {
     expect("kitchenId" in result).toBe(false);
     expect(await callerA.getKitchenQueue({ status: "pending" })).toEqual([]);
     expect(await db.select().from(docRecipes)).toEqual([]);
+    const usage = await db.select().from(aiUsage);
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({
+      kitchenId: kitchenB.id,
+      feature: "import-url",
+      status: "settled",
+    });
   });
 });
 
@@ -960,6 +968,13 @@ describe("ISO-19: importRecipeFromText", () => {
     expect("kitchenId" in result).toBe(false);
     expect(await callerA.getKitchenQueue({ status: "pending" })).toEqual([]);
     expect(await db.select().from(docRecipes)).toEqual([]);
+    const usage = await db.select().from(aiUsage);
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({
+      kitchenId: kitchenB.id,
+      feature: "import-text",
+      status: "settled",
+    });
   });
 });
 
@@ -984,6 +999,13 @@ describe("ISO-20: importRecipeFromImage", () => {
     expect(provider.visionCalls).toHaveLength(1);
     expect(await callerA.getKitchenQueue({ status: "pending" })).toEqual([]);
     expect(await db.select().from(docRecipes)).toEqual([]);
+    const usage = await db.select().from(aiUsage);
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({
+      kitchenId: kitchenB.id,
+      feature: "import-photo",
+      status: "settled",
+    });
   });
 });
 
@@ -1455,6 +1477,13 @@ describe("ISO-30: parseGroceryInput", () => {
     expect("kitchenId" in result).toBe(false);
     expect(provider.chatCalls).toHaveLength(1);
     expect(await callerA.getKitchenQueue({ status: "pending" })).toEqual([]);
+    const usage = await db.select().from(aiUsage);
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({
+      kitchenId: kitchenB.id,
+      feature: "grocery-parse",
+      status: "settled",
+    });
   });
 });
 

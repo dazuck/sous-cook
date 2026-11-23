@@ -3,6 +3,7 @@ import type {
   ChatOptions,
   ChatResponse,
   VisionOptions,
+  VisionResponse,
 } from "../ai/types";
 
 export interface RecordedChatCall {
@@ -19,7 +20,9 @@ export type ChatHandler = (
   options: ChatOptions,
 ) => Promise<ChatResponse> | ChatResponse;
 
-export type VisionHandler = (options: VisionOptions) => Promise<string> | string;
+export type VisionHandler = (
+  options: VisionOptions,
+) => Promise<VisionResponse | string> | VisionResponse | string;
 
 /**
  * Scripted AI provider for tests that exercise the real `chat()` and `vision()`
@@ -35,7 +38,10 @@ export class FakeProviderController {
     usage: { inputTokens: 100, outputTokens: 20 },
   });
   private visionQueue: VisionHandler[] = [];
-  private defaultVisionHandler: VisionHandler = () => "{}";
+  private defaultVisionHandler: VisionHandler = () => ({
+    content: "{}",
+    usage: { inputTokens: 100, outputTokens: 20 },
+  });
 
   reset(): void {
     this.chatCalls.length = 0;
@@ -47,7 +53,10 @@ export class FakeProviderController {
       finishReason: "stop",
       usage: { inputTokens: 100, outputTokens: 20 },
     });
-    this.defaultVisionHandler = () => "{}";
+    this.defaultVisionHandler = () => ({
+      content: "{}",
+      usage: { inputTokens: 100, outputTokens: 20 },
+    });
   }
 
   onNextChat(handler: ChatHandler): void {
@@ -78,10 +87,20 @@ export class FakeProviderController {
           ...response,
         };
       },
-      vision: async (options: VisionOptions): Promise<string> => {
+      vision: async (options: VisionOptions): Promise<VisionResponse> => {
         this.visionCalls.push({ provider: name, options });
         const next = this.visionQueue.shift() ?? this.defaultVisionHandler;
-        return next(options);
+        const raw = await next(options);
+        if (typeof raw === "string") {
+          return {
+            content: raw,
+            usage: { inputTokens: 100, outputTokens: 20 },
+          };
+        }
+        return {
+          usage: { inputTokens: 100, outputTokens: 20 },
+          ...raw,
+        };
       },
     };
   }

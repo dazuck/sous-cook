@@ -22,6 +22,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getConfig } from "../src/lib/ai";
+import { scriptMeter } from "../src/lib/ai/meter";
 import { parseCookPlan } from "../src/lib/kitchen/cook-plan";
 import {
   COOK_PLAN_THINKING_BUDGET,
@@ -99,6 +100,7 @@ async function derive(
     const { raw, rejections } = await deriveCookPlan(gateRecipe(fixture), {
       thinkingBudget: thinking,
       onUsage,
+      meter: scriptMeter("eval-cook-plan"),
     });
     reasked.set(fixture.name, rejections.map((r) => `${r.rule}: ${r.detail}`));
     return { ...base, ms: Date.now() - started, error: null, raw, usage };

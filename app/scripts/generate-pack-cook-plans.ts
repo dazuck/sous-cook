@@ -23,6 +23,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CostLedger, describeEstimate, estimateCost, formatUsd, maxUsdArg } from "../src/lib/cook-plan-cost";
+import { scriptMeter } from "../src/lib/ai/meter";
 import { deriveCookPlanOutcome } from "../src/lib/kitchen/cook-plan-derive";
 import {
   checkRegisteredPackPlans,
@@ -38,7 +39,11 @@ import { SHELF_SOURCES } from "../src/lib/shelf/registry";
 import { defaultModelOrRefuse } from "./default-model";
 
 const derive: DeriveForProposal = (recipeData, meter) =>
-  deriveCookPlanOutcome(recipeData, { beforeCall: meter.beforeCall, onUsage: meter.onUsage });
+  deriveCookPlanOutcome(recipeData, {
+    beforeCall: meter.beforeCall,
+    onUsage: meter.onUsage,
+    meter: scriptMeter("generate-pack-cook-plans"),
+  });
 
 async function main(): Promise<void> {
   const propose = process.argv.includes("--propose");

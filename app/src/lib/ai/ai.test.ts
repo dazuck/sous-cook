@@ -265,7 +265,7 @@ describe("AI Types", () => {
 });
 
 // =============================================================================
-// Provider Selection Tests
+// Provider Selection Tests (via metered chat/vision)
 // =============================================================================
 
 describe("Provider Selection", () => {
@@ -278,67 +278,57 @@ describe("Provider Selection", () => {
 
   afterEach(() => {
     process.env = originalEnv;
+    vi.restoreAllMocks();
   });
 
-  it("getTextProvider returns google provider by default", async () => {
-    process.env.GOOGLE_AI_API_KEY = "test-key";
-
-    const { getTextProvider } = await import("./chat");
-
-    const provider = getTextProvider();
-    expect(provider.name).toBe("google");
-  });
-
-  it("getTextProvider returns anthropic provider when configured", async () => {
-    process.env.AI_TEXT_PROVIDER = "anthropic";
-    process.env.ANTHROPIC_API_KEY = "test-key";
-
-    const { getTextProvider } = await import("./chat");
-
-    const provider = getTextProvider();
-    expect(provider.name).toBe("anthropic");
-  });
-
-  it("getVisionProvider returns google provider by default", async () => {
-    process.env.ANTHROPIC_API_KEY = "test-key";
-    process.env.GOOGLE_AI_API_KEY = "test-key";
-
-    const { getVisionProvider } = await import("./chat");
-
-    const provider = getVisionProvider();
-    expect(provider.name).toBe("google");
-  });
-
-  it("getVisionProvider returns anthropic provider when configured", async () => {
-    process.env.AI_VISION_PROVIDER = "anthropic";
-    process.env.ANTHROPIC_API_KEY = "test-key";
-
-    const { getVisionProvider } = await import("./chat");
-
-    const provider = getVisionProvider();
-    expect(provider.name).toBe("anthropic");
-  });
-
-  it("a missing key throws a MissingApiKeyError, which a caller can tell from a refused request", async () => {
+  it("a missing key throws MissingApiKeyError before any reservation", async () => {
     process.env.AI_TEXT_PROVIDER = "google";
     delete process.env.GOOGLE_AI_API_KEY;
 
-    const { getTextProvider } = await import("./chat");
+    const { chat } = await import("./chat");
+    const { scriptMeter } = await import("./meter");
 
-    expect(() => getTextProvider()).toThrow(
-      expect.objectContaining({
-        name: "MissingApiKeyError",
-        message: "GOOGLE_AI_API_KEY required when using google provider",
-      }),
-    );
+    await expect(
+      chat(
+        { messages: [{ role: "user", content: "Hi" }], maxTokens: 100 },
+        scriptMeter("ai-test"),
+      ),
+    ).rejects.toMatchObject({
+      name: "MissingApiKeyError",
+      message: "GOOGLE_AI_API_KEY required when using google provider",
+    });
   });
 
-  it("throws error for unsupported provider", async () => {
+  it("throws error for unsupported text provider", async () => {
     process.env.AI_TEXT_PROVIDER = "openai";
 
-    const { getTextProvider } = await import("./chat");
+    const { chat } = await import("./chat");
+    const { scriptMeter } = await import("./meter");
 
-    expect(() => getTextProvider()).toThrow("Unsupported AI provider: openai");
+    await expect(
+      chat(
+        { messages: [{ role: "user", content: "Hi" }], maxTokens: 100 },
+        scriptMeter("ai-test"),
+      ),
+    ).rejects.toThrow("Unsupported AI provider: openai");
+  });
+
+  it("throws MissingApiKeyError for missing anthropic vision key when configured", async () => {
+    process.env.AI_VISION_PROVIDER = "anthropic";
+    delete process.env.ANTHROPIC_API_KEY;
+
+    const { vision } = await import("./chat");
+    const { scriptMeter } = await import("./meter");
+
+    await expect(
+      vision(
+        { imageBase64: "aGVsbG8=", prompt: "Read", maxTokens: 100 },
+        scriptMeter("ai-test"),
+      ),
+    ).rejects.toMatchObject({
+      name: "MissingApiKeyError",
+      message: "ANTHROPIC_API_KEY required when using anthropic provider",
+    });
   });
 });
 
@@ -399,10 +389,15 @@ describe("Chat Interface", () => {
 
     try {
       const { chat } = await import("./chat");
-      const res = await chat({
-        messages: [{ role: "user", content: "Safe chicken temp?" }],
-        googleSearch: true,
-      });
+      const { scriptMeter } = await import("./meter");
+      const res = await chat(
+        {
+          messages: [{ role: "user", content: "Safe chicken temp?" }],
+          googleSearch: true,
+          maxTokens: 256,
+        },
+        scriptMeter("ai-test"),
+      );
 
       expect(res.content).toBe("Use 74°C.");
       expect(res.sources).toEqual([
@@ -489,6 +484,18 @@ describe("Index Exports", () => {
     const aiModule = await import("./index");
 
     expect(typeof aiModule.vision).toBe("function");
+  });
+
+  it("does not export bypass provider factories or getters", async () => {
+    const aiModule = (await import("./index")) as Record<string, unknown>;
+    const chatModule = (await import("./chat")) as Record<string, unknown>;
+
+    expect(aiModule.getTextProvider).toBeUndefined();
+    expect(aiModule.getVisionProvider).toBeUndefined();
+    expect(aiModule.createAnthropicProvider).toBeUndefined();
+    expect(aiModule.createGoogleProvider).toBeUndefined();
+    expect(chatModule.getTextProvider).toBeUndefined();
+    expect(chatModule.getVisionProvider).toBeUndefined();
   });
 
   it("exports type definitions", async () => {

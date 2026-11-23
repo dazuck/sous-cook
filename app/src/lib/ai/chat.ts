@@ -1,18 +1,28 @@
 /**
- * AI Abstraction Layer - Unified Chat Interface
+ * AI Abstraction Layer - Unified Metered Chat Interface
  *
- * Provides a unified interface for AI chat and vision operations
- * that abstracts away the underlying provider (Claude, Gemini).
+ * The single choke point every model call passes through. Kitchen-metered calls
+ * reserve spend under the monthly caps before calling the provider and settle
+ * afterwards; script-metered calls bypass the database and caps.
  */
 
 import { getConfig } from "./config";
+import type { AiMeter } from "./meter";
+import {
+  estimateChatUsage,
+  estimateVisionUsage,
+  failAiCall,
+  reserveAiCall,
+  settleAiCall,
+} from "./spend";
 import {
   MissingApiKeyError,
   type AIProvider,
-  type ChatOptions,
   type ChatResponse,
   type ProviderName,
-  type VisionOptions,
+  type PublicChatOptions,
+  type PublicVisionOptions,
+  type VisionResponse,
 } from "./types";
 import { createAnthropicProvider } from "./providers/anthropic";
 import { createGoogleProvider } from "./providers/google";
@@ -41,11 +51,10 @@ function setCachedProvider(
 }
 
 // =============================================================================
-// Provider Factory
+// Provider Factory (module-private: every call must go through chat/vision)
 // =============================================================================
 
 function createProvider(name: ProviderName, apiKey: string): AIProvider {
-  // Check cache first
   const cached = getCachedProvider(name, apiKey);
   if (cached) {
     return cached;
@@ -64,127 +73,150 @@ function createProvider(name: ProviderName, apiKey: string): AIProvider {
       throw new Error(`Unsupported AI provider: ${name}`);
   }
 
-  // Cache and return
   setCachedProvider(name, apiKey, provider);
   return provider;
 }
 
-// =============================================================================
-// Provider Getters
-// =============================================================================
-
-/**
- * Gets the provider configured for text operations.
- * Reads from AI_TEXT_PROVIDER env var, defaults to 'anthropic'.
- */
-export function getTextProvider(): AIProvider {
+function resolveTextProvider(): AIProvider {
   const config = getConfig();
   const providerName = config.textProvider;
 
-  let apiKey: string | undefined;
   if (providerName === "anthropic") {
-    apiKey = config.anthropicApiKey;
-    if (!apiKey) {
+    if (!config.anthropicApiKey) {
       throw new MissingApiKeyError(
         "ANTHROPIC_API_KEY required when using anthropic provider",
       );
     }
-  } else if (providerName === "google") {
-    apiKey = config.googleApiKey;
-    if (!apiKey) {
-      throw new MissingApiKeyError("GOOGLE_AI_API_KEY required when using google provider");
-    }
-  } else {
-    throw new Error(`Unsupported AI provider: ${providerName}`);
+    return createProvider(providerName, config.anthropicApiKey);
   }
-
-  return createProvider(providerName, apiKey);
+  if (providerName === "google") {
+    if (!config.googleApiKey) {
+      throw new MissingApiKeyError(
+        "GOOGLE_AI_API_KEY required when using google provider",
+      );
+    }
+    return createProvider(providerName, config.googleApiKey);
+  }
+  throw new Error(`Unsupported AI provider: ${providerName}`);
 }
 
-/**
- * Gets the provider configured for vision operations.
- * Reads from AI_VISION_PROVIDER env var, defaults to 'google'.
- */
-export function getVisionProvider(): AIProvider {
+function resolveVisionProvider(): AIProvider {
   const config = getConfig();
   const providerName = config.visionProvider;
 
-  let apiKey: string | undefined;
   if (providerName === "anthropic") {
-    apiKey = config.anthropicApiKey;
-    if (!apiKey) {
+    if (!config.anthropicApiKey) {
       throw new MissingApiKeyError(
         "ANTHROPIC_API_KEY required when using anthropic provider",
       );
     }
-  } else if (providerName === "google") {
-    apiKey = config.googleApiKey;
-    if (!apiKey) {
-      throw new MissingApiKeyError("GOOGLE_AI_API_KEY required when using google provider");
+    return createProvider(providerName, config.anthropicApiKey);
+  }
+  if (providerName === "google") {
+    if (!config.googleApiKey) {
+      throw new MissingApiKeyError(
+        "GOOGLE_AI_API_KEY required when using google provider",
+      );
     }
-  } else {
-    throw new Error(`Unsupported AI provider: ${providerName}`);
+    return createProvider(providerName, config.googleApiKey);
+  }
+  throw new Error(`Unsupported AI provider: ${providerName}`);
+}
+
+// =============================================================================
+// Public Metered API
+// =============================================================================
+
+/**
+ * Sends a chat request to the configured text provider under the given meter.
+ */
+export async function chat(
+  options: PublicChatOptions,
+  meter: AiMeter,
+): Promise<ChatResponse> {
+  const config = getConfig();
+  const provider = resolveTextProvider();
+  const model = options.model || config.textModel;
+
+  const optionsWithModel: PublicChatOptions = {
+    ...options,
+    model,
+  };
+
+  if (meter.kind === "script") {
+    return provider.chat(optionsWithModel);
   }
 
-  return createProvider(providerName, apiKey);
-}
+  const estimate = estimateChatUsage(provider.name, optionsWithModel);
+  const reservation = await reserveAiCall({
+    kitchenId: meter.kitchenId,
+    memberId: meter.memberId,
+    feature: meter.feature,
+    provider: provider.name,
+    model,
+    estimate,
+  });
 
-// =============================================================================
-// Public API
-// =============================================================================
+  let response: ChatResponse;
+  try {
+    response = await provider.chat(optionsWithModel);
+  } catch (err) {
+    await failAiCall(reservation);
+    throw err;
+  }
 
-/**
- * Send a chat request to the configured text provider.
- *
- * @example
- * ```typescript
- * import { chat } from '@/lib/ai';
- *
- * const response = await chat({
- *   messages: [{ role: 'user', content: 'Hello!' }],
- *   systemPrompt: 'You are a helpful assistant.',
- * });
- *
- * console.log(response.content);
- * ```
- */
-export async function chat(options: ChatOptions): Promise<ChatResponse> {
-  const config = getConfig();
-  const provider = getTextProvider();
-
-  // Apply default model from config if not specified
-  const optionsWithModel: ChatOptions = {
-    ...options,
-    model: options.model || config.textModel,
-  };
-
-  return provider.chat(optionsWithModel);
+  await settleAiCall(
+    reservation,
+    response.usage
+      ? {
+          inputTokens: response.usage.inputTokens,
+          outputTokens: response.usage.outputTokens,
+          searchQueries: response.searchQueries,
+        }
+      : undefined,
+  );
+  return response;
 }
 
 /**
- * Send a vision request to the configured vision provider.
- *
- * @example
- * ```typescript
- * import { vision } from '@/lib/ai';
- *
- * const result = await vision({
- *   imageBase64: 'base64-encoded-image-data',
- *   prompt: 'What items do you see in this image?',
- * });
- *
- * console.log(result);
- * ```
+ * Sends a vision request to the configured vision provider under the given meter.
  */
-export async function vision(options: VisionOptions): Promise<string> {
+export async function vision(
+  options: PublicVisionOptions,
+  meter: AiMeter,
+): Promise<string> {
   const config = getConfig();
-  const provider = getVisionProvider();
+  const provider = resolveVisionProvider();
+  const model = options.model || config.visionModel;
 
-  // Apply default model from config if not specified
-  const optionsWithModel: VisionOptions = {
+  const optionsWithModel: PublicVisionOptions = {
     ...options,
-    model: options.model || config.visionModel,
+    model,
   };
 
-  return provider.vision(optionsWithModel);
+  if (meter.kind === "script") {
+    const response = await provider.vision(optionsWithModel);
+    return response.content;
+  }
+
+  const estimate = estimateVisionUsage(optionsWithModel);
+  const reservation = await reserveAiCall({
+    kitchenId: meter.kitchenId,
+    memberId: meter.memberId,
+    feature: meter.feature,
+    provider: provider.name,
+    model,
+    estimate,
+  });
+
+  let response: VisionResponse;
+  try {
+    response = await provider.vision(optionsWithModel);
+  } catch (err) {
+    await failAiCall(reservation);
+    throw err;
+  }
+
+  await settleAiCall(reservation, response.usage);
+  return response.content;
 }

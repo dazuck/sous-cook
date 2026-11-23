@@ -7,7 +7,13 @@
 
 import { z } from "zod";
 import { readLeadingAmount } from "@sous/pack/quantity";
-import { chat, vision } from "./ai";
+import {
+  chat,
+  isAllowanceUsed,
+  isUnpricedModel,
+  vision,
+  type AiMeter,
+} from "./ai";
 import type { ChatRecipeIngredient } from "../../drizzle/schema";
 import { groundRecipe, type ExtractionNotice } from "./recipe-grounding";
 import { UNTITLED } from "./kitchen/dish-name";
@@ -836,10 +842,14 @@ export interface ExtractionUsage {
   inputTokens: number;
   outputTokens: number;
   bound: { inputTokens: number; outputTokens: number };
+  /** False when the call was refused before reaching the provider (allowance or unpriced model). */
+  sent?: false;
 }
 
 /** Options for a text extraction a caller meters, bounds or corrects (the queue's intake pass). */
 export interface ExtractOptions {
+  /** Metering context for each model call made by this extraction. */
+  meter: AiMeter;
   /**
    * Why an earlier extraction of this text was turned down, sent after the
    * text so the model can avoid it. The prompt itself is unchanged.
@@ -888,6 +898,7 @@ const TRANSIENT_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EAI
  */
 export function isTransientModelError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
+  if (isAllowanceUsed(error)) return false;
   if (error.name === "MissingApiKeyError") return true;
   if (error.name === "AbortError" || error.name === "TimeoutError") return true;
   if (error.name === "APIConnectionError" || error.name === "APIConnectionTimeoutError") return true;
@@ -922,7 +933,12 @@ const EXTRACTION_CALL_OVERHEAD_TOKENS = 1_024;
 async function askChat(
   prompt: string,
   maxTokens: number,
-  { onUsage, signal, thinkingBudget = EXTRACTION_THINKING_BUDGET }: Pick<ExtractOptions, "onUsage" | "signal" | "thinkingBudget"> = {},
+  {
+    meter,
+    onUsage,
+    signal,
+    thinkingBudget = EXTRACTION_THINKING_BUDGET,
+  }: Pick<ExtractOptions, "meter" | "onUsage" | "signal" | "thinkingBudget">,
 ): Promise<ModelReply> {
   const bound = {
     inputTokens: new TextEncoder().encode(prompt).length + EXTRACTION_CALL_OVERHEAD_TOKENS,
@@ -932,15 +948,24 @@ async function askChat(
   signal?.throwIfAborted();
   let response: Awaited<ReturnType<typeof chat>>;
   try {
-    response = await chat({
-      messages: [{ role: "user", content: prompt }],
-      responseFormat: "json",
-      thinkingBudget,
-      maxTokens: maxTokens + thinkingBudget,
-      ...(signal !== undefined && { signal }),
-    });
+    response = await chat(
+      {
+        messages: [{ role: "user", content: prompt }],
+        responseFormat: "json",
+        thinkingBudget,
+        maxTokens: maxTokens + thinkingBudget,
+        ...(signal !== undefined && { signal }),
+      },
+      meter,
+    );
   } catch (error) {
-    onUsage?.({ inputTokens: 0, outputTokens: 0, bound });
+    const notSent = isAllowanceUsed(error) || isUnpricedModel(error);
+    onUsage?.({
+      inputTokens: 0,
+      outputTokens: 0,
+      bound,
+      ...(notSent ? { sent: false as const } : {}),
+    });
     throw error instanceof Error && isTransientModelError(error) ? new TransientModelError(error) : error;
   }
   onUsage?.({
@@ -972,7 +997,7 @@ async function askChat(
  */
 export async function extractRecipeFromText(
   text: string,
-  { correction, onUsage, signal, thinkingBudget, keepStepIngredients }: ExtractOptions = {},
+  { meter, correction, onUsage, signal, thinkingBudget, keepStepIngredients }: ExtractOptions,
 ): Promise<RecipeExtraction | null> {
   const trimmed = text.trim();
 
@@ -985,7 +1010,13 @@ export async function extractRecipeFromText(
     : "";
   const prompt = `${RECIPE_IMPORT_PROMPT}\n\n<recipe_content>\n${trimmed}\n</recipe_content>${corrected}`;
   const recipe = await extractWithRetry(
-    (maxTokens) => askChat(prompt, maxTokens, { onUsage, signal, ...(thinkingBudget !== undefined && { thinkingBudget }) }),
+    (maxTokens) =>
+      askChat(prompt, maxTokens, {
+        meter,
+        onUsage,
+        signal,
+        ...(thinkingBudget !== undefined && { thinkingBudget }),
+      }),
     { keepStepIngredients },
   );
   return recipe && groundRecipe(recipe, trimmed);
@@ -1006,6 +1037,7 @@ export async function extractRecipeFromText(
  */
 export async function extractRecipeFromUrl(
   url: string,
+  meter: AiMeter,
 ): Promise<RecipeExtraction | null> {
   if (!isValidRecipeUrl(url)) {
     throw new Error("Invalid URL: must be a valid HTTP or HTTPS URL");
@@ -1051,7 +1083,7 @@ export async function extractRecipeFromUrl(
 
   const prompt = `${RECIPE_IMPORT_PROMPT}\n\n<webpage_content>\n${strippedText}\n</webpage_content>`;
   const recipe = await extractWithRetry((maxTokens) =>
-    askChat(prompt, maxTokens),
+    askChat(prompt, maxTokens, { meter }),
   );
   if (!recipe) return null;
 
@@ -1139,6 +1171,7 @@ If the image holds no recipe (no food-related content at all, or only a dish's n
  */
 export async function extractRecipeFromImage(
   imageBase64: string,
+  meter: AiMeter,
 ): Promise<RecipeExtraction | null> {
   if (!imageBase64) {
     return null;
@@ -1147,12 +1180,15 @@ export async function extractRecipeFromImage(
   // vision() doesn't report a finish reason, so a reply cut off at the
   // token limit shows up as malformed JSON, which is retried the same way.
   const recipe = await extractWithRetry(async (maxTokens) => ({
-    content: await vision({
-      imageBase64,
-      prompt: RECIPE_IMAGE_IMPORT_PROMPT,
-      thinkingBudget: EXTRACTION_THINKING_BUDGET,
-      maxTokens,
-    }),
+    content: await vision(
+      {
+        imageBase64,
+        prompt: RECIPE_IMAGE_IMPORT_PROMPT,
+        thinkingBudget: EXTRACTION_THINKING_BUDGET,
+        maxTokens,
+      },
+      meter,
+    ),
   }));
   return recipe && { recipe, notices: [] };
 }

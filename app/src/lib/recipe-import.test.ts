@@ -6,9 +6,9 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
-  extractRecipeFromUrl,
-  extractRecipeFromText,
-  extractRecipeFromImage,
+  extractRecipeFromUrl as rawExtractRecipeFromUrl,
+  extractRecipeFromText as rawExtractRecipeFromText,
+  extractRecipeFromImage as rawExtractRecipeFromImage,
   parseImportedRecipe,
   validateImportedRecipe,
   isValidRecipeUrl,
@@ -17,7 +17,9 @@ import {
   MalformedReplyError,
   TransientModelError,
   isTransientModelError,
+  type ExtractOptions,
 } from "./recipe-import";
+import { scriptMeter } from "./ai/meter";
 import { MissingApiKeyError } from "./ai/types";
 import { recipeTimeLine, timeLineText } from "./kitchen/time-line";
 
@@ -26,10 +28,21 @@ import { recipeTimeLine, timeLineText } from "./kitchen/time-line";
 // =============================================================================
 
 // Mock the AI module
-vi.mock("./ai", () => ({
+vi.mock("./ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ai")>()),
   chat: vi.fn(),
   vision: vi.fn(),
 }));
+
+const TEST_METER = scriptMeter("recipe-import-test");
+const extractRecipeFromUrl = (url: string) =>
+  rawExtractRecipeFromUrl(url, TEST_METER);
+const extractRecipeFromText = (
+  text: string,
+  options: Omit<ExtractOptions, "meter"> = {},
+) => rawExtractRecipeFromText(text, { ...options, meter: TEST_METER });
+const extractRecipeFromImage = (imageBase64: string) =>
+  rawExtractRecipeFromImage(imageBase64, TEST_METER);
 
 // Mock fetch for URL fetching
 const originalFetch = global.fetch;
@@ -703,6 +716,7 @@ describe("extractRecipeFromText", () => {
         thinkingBudget: 0,
         maxTokens: expect.any(Number),
       }),
+      TEST_METER,
     );
   });
 
