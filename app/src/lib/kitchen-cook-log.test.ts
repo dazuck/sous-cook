@@ -82,7 +82,9 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   mockFetch.mockReset();
-  await client.exec("delete from kitchen_queue");
+  await client.exec(
+    "delete from kitchen_queue; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_user;",
+  );
   await client.exec("delete from kitchens where slug <> 'home'");
 });
 

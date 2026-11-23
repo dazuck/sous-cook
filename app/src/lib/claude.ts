@@ -388,10 +388,9 @@ async function logMessage(
   content: string,
   context?: NotionContext,
 ): Promise<void> {
-  // FIXME(WP4): store memberId once migration 0004 adds conversation_logs.member_id.
-  void memberId;
   await db.insert(conversationLogs).values({
     kitchenId,
+    memberId,
     sessionId,
     role,
     content,

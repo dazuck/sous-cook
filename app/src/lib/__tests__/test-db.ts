@@ -37,7 +37,7 @@ export async function migratedTestDb(
  */
 export async function mockDbModule(migrationsFolder: string = MIGRATIONS_DIR) {
   const { client, db } = await migratedTestDb(migrationsFolder);
-  return { ...schema, db, client };
+  return { ...schema, db, getDb: () => db, client };
 }
 
 interface JournalEntry {

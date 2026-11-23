@@ -9,12 +9,16 @@ import {
   boolean,
   index,
   unique,
+  uniqueIndex,
   check,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { CookPlan } from "../src/lib/kitchen/cook-plan";
 import type { CookReportInput } from "../src/lib/cook-reports";
+import { authUser } from "./auth-schema";
+
+export * from "./auth-schema";
 
 // Every kitchen table has row-level security on with no policies (`enableRLS`):
 // on a hosted Postgres with a public Data API (Supabase's default grants) its
@@ -82,6 +86,95 @@ export const kitchenWebhookTokens = pgTable(
   ],
 ).enableRLS();
 
+/** Role a signed-in person holds inside their kitchen. */
+export type MemberRole = "owner" | "cook";
+
+/**
+ * A signed-in person belonging to one kitchen (`user_id` is unique so a person
+ * belongs to at most one kitchen).
+ */
+export const members = pgTable(
+  "members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kitchenId: uuid("kitchen_id")
+      .notNull()
+      .references(() => kitchens.id, { onDelete: "restrict" }),
+    userId: text("user_id")
+      .notNull()
+      .unique()
+      .references(() => authUser.id, { onDelete: "cascade" }),
+    role: text("role").$type<MemberRole>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    check("members_role_known", sql`${t.role} in ('owner', 'cook')`),
+    index("members_kitchen_idx").on(t.kitchenId),
+  ],
+).enableRLS();
+
+/**
+ * Invite list managed by the operator script. An invite is pending when both
+ * `revoked_at` and `accepted_at` are null, accepted when `accepted_at` is set
+ * and `revoked_at` is null, and revoked when `revoked_at` is set.
+ */
+export const invites = pgTable(
+  "invites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull(),
+    kitchenId: uuid("kitchen_id").references(() => kitchens.id, {
+      onDelete: "restrict",
+    }),
+    newKitchenName: text("new_kitchen_name"),
+    newKitchenSlug: text("new_kitchen_slug"),
+    role: text("role").$type<MemberRole>().notNull(),
+    invitedAt: timestamp("invited_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedUserId: text("accepted_user_id").references(() => authUser.id, {
+      onDelete: "set null",
+    }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      "invites_email_normalized",
+      sql`${t.email} = lower(btrim(${t.email})) and position('@' in ${t.email}) > 1`,
+    ),
+    check(
+      "invites_new_kitchen_name_length",
+      sql`length(${t.newKitchenName}) between 1 and 80`,
+    ),
+    check(
+      "invites_new_kitchen_slug_shape",
+      sql`${t.newKitchenSlug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and length(${t.newKitchenSlug}) <= 40`,
+    ),
+    check("invites_role_known", sql`${t.role} in ('owner', 'cook')`),
+    check(
+      "invites_target_one",
+      sql`(${t.kitchenId} is null) <> (${t.newKitchenName} is null)`,
+    ),
+    check(
+      "invites_new_kitchen_pair",
+      sql`(${t.newKitchenName} is null) = (${t.newKitchenSlug} is null)`,
+    ),
+    check(
+      "invites_new_kitchen_owner",
+      sql`${t.newKitchenName} is null or ${t.role} = 'owner'`,
+    ),
+    uniqueIndex("invites_live_email_unique")
+      .on(t.email)
+      .where(sql`${t.revokedAt} is null`),
+    uniqueIndex("invites_pending_slug_unique")
+      .on(t.newKitchenSlug)
+      .where(sql`${t.revokedAt} is null and ${t.acceptedAt} is null`),
+  ],
+).enableRLS();
+
 // AI conversation logs - for debugging and learning
 export const conversationLogs = pgTable(
   "conversation_logs",
@@ -92,6 +185,9 @@ export const conversationLogs = pgTable(
       .references(() => kitchens.id, {
         onDelete: "restrict",
       }),
+    memberId: uuid("member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
     sessionId: text("session_id").notNull(),
     role: text("role").notNull(), // 'user' | 'assistant' | 'system'
     content: text("content").notNull(),
@@ -460,6 +556,9 @@ export const cookReports = pgTable(
       .references(() => kitchens.id, {
         onDelete: "restrict",
       }),
+    memberId: uuid("member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

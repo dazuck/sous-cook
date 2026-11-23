@@ -8,31 +8,42 @@ import type {
 } from "drizzle-orm/pg-core";
 import * as schema from "../../../drizzle/schema";
 import {
+  authUser,
   kitchenQueue,
   kitchens,
   kitchenWebhookTokens,
+  members,
+  type MemberRole,
 } from "../../../drizzle/schema";
 import { db as defaultDb } from "../db";
 import { appRouter } from "../../server/routers/_app";
-import type { KitchenContext, MemberContext } from "../../server/trpc";
+import {
+  createTestTRPCContext,
+  type KitchenContext,
+  type MemberContext,
+} from "../../server/trpc";
 
 export type KitchenRow = typeof kitchens.$inferSelect;
 export type KitchenQueueRow = typeof kitchenQueue.$inferSelect;
+export type MemberRow = typeof members.$inferSelect;
+export type AuthUserRow = typeof authUser.$inferSelect;
 export type TestDb = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 export interface SeedKitchenInput {
   slug: string;
   name: string;
   aiMonthlyCapMicros?: number | null;
+  email?: string;
+  role?: MemberRole;
 }
 
 /**
- * Inserts a kitchen row for tests.
+ * Inserts a kitchen, an `auth_user`, and a `members` row for tests.
  */
 export async function seedKitchen(
   db: TestDb,
   input: SeedKitchenInput,
-): Promise<{ kitchen: KitchenRow }> {
+): Promise<{ kitchen: KitchenRow; member: MemberRow; user: AuthUserRow }> {
   const [kitchen] = await db
     .insert(kitchens)
     .values({
@@ -46,7 +57,42 @@ export async function seedKitchen(
     throw new Error(`Failed to insert kitchen "${input.slug}"`);
   }
 
-  return { kitchen };
+  const suffix = randomBytes(4).toString("hex");
+  const userId = `user_${randomBytes(12).toString("hex")}`;
+  const email = (
+    input.email ?? `${input.slug}-${suffix}@example.com`
+  )
+    .trim()
+    .toLowerCase();
+
+  const [user] = await db
+    .insert(authUser)
+    .values({
+      id: userId,
+      name: `${input.name} Owner`,
+      email,
+      emailVerified: true,
+    })
+    .returning();
+
+  if (!user) {
+    throw new Error(`Failed to insert auth_user for kitchen "${input.slug}"`);
+  }
+
+  const [member] = await db
+    .insert(members)
+    .values({
+      kitchenId: kitchen.id,
+      userId: user.id,
+      role: input.role ?? "owner",
+    })
+    .returning();
+
+  if (!member) {
+    throw new Error(`Failed to insert member for kitchen "${input.slug}"`);
+  }
+
+  return { kitchen, member, user };
 }
 
 /**
@@ -70,18 +116,15 @@ export async function homeKitchen(db: TestDb): Promise<KitchenRow> {
 
 /**
  * Builds an `appRouter` caller scoped to the given kitchen and optional member,
- * matching the context `kitchenProcedure` provides.
+ * using the module-private test context grant in `src/server/trpc.ts`.
  */
 export function callerFor(
   kitchen: Pick<KitchenContext, "id" | "slug">,
   member: MemberContext | null = null,
 ) {
-  return appRouter.createCaller({
-    db: defaultDb,
-    headers: new Headers(),
-    kitchen: { id: kitchen.id, slug: kitchen.slug },
-    member,
-  });
+  return appRouter.createCaller(
+    createTestTRPCContext(kitchen, member, defaultDb),
+  );
 }
 
 /**

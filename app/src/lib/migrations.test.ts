@@ -164,10 +164,16 @@ describe("Database migrations", () => {
     const { client, db } = await migratedTestDb(cut.dir);
     try {
       const home = await homeKitchen(db);
-      const { kitchen: other } = await seedKitchen(db, {
-        slug: "other-kitchen",
-        name: "Other Kitchen",
-      });
+      // At migration 0002, auth_user and members do not exist yet, so insert
+      // the second kitchen row directly.
+      const [other] = await db
+        .insert(schema.kitchens)
+        .values({
+          slug: "other-kitchen",
+          name: "Other Kitchen",
+        })
+        .returning();
+      if (!other) throw new Error("Failed to insert other-kitchen");
 
       const reportId = "1f8fad5b-d9cb-469f-a165-70867728950e";
       const ideaOlderId = "00000000-0000-4000-8000-000000000010";
@@ -433,6 +439,154 @@ describe("Database migrations", () => {
       await expect(
         db.delete(schema.kitchens).where(eq(schema.kitchens.id, kitchen.id)),
       ).rejects.toThrow();
+    } finally {
+      await client.close();
+    }
+  }, 15_000);
+
+  it("0004 sign_in constraints: members, invites partial uniques, user cascade, and member_id set null hold", async () => {
+    const expectConstraint = async (
+      promise: Promise<unknown>,
+      constraintName: string,
+    ) => {
+      try {
+        await promise;
+      } catch (err) {
+        const messages: string[] = [];
+        let cur: unknown = err;
+        const seen = new Set<unknown>();
+        while (cur instanceof Error && !seen.has(cur)) {
+          seen.add(cur);
+          messages.push(cur.message);
+          cur = cur.cause;
+        }
+        expect(messages.join("\n")).toContain(constraintName);
+        return;
+      }
+      throw new Error(`Expected query to fail with constraint "${constraintName}"`);
+    };
+
+    const { client, db } = await migratedTestDb();
+    try {
+      const home = await homeKitchen(db);
+
+      await db.insert(schema.authUser).values({
+        id: "user-1",
+        name: "Alice",
+        email: "alice@example.com",
+        emailVerified: true,
+      });
+
+      const [member] = await db
+        .insert(schema.members)
+        .values({
+          kitchenId: home.id,
+          userId: "user-1",
+          role: "owner",
+        })
+        .returning();
+      expect(member?.userId).toBe("user-1");
+
+      // One kitchen per person: second member row for same user_id fails.
+      await expectConstraint(
+        db.insert(schema.members).values({
+          kitchenId: home.id,
+          userId: "user-1",
+          role: "cook",
+        }),
+        "members_user_id_unique",
+      );
+
+      // Unnormalized invite email fails check constraint.
+      await expectConstraint(
+        db.insert(schema.invites).values({
+          email: "Upper@Example.com",
+          kitchenId: home.id,
+          role: "cook",
+        }),
+        "invites_email_normalized",
+      );
+
+      // New-kitchen invite must be role=owner and set both name and slug.
+      await expectConstraint(
+        db.insert(schema.invites).values({
+          email: "bob@example.com",
+          newKitchenName: "Bob Kitchen",
+          newKitchenSlug: "bob-kitchen",
+          role: "cook",
+        }),
+        "invites_new_kitchen_owner",
+      );
+
+      // Live invite unique on email; pending invite unique on slug.
+      await db.insert(schema.invites).values({
+        email: "bob@example.com",
+        newKitchenName: "Bob Kitchen",
+        newKitchenSlug: "bob-kitchen",
+        role: "owner",
+      });
+      await expectConstraint(
+        db.insert(schema.invites).values({
+          email: "bob@example.com",
+          kitchenId: home.id,
+          role: "cook",
+        }),
+        "invites_live_email_unique",
+      );
+      await expectConstraint(
+        db.insert(schema.invites).values({
+          email: "carol@example.com",
+          newKitchenName: "Carol Kitchen",
+          newKitchenSlug: "bob-kitchen",
+          role: "owner",
+        }),
+        "invites_pending_slug_unique",
+      );
+
+      // Storing member_id on conversation_logs and cook_reports; deleting auth_user
+      // cascades to members and sets member_id to null on logs and reports.
+      const [logRow] = await db
+        .insert(schema.conversationLogs)
+        .values({
+          kitchenId: home.id,
+          memberId: member!.id,
+          sessionId: "sess-1",
+          role: "user",
+          content: "hi",
+        })
+        .returning();
+      const reportId = "4f8fad5b-d9cb-469f-a165-70867728950e";
+      await db.insert(schema.cookReports).values({
+        id: reportId,
+        kitchenId: home.id,
+        memberId: member!.id,
+        capturedAt: new Date("2026-10-10T10:00:00.000Z"),
+        build: "test-build",
+        path: "/kitchen",
+        screen: "step",
+        recipeName: "Dal",
+        state: { mode: "go", pos: 0, ticked: [], passed: [], kept: [] },
+        context: {
+          viewport: { w: 1024, h: 768, dpr: 2 },
+          ua: "test",
+          online: true,
+          voice: { mode: null, status: "idle" },
+          ask: { sessionId: "sess-1", open: false },
+          layers: { pane: false, card: null, more: false },
+          part: null,
+        },
+        events: [],
+        dom: "<div/>",
+      });
+
+      await db.delete(schema.authUser).where(eq(schema.authUser.id, "user-1"));
+
+      const remainingMembers = await db.select().from(schema.members);
+      expect(remainingMembers).toEqual([]);
+      const updatedLog = await snapshotRow(db, schema.conversationLogs, logRow!.id);
+      expect(updatedLog?.memberId).toBeNull();
+      const updatedReport = await snapshotRow(db, schema.cookReports, reportId);
+      expect(updatedReport?.memberId).toBeNull();
     } finally {
       await client.close();
     }

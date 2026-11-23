@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, kitchens, kitchenWebhookTokens } from "@/lib/db";
+import { DeploymentConfigError, ensureDeploymentReady } from "./deployment";
 
 const TOKEN_PREFIX = "sous_";
 
@@ -54,6 +55,18 @@ function unauthorized(): WebhookAuthResult {
 export async function authenticateWebhookRequest(
   request: Request,
 ): Promise<WebhookAuthResult> {
+  try {
+    await ensureDeploymentReady(db);
+  } catch (err) {
+    if (err instanceof DeploymentConfigError) {
+      return {
+        ok: false,
+        response: NextResponse.json({ error: err.message }, { status: 500 }),
+      };
+    }
+    throw err;
+  }
+
   const token = extractBearerToken(request);
   if (!token) return unauthorized();
 

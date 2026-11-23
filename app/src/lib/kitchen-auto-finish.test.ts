@@ -69,10 +69,13 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  vi.stubEnv("SOUS_SIGN_IN", "off");
   mockFetch.mockReset();
   connected["cook-log"] = true;
   scheduled.length = 0;
-  await client.exec("delete from kitchen_queue");
+  await client.exec(
+    "delete from kitchen_queue; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_user;",
+  );
   await client.exec(
     "delete from kitchen_webhook_tokens where kitchen_id <> (select id from kitchens where slug = 'home')",
   );

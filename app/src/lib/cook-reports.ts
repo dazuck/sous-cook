@@ -136,8 +136,6 @@ export async function storeCookReport(
   report: CookReportInput,
   memberId: string | null = null,
 ): Promise<StoreOutcome> {
-  // FIXME(WP4): store memberId once migration 0004 adds cook_reports.member_id.
-  void memberId;
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(${REPORT_CAP_LOCK})`);
     const [existing] = await tx
@@ -170,6 +168,7 @@ export async function storeCookReport(
       .values({
         id: report.id,
         kitchenId,
+        memberId,
         capturedAt: new Date(report.capturedAt),
         build: report.build,
         path: report.path,

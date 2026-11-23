@@ -80,21 +80,34 @@ vi.mock("@/lib/db", async () =>
 
 import * as dbModule from "@/lib/db";
 import {
+  authUser,
   conversationLogs,
   cookReports,
   db,
   docRecipes,
+  invites,
   kitchenQueue,
   recipeIdeasCache,
 } from "@/lib/db";
 import { connected } from "@/lib/hooks/connected";
+import { HOOK_NAMES } from "@/lib/hooks/types";
 import {
   callerFor,
   seedKitchen,
   seedQueueRow,
   snapshotRow,
   type KitchenRow,
+  type MemberRow,
 } from "@/lib/__tests__/kitchens";
+import {
+  createTestAuth,
+  signedInHeaders,
+  stubSignInEnv,
+} from "@/lib/__tests__/test-auth";
+import { httpCall } from "@/lib/__tests__/trpc-http";
+import { resetAuthForTests } from "@/lib/auth/auth";
+import { resetDeploymentCheckForTests } from "@/lib/kitchens/deployment";
+import { NotInvitedError } from "@/lib/kitchens/invites";
 import {
   logCookPlanRejections,
   removeFromQueue,
@@ -114,6 +127,7 @@ const provider = new FakeProviderController();
 
 let kitchenA: KitchenRow;
 let kitchenB: KitchenRow;
+let memberA: MemberRow;
 let callerA: ReturnType<typeof callerFor>;
 let callerB: ReturnType<typeof callerFor>;
 
@@ -185,23 +199,38 @@ beforeEach(async () => {
   vi.stubEnv("AI_VISION_PROVIDER", "google");
   vi.stubEnv("AI_VISION_MODEL", "gemini-2.5-flash");
 
+  resetAuthForTests();
+  resetDeploymentCheckForTests(db);
+
   await client.exec(
-    "delete from conversation_logs; delete from cook_reports; delete from doc_recipes; delete from recipe_ideas_cache; delete from kitchen_queue;",
+    "delete from conversation_logs; delete from cook_reports; delete from doc_recipes; delete from recipe_ideas_cache; delete from kitchen_queue; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_verification; delete from auth_user;",
   );
   await client.exec("delete from kitchens where slug <> 'home'");
 
-  kitchenA = (await seedKitchen(db, { slug: "kitchen-a", name: "Kitchen A" }))
-    .kitchen;
+  const seededA = await seedKitchen(db, { slug: "kitchen-a", name: "Kitchen A" });
+  kitchenA = seededA.kitchen;
+  memberA = seededA.member;
   kitchenB = (await seedKitchen(db, { slug: "kitchen-b", name: "Kitchen B" }))
     .kitchen;
-  callerA = callerFor(kitchenA);
+  callerA = callerFor(kitchenA, { id: memberA.id, role: memberA.role });
   callerB = callerFor(kitchenB);
 });
 
 afterEach(() => {
+  resetAuthForTests();
+  resetDeploymentCheckForTests(db);
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
+
+async function unauthenticatedSignInCaller() {
+  stubSignInEnv();
+  for (const name of HOOK_NAMES) {
+    connected[name] = false;
+  }
+  resetDeploymentCheckForTests(db);
+  return appRouter.createCaller(await createTRPCContext());
+}
 
 /**
  * True when the error or anything it wraps mentions the text. A failed query
@@ -286,6 +315,7 @@ describe("ISO-2: chatCooking", () => {
       .where(eq(conversationLogs.sessionId, "ask-session-a"));
     expect(logs).toHaveLength(2);
     expect(logs.every((row) => row.kitchenId === kitchenA.id)).toBe(true);
+    expect(logs.every((row) => row.memberId === memberA.id)).toBe(true);
   });
 });
 
@@ -1268,6 +1298,14 @@ describe("ISO-26: getRecipeIdeas", () => {
 });
 
 describe("ISO-27: saveRecipeIdea", () => {
+  it("answers UNAUTHORIZED without a session", async () => {
+    const anon = await unauthenticatedSignInCaller();
+    await expect(
+      anon.saveRecipeIdea({ text: "Roasted carrots" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(mockAppendIdea).not.toHaveBeenCalled();
+  });
+
   it("delegates to the ideas hook when called with a kitchen session", async () => {
     mockAppendIdea.mockResolvedValueOnce(undefined);
     expect(await callerB.saveRecipeIdea({ text: "Roasted carrots" })).toEqual({
@@ -1286,6 +1324,7 @@ describe("ISO-28: submitCookReport", () => {
     const resA = await callerA.submitCookReport(makeReport(REPORT_A, { note: "A note" }));
     expect(resA).toEqual({ id: REPORT_A, duplicate: false });
     const beforeA = await snapshotRow(db, cookReports, REPORT_A);
+    expect(beforeA?.memberId).toBe(memberA.id);
 
     await expect(
       callerB.submitCookReport(makeReport(REPORT_A, { note: "B tampered note" })),
@@ -1420,6 +1459,14 @@ describe("ISO-30: parseGroceryInput", () => {
 });
 
 describe("ISO-31: addIngredientsToPantry", () => {
+  it("answers UNAUTHORIZED without a session", async () => {
+    const anon = await unauthenticatedSignInCaller();
+    await expect(
+      anon.addIngredientsToPantry({ items: [{ text: "2 avocados" }] }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(mockPantryAddItems).not.toHaveBeenCalled();
+  });
+
   it("delegates to the pantry hook when called with a kitchen session", async () => {
     connected.pantry = true;
     mockPantryAddItems.mockResolvedValueOnce({ added: 1 });
@@ -1471,6 +1518,14 @@ describe("ISO-33: applyPantryReconciliation", () => {
 });
 
 describe("ISO-34: getShoppingList", () => {
+  it("answers UNAUTHORIZED without a session", async () => {
+    const anon = await unauthenticatedSignInCaller();
+    await expect(anon.getShoppingList()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+    expect(mockShoppingList).not.toHaveBeenCalled();
+  });
+
   it("returns the shopping-list hook answer when called with a kitchen session", async () => {
     const syncedAt = new Date("2026-10-04T18:00:00.000Z");
     mockShoppingList.mockResolvedValueOnce({ items: [], syncedAt });
@@ -1480,6 +1535,14 @@ describe("ISO-34: getShoppingList", () => {
 });
 
 describe("ISO-35: addShoppingListItems", () => {
+  it("answers UNAUTHORIZED without a session", async () => {
+    const anon = await unauthenticatedSignInCaller();
+    await expect(
+      anon.addShoppingListItems({ items: [{ item: "Milk" }] }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(mockShoppingAdd).not.toHaveBeenCalled();
+  });
+
   it("returns the shopping-list hook answer when called with a kitchen session", async () => {
     mockShoppingAdd.mockResolvedValueOnce({ added: ["Milk"] });
     expect(
@@ -1490,6 +1553,14 @@ describe("ISO-35: addShoppingListItems", () => {
 });
 
 describe("ISO-36: removeShoppingListItem", () => {
+  it("answers UNAUTHORIZED without a session", async () => {
+    const anon = await unauthenticatedSignInCaller();
+    await expect(
+      anon.removeShoppingListItem({ rawOrKey: "Milk" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(mockShoppingRemove).not.toHaveBeenCalled();
+  });
+
   it("returns the shopping-list hook answer when called with a kitchen session", async () => {
     mockShoppingRemove.mockResolvedValueOnce({ removed: true });
     expect(
@@ -1500,6 +1571,14 @@ describe("ISO-36: removeShoppingListItem", () => {
 });
 
 describe("ISO-37: clearShoppingList", () => {
+  it("answers UNAUTHORIZED without a session", async () => {
+    const anon = await unauthenticatedSignInCaller();
+    await expect(anon.clearShoppingList()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+    expect(mockShoppingClear).not.toHaveBeenCalled();
+  });
+
   it("returns the shopping-list hook answer when called with a kitchen session", async () => {
     mockShoppingClear.mockResolvedValueOnce({ cleared: 2 });
     expect(await callerB.clearShoppingList()).toEqual({ cleared: 2 });
@@ -1638,12 +1717,183 @@ describe("STRUCT-2: router input schemas never accept kitchen or member ownershi
   });
 });
 
+describe("AUTH-1: every procedure except health requires a session and kitchen membership", () => {
+  const SAMPLE_UUID = "00000000-0000-4000-8000-000000000001";
+
+  it("answers UNAUTHORIZED for all 36 non-health procedures when called without a session", async () => {
+    const anon = await unauthenticatedSignInCaller();
+
+    const calls: Record<string, () => Promise<unknown>> = {
+      chatCooking: () =>
+        anon.chatCooking({
+          sessionId: "s1",
+          messages: [{ role: "user", content: "hi" }],
+        }),
+      addToKitchenQueue: () =>
+        anon.addToKitchenQueue({
+          recipeData: { name: "Soup", steps: ["Simmer."], serves: 2 },
+        }),
+      getKitchenQueue: () => anon.getKitchenQueue({ status: "pending" }),
+      getKitchenQueueItem: () =>
+        anon.getKitchenQueueItem({ queueId: SAMPLE_UUID }),
+      ensureIntake: () =>
+        anon.ensureIntake({ queueId: SAMPLE_UUID, ask: "opening" }),
+      ensureCookPlan: () => anon.ensureCookPlan({ queueId: SAMPLE_UUID }),
+      updateKitchenQueueStatus: () =>
+        anon.updateKitchenQueueStatus({
+          queueId: SAMPLE_UUID,
+          status: "cooking",
+        }),
+      markCookActivity: () =>
+        anon.markCookActivity({
+          queueId: SAMPLE_UUID,
+          idleForMs: null,
+          interactedAt: Date.now(),
+        }),
+      autoFinishCook: () =>
+        anon.autoFinishCook({
+          queueId: SAMPLE_UUID,
+          idleForMs: 0,
+          interactedAt: Date.now(),
+        }),
+      reopenCook: () => anon.reopenCook({ queueId: SAMPLE_UUID }),
+      retryCookLog: () => anon.retryCookLog({ queueId: SAMPLE_UUID }),
+      rateCook: () => anon.rateCook({ queueId: SAMPLE_UUID, rating: 5 }),
+      getCookAsk: () => anon.getCookAsk({}),
+      dismissCookAsk: () => anon.dismissCookAsk({ queueId: SAMPLE_UUID }),
+      removeFromKitchenQueue: () =>
+        anon.removeFromKitchenQueue({ queueId: SAMPLE_UUID }),
+      getRecentCookingItems: () => anon.getRecentCookingItems({}),
+      importRecipeFromUrl: () =>
+        anon.importRecipeFromUrl({ url: "https://example.com/recipe" }),
+      importRecipeFromText: () =>
+        anon.importRecipeFromText({ text: "Boil water." }),
+      importRecipeFromImage: () =>
+        anon.importRecipeFromImage({
+          imageBase64: "AAAA",
+        }),
+      getShelf: () => anon.getShelf(),
+      getPack: () => anon.getPack({ packId: "fannie-farmer-1896" }),
+      libraryPlanReport: () => anon.libraryPlanReport(),
+      syncRecipes: () => anon.syncRecipes(),
+      queueFromPack: () =>
+        anon.queueFromPack({
+          packId: "fannie-farmer-1896",
+          recipeId: "thin-white-sauce",
+        }),
+      getRecipeIdeas: () => anon.getRecipeIdeas(),
+      saveRecipeIdea: () => anon.saveRecipeIdea({ text: "Tacos" }),
+      submitCookReport: () => anon.submitCookReport(makeReport(SAMPLE_UUID)),
+      annotateCookReport: () =>
+        anon.annotateCookReport({ id: SAMPLE_UUID, note: "note" }),
+      parseGroceryInput: () =>
+        anon.parseGroceryInput({ type: "text", content: "apples" }),
+      addIngredientsToPantry: () =>
+        anon.addIngredientsToPantry({ items: [{ text: "apples" }] }),
+      getRecipePantryReconciliation: () =>
+        anon.getRecipePantryReconciliation({ queueId: SAMPLE_UUID }),
+      applyPantryReconciliation: () =>
+        anon.applyPantryReconciliation({
+          actions: [{ action: "delete", oldText: "apples" }],
+        }),
+      getShoppingList: () => anon.getShoppingList(),
+      addShoppingListItems: () =>
+        anon.addShoppingListItems({ items: [{ item: "Milk" }] }),
+      removeShoppingListItem: () =>
+        anon.removeShoppingListItem({ rawOrKey: "Milk" }),
+      clearShoppingList: () => anon.clearShoppingList(),
+    };
+
+    const nonHealthProcedures = Object.keys(appRouter._def.procedures)
+      .filter((name) => name !== "health")
+      .sort();
+    expect(Object.keys(calls).sort()).toEqual(nonHealthProcedures);
+
+    for (const [name, invoke] of Object.entries(calls)) {
+      await expect(
+        invoke(),
+        `Procedure ${name} must answer UNAUTHORIZED without a session`,
+      ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    }
+  });
+
+  it("answers FORBIDDEN with NotInvitedError cause on caller and data.reason='not-invited' through HTTP for a signed-in user with no kitchen", async () => {
+    stubSignInEnv();
+    for (const name of HOOK_NAMES) {
+      connected[name] = false;
+    }
+    resetDeploymentCheckForTests(db);
+
+    // Create a user + session via a pending invite, then revoke the invite so
+    // they hold a valid session cookie with no membership and no pending invite.
+    await db.insert(invites).values({
+      email: "uninvited-session@example.com",
+      newKitchenName: "Temp Kitchen",
+      newKitchenSlug: "temp-kitchen",
+      role: "owner",
+    });
+    const testAuth = createTestAuth(db);
+    const authCtx = await testAuth.$context;
+    const savedUser = await authCtx.test.saveUser(
+      authCtx.test.createUser({
+        email: "uninvited-session@example.com",
+        name: "No Kitchen",
+        emailVerified: true,
+      }),
+    );
+    const headers = await signedInHeaders(savedUser.id, db);
+    await db
+      .update(invites)
+      .set({ revokedAt: new Date() })
+      .where(eq(invites.email, "uninvited-session@example.com"));
+
+    // Through caller: FORBIDDEN with NotInvitedError cause.
+    const ctx = await createTRPCContext({
+      req: new Request("https://app.example.com/api/trpc/getKitchenQueue", {
+        headers,
+      }),
+    });
+    const caller = appRouter.createCaller(ctx);
+    const callerErr = await caller
+      .getKitchenQueue({ status: "pending" })
+      .catch((e: unknown) => e);
+    expect(callerErr).toMatchObject({ code: "FORBIDDEN" });
+    expect((callerErr as { cause?: unknown }).cause).toBeInstanceOf(
+      NotInvitedError,
+    );
+
+    // Through HTTP (query): 403 with data.reason === "not-invited".
+    const queryRes = await httpCall<{
+      error: { data: { code: string; reason?: string } };
+    }>("getKitchenQueue", { status: "pending" }, { method: "GET", headers });
+    expect(queryRes.status).toBe(403);
+    expect(queryRes.body.error.data.code).toBe("FORBIDDEN");
+    expect(queryRes.body.error.data.reason).toBe("not-invited");
+
+    // Through HTTP (mutation): 403 with data.reason === "not-invited".
+    const mutationRes = await httpCall<{
+      error: { data: { code: string; reason?: string } };
+    }>(
+      "removeFromKitchenQueue",
+      { queueId: SAMPLE_UUID },
+      { method: "POST", headers },
+    );
+    expect(mutationRes.status).toBe(403);
+    expect(mutationRes.body.error.data.code).toBe("FORBIDDEN");
+    expect(mutationRes.body.error.data.reason).toBe("not-invited");
+
+    // Confirm user row still exists and no kitchen was created for them.
+    const [u] = await db
+      .select({ id: authUser.id })
+      .from(authUser)
+      .where(eq(authUser.id, savedUser.id));
+    expect(u?.id).toBe(savedUser.id);
+  });
+});
+
 describe("AUTH-2: public health procedure", () => {
   it("answers without a session and returns only status and timestamp", async () => {
-    vi.stubEnv("SOUS_SIGN_IN", "on");
-    const unauthenticatedCaller = appRouter.createCaller(
-      await createTRPCContext(),
-    );
+    const unauthenticatedCaller = await unauthenticatedSignInCaller();
     const result = await unauthenticatedCaller.health();
     expect(Object.keys(result).sort()).toEqual(["status", "timestamp"]);
     expect(result.status).toBe("ok");

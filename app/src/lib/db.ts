@@ -5,7 +5,7 @@ import * as schema from "../../drizzle/schema";
 // Lazy initialization to avoid errors during build
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
-function getDb() {
+export function getDb() {
   if (_db) return _db;
 
   const connectionString = process.env.DATABASE_URL;

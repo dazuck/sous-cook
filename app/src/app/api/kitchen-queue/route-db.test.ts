@@ -7,7 +7,7 @@
  * branches with the queue mocked.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import type { KitchenQueueRecipeData } from "../../../../drizzle/schema";
 import { ZUCCHINI_PLAN, ZUCCHINI_RECIPE, zucchiniRaw } from "@/lib/kitchen/__tests__/zucchini-wraps";
@@ -60,10 +60,15 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  vi.stubEnv("SOUS_SIGN_IN", "off");
   mockChat.mockReset();
   scheduled.length = 0;
   vi.spyOn(console, "info").mockImplementation(() => {});
   await client.exec("delete from kitchen_queue; delete from conversation_logs");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 function post(body: unknown): Promise<Response> {

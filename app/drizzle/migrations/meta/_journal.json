@@ -29,6 +29,13 @@
       "when": 1795411589345,
       "tag": "0003_kitchen_owner_required",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795414546354,
+      "tag": "0004_sign_in",
+      "breakpoints": true
     }
   ]
 }
