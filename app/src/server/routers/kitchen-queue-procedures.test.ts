@@ -272,7 +272,7 @@ function queueRow(
 ): KitchenQueueItem {
   return {
     id: QUEUE_ID,
-    kitchenId: null,
+    kitchenId: HOME.id,
     recipeNotionId: null,
     recipeData: null,
     targetUser: "cook",

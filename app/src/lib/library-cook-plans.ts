@@ -27,7 +27,7 @@
 
 import { randomUUID } from "node:crypto";
 import { eq, isNull, and, sql } from "drizzle-orm";
-import { db, docRecipes, kitchens } from "./db";
+import { db, docRecipes } from "./db";
 import { hasStepsToPlan, parseCookPlan, type CookPlan, type RecipeForPlan } from "./kitchen/cook-plan";
 import { COOK_PLAN_GATES } from "./kitchen/cook-plan-scorer";
 import { CookPlanCapReached, deriveCookPlanOutcome, type DeriveMeter, type DerivedCookPlan } from "./kitchen/cook-plan-derive";
@@ -129,7 +129,10 @@ export function libraryRecipeForPlan(row: {
 }
 
 /** The saved plan columns of a library row that extracted, if any. */
-export async function readSavedPlan(docSlug: string): Promise<SavedPlan | undefined> {
+export async function readSavedPlan(
+  kitchenId: string,
+  docSlug: string,
+): Promise<SavedPlan | undefined> {
   const [row] = await db
     .select({
       cookPlan: docRecipes.cookPlan,
@@ -138,21 +141,14 @@ export async function readSavedPlan(docSlug: string): Promise<SavedPlan | undefi
       cookPlanStamp: docRecipes.cookPlanStamp,
     })
     .from(docRecipes)
-    .where(and(eq(docRecipes.docSlug, docSlug), isNull(docRecipes.extractionError)));
+    .where(
+      and(
+        eq(docRecipes.kitchenId, kitchenId),
+        eq(docRecipes.docSlug, docSlug),
+        isNull(docRecipes.extractionError),
+      ),
+    );
   return row;
-}
-
-async function resolveHomeKitchenIdForLog(): Promise<string> {
-  // FIXME(WP3b): pass kitchenId into deriveLibraryPlan directly once library tables are scoped.
-  const [home] = await db
-    .select({ id: kitchens.id })
-    .from(kitchens)
-    .where(eq(kitchens.slug, "home"))
-    .limit(1);
-  if (!home) {
-    throw new Error('Default "home" kitchen not found; run `pnpm --dir app db:migrate`.');
-  }
-  return home.id;
 }
 
 /**
@@ -163,6 +159,7 @@ async function resolveHomeKitchenIdForLog(): Promise<string> {
  * had already turned down: the call it paid for is read back like any other.
  */
 export async function deriveLibraryPlan(
+  kitchenId: string,
   docSlug: string,
   recipe: RecipeForPlan,
   meter: DeriveMeter,
@@ -174,14 +171,12 @@ export async function deriveLibraryPlan(
     derived = await deriveCookPlanOutcome(recipe, { beforeCall: meter.beforeCall, onUsage: meter.onUsage });
   } catch (err) {
     if (err instanceof CookPlanCapReached && err.rejections.length > 0) {
-      const kitchenId = await resolveHomeKitchenIdForLog();
       await logCookPlanRejections(kitchenId, sessionId, derivation, err.rejections);
     }
     throw err;
   }
   const { plan, error, rejections } = derived;
   if (rejections.length > 0) {
-    const kitchenId = await resolveHomeKitchenIdForLog();
     await logCookPlanRejections(kitchenId, sessionId, derivation, rejections);
   }
   return {
@@ -201,6 +196,7 @@ export async function deriveLibraryPlan(
  * its cap before each call. A derivation the cap stops is `pending` too.
  */
 export async function planForChunk(
+  kitchenId: string,
   docSlug: string,
   recipe: RecipeForPlan,
   saved: SavedPlan | undefined,
@@ -230,7 +226,10 @@ export async function planForChunk(
   const meter = budget.start();
   if (meter === null) return { outcome: "pending", columns: NO_PLAN };
   try {
-    return { outcome: "derived", columns: await deriveLibraryPlan(docSlug, recipe, meter) };
+    return {
+      outcome: "derived",
+      columns: await deriveLibraryPlan(kitchenId, docSlug, recipe, meter),
+    };
   } catch (err) {
     if (err instanceof CookPlanCapReached) return { outcome: "pending", columns: NO_PLAN };
     throw err;
@@ -239,20 +238,26 @@ export async function planForChunk(
 
 export type StoreLibraryPlanResult = "stored" | "changed under it" | "already current";
 
+/** Advisory-lock key for one kitchen's library recipe, shared by sync saves and plan writes. */
+export function libraryRecipeLockKey(kitchenId: string, docSlug: string): string {
+  return `${kitchenId}:${docSlug}`;
+}
+
 /**
  * Writes a plan (or its error) derived outside any transaction to a library
  * row, only if the row still has the derive input it was made for
  * (`madeFor`, a `planSourceHash`) and holds no current plan. Holds the
- * sync's advisory lock on the slug (`saveRecipe`), so a Refresh can't
- * rewrite the steps between the check and the write.
+ * sync's advisory lock on the kitchen and slug (`saveRecipe`), so a Refresh
+ * can't rewrite the steps between the check and the write.
  */
 export async function storeLibraryPlan(
+  kitchenId: string,
   docSlug: string,
   madeFor: string,
   columns: LibraryPlanColumns,
 ): Promise<StoreLibraryPlanResult> {
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${docSlug}))`);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${libraryRecipeLockKey(kitchenId, docSlug)}))`);
     const [row] = await tx
       .select({
         ingredients: docRecipes.ingredients,
@@ -264,14 +269,17 @@ export async function storeLibraryPlan(
         cookPlanStamp: docRecipes.cookPlanStamp,
       })
       .from(docRecipes)
-      .where(eq(docRecipes.docSlug, docSlug));
+      .where(and(eq(docRecipes.kitchenId, kitchenId), eq(docRecipes.docSlug, docSlug)));
     if (!row || row.extractionError !== null) return "changed under it";
     const recipe = libraryRecipeForPlan(row);
     if (planSourceHash(recipe) !== madeFor) return "changed under it";
     if (verifyStoredPlan(row.cookPlan, row.cookPlanSourceHash, row.cookPlanStamp, recipe).ok) {
       return "already current";
     }
-    await tx.update(docRecipes).set(columns).where(eq(docRecipes.docSlug, docSlug));
+    await tx
+      .update(docRecipes)
+      .set(columns)
+      .where(and(eq(docRecipes.kitchenId, kitchenId), eq(docRecipes.docSlug, docSlug)));
     return "stored";
   });
 }
@@ -345,9 +353,15 @@ const LISTING_COLUMNS = {
 
 const DOC_ORDER = [sql`${docRecipes.docPosition} asc nulls last`, docRecipes.name] as const;
 
-/** Every library row as the status reads it, in Doc order. */
-export async function readLibraryPlanRows(): Promise<LibraryPlanListing[]> {
-  return db.select(LISTING_COLUMNS).from(docRecipes).orderBy(...DOC_ORDER);
+/** Every library row for a kitchen as the status reads it, in Doc order. */
+export async function readLibraryPlanRows(
+  kitchenId: string,
+): Promise<LibraryPlanListing[]> {
+  return db
+    .select(LISTING_COLUMNS)
+    .from(docRecipes)
+    .where(eq(docRecipes.kitchenId, kitchenId))
+    .orderBy(...DOC_ORDER);
 }
 
 export interface LibraryPlanReport {
@@ -360,8 +374,10 @@ export interface LibraryPlanReport {
 }
 
 /** The library's plans at a glance, from the columns (free; no plan is read). */
-export async function libraryPlanReport(): Promise<LibraryPlanReport> {
-  const rows = await readLibraryPlanRows();
+export async function libraryPlanReport(
+  kitchenId: string,
+): Promise<LibraryPlanReport> {
+  const rows = await readLibraryPlanRows(kitchenId);
   const needFixes: LibraryPlanReport["needFixes"] = [];
   let pending = 0;
   for (const row of rows) {
@@ -451,10 +467,13 @@ export function describeValidRate(valid: number, settled: number): string {
   return `Valid plans: ${valid} of ${settled} (${(rate * 100).toFixed(1)}%); ${gate}: ${verdict}.`;
 }
 
-/** Every library row with its stored plan, for `auditLibraryPlans` (reads every plan). */
-export async function readLibraryPlansForAudit(): Promise<Array<LibraryPlanListing & { cookPlan: unknown }>> {
+/** Every library row for a kitchen with its stored plan, for `auditLibraryPlans` (reads every plan). */
+export async function readLibraryPlansForAudit(
+  kitchenId: string,
+): Promise<Array<LibraryPlanListing & { cookPlan: unknown }>> {
   return db
     .select({ ...LISTING_COLUMNS, cookPlan: docRecipes.cookPlan })
     .from(docRecipes)
+    .where(eq(docRecipes.kitchenId, kitchenId))
     .orderBy(...DOC_ORDER);
 }

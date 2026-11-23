@@ -53,13 +53,16 @@ import { callerFor, homeKitchen } from "../../lib/__tests__/kitchens";
 const client = (dbModule as unknown as { client: PGlite }).client;
 const mockChat = chat as Mock;
 let caller: ReturnType<typeof callerFor>;
+let homeId: string;
 const HASH = planSourceHash(ZUCCHINI_RECIPE);
 const SETTLED = "rejected (uncovered-step): step 4 is in no task";
 
 let info: MockInstance<typeof console.info>;
 let error: MockInstance<typeof console.error>;
 beforeAll(async () => {
-  caller = callerFor(await homeKitchen(db));
+  const home = await homeKitchen(db);
+  homeId = home.id;
+  caller = callerFor(home);
 });
 beforeEach(async () => {
   mockChat.mockReset();
@@ -76,6 +79,7 @@ afterEach(() => {
 /** The zucchini wraps as a library row, with whatever plan columns the case sets. */
 async function libraryRow(plan: Partial<typeof docRecipes.$inferInsert> = {}) {
   await db.insert(docRecipes).values({
+    kitchenId: homeId,
     docSlug: "zucchini-wraps",
     name: "Sweet Zucchini Wraps",
     category: "indian",

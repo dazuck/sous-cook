@@ -1,7 +1,8 @@
 /**
- * Two-kitchen isolation tests for rows 2 to 17 of the server API and the
- * queue/intake diagnostic logs, running against a real migrated PGlite
- * database with two kitchens (A and B) and a scripted AI provider.
+ * Two-kitchen isolation tests for rows 2 to 37 of the server API, the
+ * queue/intake/library diagnostic logs, and structural router checks, running
+ * against a real migrated PGlite database with two kitchens (A and B) and a
+ * scripted AI provider.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,10 +10,21 @@ import { eq } from "drizzle-orm";
 import type { PGlite } from "@electric-sql/pglite";
 import type { KitchenQueueRecipeData } from "../../../drizzle/schema";
 import { FakeProviderController } from "../../lib/__tests__/fake-provider";
-import { ZUCCHINI_RECIPE, zucchiniRaw } from "../../lib/kitchen/__tests__/zucchini-wraps";
+import { ZUCCHINI_PLAN, ZUCCHINI_RECIPE, zucchiniRaw } from "../../lib/kitchen/__tests__/zucchini-wraps";
+import type { LibraryTab } from "../../lib/hooks/types";
 
 const scheduled = vi.hoisted(() => [] as Array<() => unknown>);
 const mockFetch = vi.hoisted(() => vi.fn());
+const mockReadTabs = vi.hoisted(() => vi.fn<() => Promise<LibraryTab[]>>());
+const mockReadIdeasText = vi.hoisted(() => vi.fn<() => Promise<string>>());
+const mockAppendIdea = vi.hoisted(() => vi.fn<(text: string) => Promise<void>>());
+const mockPantryReadSections = vi.hoisted(() => vi.fn());
+const mockPantryAddItems = vi.hoisted(() => vi.fn());
+const mockPantryApplyUpdates = vi.hoisted(() => vi.fn());
+const mockShoppingList = vi.hoisted(() => vi.fn());
+const mockShoppingAdd = vi.hoisted(() => vi.fn());
+const mockShoppingRemove = vi.hoisted(() => vi.fn());
+const mockShoppingClear = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/ai/providers/google", () => ({
   createGoogleProvider: () => provider.provider("google"),
@@ -37,14 +49,44 @@ vi.mock("@/lib/hooks/registry", async () => {
   const { scriptedCookLog } = await import(
     "../../lib/__tests__/scripted-cook-log"
   );
-  return { hook: () => scriptedCookLog((url, init) => mockFetch(url, init)) };
+  return {
+    hook: (name: string) => {
+      if (name === "recipe-library") return { readTabs: mockReadTabs };
+      if (name === "ideas") {
+        return { readText: mockReadIdeasText, append: mockAppendIdea };
+      }
+      if (name === "pantry") {
+        return {
+          readSections: mockPantryReadSections,
+          addItems: mockPantryAddItems,
+          applyUpdates: mockPantryApplyUpdates,
+        };
+      }
+      if (name === "shopping-list") {
+        return {
+          list: mockShoppingList,
+          add: mockShoppingAdd,
+          remove: mockShoppingRemove,
+          clear: mockShoppingClear,
+        };
+      }
+      return scriptedCookLog((url, init) => mockFetch(url, init));
+    },
+  };
 });
 vi.mock("@/lib/db", async () =>
   (await import("../../lib/__tests__/test-db")).mockDbModule(),
 );
 
 import * as dbModule from "@/lib/db";
-import { conversationLogs, db, kitchenQueue } from "@/lib/db";
+import {
+  conversationLogs,
+  cookReports,
+  db,
+  docRecipes,
+  kitchenQueue,
+  recipeIdeasCache,
+} from "@/lib/db";
 import { connected } from "@/lib/hooks/connected";
 import {
   callerFor,
@@ -58,7 +100,14 @@ import {
   removeFromQueue,
 } from "@/lib/kitchen-queue";
 import { AUTO_FINISH_IDLE_MS } from "@/lib/kitchen/auto-finish";
+import { cookPlanStamp, planSourceHash } from "@/lib/kitchen/cook-plan-stamp";
+import { storeLibraryPlan } from "@/lib/library-cook-plans";
+import { getDocRecipeBySlug } from "@/lib/recipe-sync";
+import { REPORTS_PER_DAY, type CookReportInput } from "@/lib/cook-reports";
 import { sourceHash } from "@/lib/serves-estimate-plan";
+import { intakeLines } from "@/lib/report-listing-queries";
+import { appRouter } from "./_app";
+import { createTRPCContext } from "../trpc";
 
 const client = (dbModule as unknown as { client: PGlite }).client;
 const provider = new FakeProviderController();
@@ -113,15 +162,32 @@ beforeEach(async () => {
   provider.reset();
   scheduled.length = 0;
   mockFetch.mockReset();
+  mockReadTabs.mockReset();
+  mockReadIdeasText.mockReset();
+  mockAppendIdea.mockReset();
+  mockPantryReadSections.mockReset();
+  mockPantryAddItems.mockReset();
+  mockPantryApplyUpdates.mockReset();
+  mockShoppingList.mockReset();
+  mockShoppingAdd.mockReset();
+  mockShoppingRemove.mockReset();
+  mockShoppingClear.mockReset();
   connected["cook-log"] = true;
+  connected["recipe-library"] = true;
+  connected.ideas = true;
   connected.pantry = false;
+  connected["shopping-list"] = true;
   connected["household-context"] = false;
   vi.stubEnv("GOOGLE_AI_API_KEY", "test-google-key");
   vi.stubEnv("AI_TEXT_PROVIDER", "google");
   vi.stubEnv("AI_TEXT_MODEL", "gemini-3.5-flash");
   vi.stubEnv("AI_COOK_CHAT_MODEL", "gemini-3.5-flash");
+  vi.stubEnv("AI_VISION_PROVIDER", "google");
+  vi.stubEnv("AI_VISION_MODEL", "gemini-2.5-flash");
 
-  await client.exec("delete from conversation_logs; delete from kitchen_queue;");
+  await client.exec(
+    "delete from conversation_logs; delete from cook_reports; delete from doc_recipes; delete from recipe_ideas_cache; delete from kitchen_queue;",
+  );
   await client.exec("delete from kitchens where slug <> 'home'");
 
   kitchenA = (await seedKitchen(db, { slug: "kitchen-a", name: "Kitchen A" }))
@@ -683,5 +749,905 @@ describe("ISO-LOG: diagnostic rejection logs", () => {
         DROP CONSTRAINT IF EXISTS test_refuse_plan_log
       `);
     }
+  });
+
+  it("writes library cook-plan rejection rows with kitchen A's kitchen_id", async () => {
+    const lines = [
+      "Serves 4",
+      "2 zucchini",
+      "1 onion bulb",
+      "1 garlic scape",
+      "a pinch of cumin or curry powder",
+      "a handful of onion greens",
+      "frozen parathas",
+      "chili oil or Calabrian chile",
+      "Sauté the onion, garlic scape and zucchini with a pinch of cumin until sweet and caramelized, about 15 minutes.",
+      "Stir in the onion greens at the very end.",
+      "Fry the parathas in a dry skillet until crisp and flaky.",
+      "Stuff the hot wrappers with the spiced zucchini.",
+      "Add a drizzle of chili oil or Calabrian chile for anyone who wants heat.",
+    ];
+    mockReadTabs.mockResolvedValueOnce([
+      {
+        title: "Entrees",
+        lines: [],
+        nonText: false,
+        children: [{ title: "Zucchini wraps", lines, nonText: false, children: [] }],
+      },
+    ]);
+
+    // 1) Extraction returns ZUCCHINI_RECIPE (with stated serves: 4 so no serves estimate call).
+    provider.onNextChat(() => ({
+      content: JSON.stringify({
+        isRecipe: true,
+        name: "Zucchini wraps",
+        serves: 4,
+        ingredients: ZUCCHINI_RECIPE.ingredients,
+        steps: ZUCCHINI_RECIPE.steps,
+        stepIngredients: ZUCCHINI_RECIPE.stepIngredients,
+      }),
+      finishReason: "stop",
+    }));
+    // 2) First plan attempt is invalid (missing `needs`), triggering rejection logging.
+    const broken = {
+      tasks: zucchiniRaw().tasks.map((task) => {
+        const { needs: _dropped, ...rest } = task;
+        return rest;
+      }),
+    };
+    provider.onNextChat(() => ({
+      content: JSON.stringify(broken),
+      finishReason: "stop",
+    }));
+    // 3) Second plan attempt succeeds.
+    provider.onNextChat(() => ({
+      content: JSON.stringify(zucchiniRaw()),
+      finishReason: "stop",
+    }));
+
+    const result = await callerA.syncRecipes();
+    expect(result.plans.derived).toBe(1);
+
+    const rows = await db
+      .select()
+      .from(conversationLogs)
+      .where(eq(conversationLogs.sessionId, "cook-plan:doc:zucchini-wraps"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.kitchenId).toBe(kitchenA.id);
+  });
+});
+
+async function seedDocRecipe(
+  kitchenId: string,
+  docSlug: string,
+  overrides: Partial<typeof docRecipes.$inferInsert> = {},
+) {
+  const [row] = await db
+    .insert(docRecipes)
+    .values({
+      kitchenId,
+      docSlug,
+      name: docSlug,
+      category: "indian",
+      categoryTitle: "Indian",
+      docPosition: 0,
+      ingredients: ZUCCHINI_RECIPE.ingredients,
+      steps: ZUCCHINI_RECIPE.steps,
+      stepIngredients: ZUCCHINI_RECIPE.stepIngredients,
+      serves: 4,
+      rawDocText: `${docSlug}\n2 zucchini\nCook until tender.`,
+      ...overrides,
+    })
+    .returning();
+  return row!;
+}
+
+function makeReport(
+  id: string,
+  overrides: Partial<CookReportInput> = {},
+): CookReportInput {
+  return {
+    id,
+    capturedAt: "2026-10-04T18:00:00.000Z",
+    build: "test-build",
+    path: "/kitchen/queue/4b1d6f9e-8a51-4c43-9d7c-5a0c2f3e1b2a",
+    screen: "step",
+    queueId: null,
+    recipeName: "Dal",
+    stepKey: "s1",
+    chapterId: null,
+    planVersion: 4,
+    plan: null,
+    state: { mode: "go", pos: 0, ticked: [], passed: [], kept: [] },
+    context: {
+      viewport: { w: 1280, h: 800, dpr: 2 },
+      ua: "test-agent",
+      online: true,
+      voice: { mode: null, status: "off" },
+      ask: { sessionId: "", open: false },
+      layers: { pane: false, card: null, more: false },
+      part: null,
+    },
+    events: [],
+    dom: "<div>step</div>",
+    domTruncated: false,
+    note: "",
+    ...overrides,
+  };
+}
+
+describe("ISO-18: importRecipeFromUrl", () => {
+  it("imports a recipe without storing anything another kitchen can read", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        `<html><body><h1>Lemon Pasta</h1><p>1 lb pasta, 2 lemons. Boil pasta and toss with lemon juice.</p></body></html>`,
+        { status: 200, headers: { "content-type": "text/html" } },
+      ),
+    );
+    provider.onNextChat(() => ({
+      content: JSON.stringify({
+        isRecipe: true,
+        name: "Lemon Pasta",
+        serves: 4,
+        ingredients: [
+          { item: "pasta", amount: "1", unit: "lb" },
+          { item: "lemons", amount: "2" },
+        ],
+        steps: ["Boil pasta and toss with lemon juice."],
+      }),
+      finishReason: "stop",
+    }));
+
+    const result = await callerB.importRecipeFromUrl({
+      url: "https://recipes.example.com/lemon-pasta",
+    });
+    expect(result.success).toBe(true);
+    expect(result.recipe?.name).toBe("Lemon Pasta");
+    expect("kitchenId" in result).toBe(false);
+    expect(await callerA.getKitchenQueue({ status: "pending" })).toEqual([]);
+    expect(await db.select().from(docRecipes)).toEqual([]);
+  });
+});
+
+describe("ISO-19: importRecipeFromText", () => {
+  it("imports a recipe from text without storing anything another kitchen can read", async () => {
+    provider.onNextChat(() => ({
+      content: JSON.stringify({
+        isRecipe: true,
+        name: "Garlic Beans",
+        serves: 2,
+        ingredients: [{ item: "white beans", amount: "1", unit: "can" }],
+        steps: ["Warm the beans with olive oil and garlic."],
+      }),
+      finishReason: "stop",
+    }));
+
+    const result = await callerB.importRecipeFromText({
+      text: "Garlic Beans\n1 can white beans\nWarm the beans with olive oil and garlic.",
+    });
+    expect(result.success).toBe(true);
+    expect(result.recipe?.name).toBe("Garlic Beans");
+    expect("kitchenId" in result).toBe(false);
+    expect(await callerA.getKitchenQueue({ status: "pending" })).toEqual([]);
+    expect(await db.select().from(docRecipes)).toEqual([]);
+  });
+});
+
+describe("ISO-20: importRecipeFromImage", () => {
+  it("imports a recipe from an image without storing anything another kitchen can read", async () => {
+    provider.onNextVision(() =>
+      JSON.stringify({
+        isRecipe: true,
+        name: "Herb Omelette",
+        serves: 1,
+        ingredients: [{ item: "eggs", amount: "3" }],
+        steps: ["Whisk eggs and cook in butter until set."],
+      }),
+    );
+
+    const result = await callerB.importRecipeFromImage({
+      imageBase64: "data:image/jpeg;base64,AAAA",
+    });
+    expect(result.success).toBe(true);
+    expect(result.recipe?.name).toBe("Herb Omelette");
+    expect("kitchenId" in result).toBe(false);
+    expect(provider.visionCalls).toHaveLength(1);
+    expect(await callerA.getKitchenQueue({ status: "pending" })).toEqual([]);
+    expect(await db.select().from(docRecipes)).toEqual([]);
+  });
+});
+
+describe("ISO-21: getShelf", () => {
+  it("isolates the household book and ideas count per kitchen and allows identical slugs in both kitchens", async () => {
+    await seedDocRecipe(kitchenA.id, "shared-dish", { name: "Kitchen A Dal" });
+    await db
+      .insert(recipeIdeasCache)
+      .values({ kitchenId: kitchenA.id, text: "Idea 1\nIdea 2\nIdea 3" });
+
+    const shelfBEmpty = await callerB.getShelf();
+    expect(shelfBEmpty.household?.state).toBe("empty");
+    expect(shelfBEmpty.household?.cookable).toBe(0);
+    expect(shelfBEmpty.household?.contents).toEqual([]);
+    expect(shelfBEmpty.ideas).toBeNull();
+    expect("kitchenId" in shelfBEmpty).toBe(false);
+
+    const shelfA = await callerA.getShelf();
+    expect(shelfA.household?.state).toBe("ok");
+    expect(shelfA.household?.cookable).toBe(1);
+    expect(shelfA.ideas).toBe(3);
+
+    // Both kitchens can hold the same slug at once.
+    await seedDocRecipe(kitchenB.id, "shared-dish", {
+      name: "Kitchen B Soup",
+      category: "soups",
+      categoryTitle: "Soups",
+    });
+    const shelfB = await callerB.getShelf();
+    expect(shelfB.household?.state).toBe("ok");
+    expect(shelfB.household?.cookable).toBe(1);
+    expect(shelfB.household?.contents.map((c) => c.title)).toEqual(["Soups"]);
+  });
+});
+
+describe("ISO-22: getPack", () => {
+  it("scopes the household pack per kitchen while keeping creator packs shared", async () => {
+    await seedDocRecipe(kitchenA.id, "shared-dish", { name: "Kitchen A Secret Stew" });
+
+    const householdBEmpty = await callerB.getPack({ packId: "household-book" });
+    expect(householdBEmpty?.state).toBe("empty");
+    expect(householdBEmpty?.cookable).toBe(0);
+    expect(householdBEmpty?.chapters).toEqual([]);
+
+    const householdA = await callerA.getPack({ packId: "household-book" });
+    expect(householdA?.cookable).toBe(1);
+    expect(householdA?.chapters.flatMap((c) => c.rows.map((r) => r.title))).toEqual([
+      "Kitchen A Secret Stew",
+    ]);
+
+    // Both kitchens can hold the same slug and see only their own recipe.
+    await seedDocRecipe(kitchenB.id, "shared-dish", { name: "Kitchen B Stew" });
+    const householdB = await callerB.getPack({ packId: "household-book" });
+    expect(householdB?.chapters.flatMap((c) => c.rows.map((r) => r.title))).toEqual([
+      "Kitchen B Stew",
+    ]);
+
+    // Shared pack files are readable by both kitchens.
+    const sharedB = await callerB.getPack({ packId: "fannie-farmer-1896" });
+    expect(sharedB?.kind).toBe("creator");
+    expect((sharedB?.cookable ?? 0) > 0).toBe(true);
+  });
+});
+
+describe("ISO-23: libraryPlanReport", () => {
+  it("reports only the calling kitchen's library rows", async () => {
+    const hash = planSourceHash(ZUCCHINI_RECIPE);
+    await seedDocRecipe(kitchenA.id, "broken-a", {
+      name: "Broken A",
+      cookPlan: null,
+      cookPlanError: "rejected (uncovered-step): step 1 is in no task",
+      cookPlanSourceHash: hash,
+      cookPlanStamp: cookPlanStamp(),
+    });
+    await seedDocRecipe(kitchenA.id, "pending-a", { name: "Pending A" });
+
+    expect(await callerB.libraryPlanReport()).toEqual({
+      needFixes: [],
+      pending: 0,
+      total: 0,
+    });
+
+    const reportA = await callerA.libraryPlanReport();
+    expect(reportA.total).toBe(2);
+    expect(reportA.pending).toBe(1);
+    expect(reportA.needFixes.map((f) => f.slug)).toEqual(["broken-a"]);
+  });
+});
+
+describe("ISO-24: syncRecipes", () => {
+  it("scopes doc order, all three saveRecipe writes, and storeLibraryPlan to the calling kitchen", async () => {
+    const keptSteps = [
+      "Rinse the lentils thoroughly, then simmer them in a heavy pot with turmeric for twenty minutes until tender.",
+      "Ladle the warm dal into deep bowls and finish with toasted spices before serving.",
+    ];
+    const keptLines = [
+      "Serves 4",
+      "2 cups lentils",
+      "1 tsp turmeric",
+      ...keptSteps,
+    ];
+    const keptRaw = ["Kept dish", ...keptLines].join("\n");
+
+    const aShared = await seedDocRecipe(kitchenA.id, "shared-dish", {
+      name: "Shared dish",
+      category: "indian",
+      categoryTitle: "A Indian",
+      docPosition: 0,
+      rawDocText: "Shared dish\n1 cup rice\nBoil rice.",
+    });
+    const aOnly = await seedDocRecipe(kitchenA.id, "only-a", {
+      name: "Only A",
+      category: "sides",
+      categoryTitle: "A Sides",
+      docPosition: 1,
+    });
+    const aFailed = await seedDocRecipe(kitchenA.id, "failed-dish", {
+      name: "Failed dish",
+      extractionError: "kitchen A prior failure",
+      steps: null,
+      ingredients: null,
+      docPosition: 2,
+    });
+    const aKept = await seedDocRecipe(kitchenA.id, "kept-dish", {
+      name: "Kept dish",
+      category: "indian",
+      categoryTitle: "A Indian",
+      docPosition: 3,
+      rawDocText: keptRaw,
+      ingredients: [
+        { item: "lentils", amount: "2", unit: "cups" },
+        { item: "turmeric", amount: "1", unit: "tsp" },
+      ],
+      steps: keptSteps,
+    });
+    const bKept = await seedDocRecipe(kitchenB.id, "kept-dish", {
+      name: "Kept dish",
+      category: "indian",
+      categoryTitle: "Old B",
+      docPosition: 9,
+      rawDocText: keptRaw,
+      ingredients: [
+        { item: "lentils", amount: "2", unit: "cups" },
+        { item: "turmeric", amount: "1", unit: "tsp" },
+      ],
+      steps: keptSteps,
+    });
+
+    const beforeAShared = await snapshotRow(db, docRecipes, aShared.id);
+    const beforeAOnly = await snapshotRow(db, docRecipes, aOnly.id);
+    const beforeAFailed = await snapshotRow(db, docRecipes, aFailed.id);
+    const beforeAKept = await snapshotRow(db, docRecipes, aKept.id);
+
+    mockReadTabs.mockResolvedValueOnce([
+      {
+        title: "B Mains",
+        lines: [],
+        nonText: false,
+        children: [
+          { title: "Failed dish", lines: ["Not a recipe", "Just notes"], nonText: false, children: [] },
+          { title: "Kept dish", lines: keptLines, nonText: false, children: [] },
+          {
+            title: "Shared dish",
+            lines: [
+              "Serves 4",
+              "2 zucchini",
+              "1 onion bulb",
+              "1 garlic scape",
+              "a pinch of cumin or curry powder",
+              "a handful of onion greens",
+              "frozen parathas",
+              "chili oil or Calabrian chile",
+              "Sauté the onion, garlic scape and zucchini with a pinch of cumin until sweet and caramelized, about 15 minutes.",
+              "Stir in the onion greens at the very end.",
+              "Fry the parathas in a dry skillet until crisp and flaky.",
+              "Stuff the hot wrappers with the spiced zucchini.",
+              "Add a drizzle of chili oil or Calabrian chile for anyone who wants heat.",
+            ],
+            nonText: false,
+            children: [],
+          },
+        ],
+      },
+    ]);
+
+    provider.setDefaultChat((options) => {
+      const prompt = JSON.stringify(options.messages);
+      if (prompt.includes("Failed dish")) {
+        return { content: JSON.stringify({ isRecipe: false }), finishReason: "stop" };
+      }
+      if (prompt.includes("Kept dish")) {
+        return {
+          content: JSON.stringify({
+            isRecipe: true,
+            name: "Kept dish",
+            serves: 4,
+            ingredients: [{ item: "lentils", amount: "2", unit: "cups" }],
+            steps: [],
+          }),
+          finishReason: "stop",
+        };
+      }
+      if (prompt.includes("Shared dish") && !prompt.includes("tasks")) {
+        return {
+          content: JSON.stringify({
+            isRecipe: true,
+            name: "Shared dish",
+            serves: 4,
+            ingredients: ZUCCHINI_RECIPE.ingredients,
+            steps: ZUCCHINI_RECIPE.steps,
+            stepIngredients: ZUCCHINI_RECIPE.stepIngredients,
+          }),
+          finishReason: "stop",
+        };
+      }
+      return { content: JSON.stringify(zucchiniRaw()), finishReason: "stop" };
+    });
+
+    const syncResult = await callerB.syncRecipes();
+    expect(syncResult.total).toBe(3);
+
+    // Every kitchen A row is byte-for-byte unchanged, including docPosition and categoryTitle.
+    expect(await snapshotRow(db, docRecipes, aShared.id)).toEqual(beforeAShared);
+    expect(await snapshotRow(db, docRecipes, aOnly.id)).toEqual(beforeAOnly);
+    expect(await snapshotRow(db, docRecipes, aFailed.id)).toEqual(beforeAFailed);
+    expect(await snapshotRow(db, docRecipes, aKept.id)).toEqual(beforeAKept);
+
+    // Kitchen B's rows updated independently.
+    const bShared = await getDocRecipeBySlug(kitchenB.id, "shared-dish");
+    expect(bShared?.extractionError).toBeNull();
+    expect(bShared?.categoryTitle).toBe("B Mains");
+    expect(bShared?.docPosition).toBe(2);
+    expect((await getDocRecipeBySlug(kitchenB.id, "failed-dish"))?.extractionError).not.toBeNull();
+    const afterBKept = await snapshotRow(db, docRecipes, bKept.id);
+    expect(afterBKept?.categoryTitle).toBe("B Mains");
+    expect(afterBKept?.docPosition).toBe(1);
+    expect(afterBKept?.steps).toEqual(keptSteps);
+    expect(syncResult.failures.find((f) => f.name === "Kept dish")?.error).toContain(
+      "saved recipe was kept",
+    );
+
+    // B storing a plan with storeLibraryPlan for shared-dish leaves A's shared-dish unchanged.
+    const bNoPlan = await seedDocRecipe(kitchenB.id, "plan-target");
+    const aPlanTarget = await seedDocRecipe(kitchenA.id, "plan-target");
+    const beforeAPlanTarget = await snapshotRow(db, docRecipes, aPlanTarget.id);
+    const stored = await storeLibraryPlan(
+      kitchenB.id,
+      "plan-target",
+      planSourceHash(ZUCCHINI_RECIPE),
+      {
+        cookPlan: ZUCCHINI_PLAN,
+        cookPlanError: null,
+        cookPlanSourceHash: planSourceHash(ZUCCHINI_RECIPE),
+        cookPlanStamp: cookPlanStamp(),
+      },
+    );
+    expect(stored).toBe("stored");
+    expect(await snapshotRow(db, docRecipes, aPlanTarget.id)).toEqual(beforeAPlanTarget);
+    expect((await snapshotRow(db, docRecipes, bNoPlan.id))?.cookPlan).toEqual(ZUCCHINI_PLAN);
+  });
+});
+
+describe("ISO-25: queueFromPack", () => {
+  it("refuses another kitchen's household recipe with NOT_FOUND and queues shared pack recipes into the caller's kitchen ignoring targetUser", async () => {
+    const rowA = await seedDocRecipe(kitchenA.id, "secret-a", {
+      name: "Secret A Dal",
+    });
+    const beforeA = await snapshotRow(db, docRecipes, rowA.id);
+
+    await expect(
+      callerB.queueFromPack({
+        packId: "household-book",
+        recipeId: "secret-a",
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(await snapshotRow(db, docRecipes, rowA.id)).toEqual(beforeA);
+    expect(await callerB.getKitchenQueue({ status: "pending" })).toEqual([]);
+
+    // Shared pack-file recipe queued by B with targetUser ignored lands in B's queue only.
+    const sharedPack = await callerB.getPack({ packId: "fannie-farmer-1896" });
+    const firstRecipeId = sharedPack?.chapters[0]?.rows[0]?.id;
+    expect(firstRecipeId).toBeDefined();
+
+    const queued = await callerB.queueFromPack({
+      packId: "fannie-farmer-1896",
+      recipeId: firstRecipeId!,
+      targetUser: "someone-else",
+    });
+    expect("kitchenId" in queued).toBe(false);
+    const stored = await snapshotRow(db, kitchenQueue, queued.id);
+    expect(stored?.kitchenId).toBe(kitchenB.id);
+    expect(stored?.targetUser).toBeNull();
+    expect(await callerA.getKitchenQueue({ status: "pending" })).toEqual([]);
+  });
+});
+
+describe("ISO-26: getRecipeIdeas", () => {
+  it("refreshes kitchen B's cache row while leaving kitchen A's cache row unchanged", async () => {
+    const [rowA] = await db
+      .insert(recipeIdeasCache)
+      .values({ kitchenId: kitchenA.id, text: "Kitchen A Secret Idea" })
+      .returning();
+    const beforeA = await snapshotRow(db, recipeIdeasCache, rowA!.id);
+
+    mockReadIdeasText.mockResolvedValueOnce("Kitchen B Idea 1\nKitchen B Idea 2");
+    const resB = await callerB.getRecipeIdeas();
+    expect(resB.ideas).toEqual(["Kitchen B Idea 1", "Kitchen B Idea 2"]);
+    expect("kitchenId" in resB).toBe(false);
+
+    expect(await snapshotRow(db, recipeIdeasCache, rowA!.id)).toEqual(beforeA);
+  });
+});
+
+describe("ISO-27: saveRecipeIdea", () => {
+  it("delegates to the ideas hook when called with a kitchen session", async () => {
+    mockAppendIdea.mockResolvedValueOnce(undefined);
+    expect(await callerB.saveRecipeIdea({ text: "Roasted carrots" })).toEqual({
+      success: true,
+    });
+    expect(mockAppendIdea).toHaveBeenCalledWith("Roasted carrots");
+  });
+});
+
+describe("ISO-28: submitCookReport", () => {
+  const REPORT_A = "0f8fad5b-d9cb-469f-a165-70867728950e";
+  const REPORT_B = "1f8fad5b-d9cb-469f-a165-70867728950e";
+  const REPORT_C = "2f8fad5b-d9cb-469f-a165-70867728950e";
+
+  it("answers CONFLICT when kitchen B resends kitchen A's report id and leaves A's row unchanged", async () => {
+    const resA = await callerA.submitCookReport(makeReport(REPORT_A, { note: "A note" }));
+    expect(resA).toEqual({ id: REPORT_A, duplicate: false });
+    const beforeA = await snapshotRow(db, cookReports, REPORT_A);
+
+    await expect(
+      callerB.submitCookReport(makeReport(REPORT_A, { note: "B tampered note" })),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(await snapshotRow(db, cookReports, REPORT_A)).toEqual(beforeA);
+  });
+
+  it("counts the daily cap per kitchen and answers capped before conflict when B is at its cap", async () => {
+    await callerA.submitCookReport(makeReport(REPORT_A, { note: "A first" }));
+    const beforeA = await snapshotRow(db, cookReports, REPORT_A);
+
+    // Fill kitchen A to its daily cap (99 more rows).
+    const fillA = Array.from({ length: REPORTS_PER_DAY - 1 }, (_, i) => ({
+      id: `10000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+      kitchenId: kitchenA.id,
+      capturedAt: new Date(),
+      build: "test-build",
+      path: "/kitchen",
+      screen: "step",
+      queueId: null,
+      recipeName: "Dal",
+      state: { mode: "go", pos: 0, ticked: [], passed: [], kept: [] },
+      context: makeReport(REPORT_A).context,
+      events: [],
+      dom: "<div></div>",
+      domTruncated: false,
+      note: "",
+    }));
+    await db.insert(cookReports).values(fillA);
+
+    // Kitchen A is capped; kitchen B still stores.
+    await expect(
+      callerA.submitCookReport(makeReport(REPORT_B)),
+    ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+    expect(await callerB.submitCookReport(makeReport(REPORT_B))).toEqual({
+      id: REPORT_B,
+      duplicate: false,
+    });
+
+    // Fill kitchen B to its daily cap (99 more rows).
+    const fillB = Array.from({ length: REPORTS_PER_DAY - 1 }, (_, i) => ({
+      id: `20000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+      kitchenId: kitchenB.id,
+      capturedAt: new Date(),
+      build: "test-build",
+      path: "/kitchen",
+      screen: "step",
+      queueId: null,
+      recipeName: "Soup",
+      state: { mode: "go", pos: 0, ticked: [], passed: [], kept: [] },
+      context: makeReport(REPORT_B).context,
+      events: [],
+      dom: "<div></div>",
+      domTruncated: false,
+      note: "",
+    }));
+    await db.insert(cookReports).values(fillB);
+
+    // B at its cap resending A's report id gets TOO_MANY_REQUESTS (capped first), leaving A untouched.
+    await expect(
+      callerB.submitCookReport(makeReport(REPORT_A, { note: "capped B" })),
+    ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+    expect(await snapshotRow(db, cookReports, REPORT_A)).toEqual(beforeA);
+
+    // Once B is under its cap again, the same resend answers CONFLICT (never a raw DB error).
+    await db.delete(cookReports).where(eq(cookReports.id, REPORT_B));
+    await expect(
+      callerB.submitCookReport(makeReport(REPORT_A, { note: "uncapped B" })),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(await snapshotRow(db, cookReports, REPORT_A)).toEqual(beforeA);
+  });
+
+  it("stores a report naming another kitchen's queueId, and list-reports intakeLines returns no line for it", async () => {
+    const cut: KitchenQueueRecipeData = {
+      ...SECRET_RECIPE_A,
+      ingredients: [{ item: "saffron", amount: "2", unit: "tsp" }],
+      stepIngredients: [[0], []],
+    };
+    const rowA = await seedQueueRow(db, kitchenA.id, {
+      recipeData: SECRET_RECIPE_A,
+      intakeSourceHash: sourceHash("kitchen_queue", SECRET_RECIPE_A),
+      intakeRecipe: cut,
+      intakeStamp: "test-stamp",
+      intakeAttempts: 1,
+      intakeNudges: [],
+    });
+
+    await callerA.submitCookReport(makeReport(REPORT_A, { queueId: rowA.id }));
+    await callerB.submitCookReport(makeReport(REPORT_C, { queueId: rowA.id }));
+
+    const lines = await intakeLines([
+      { id: REPORT_A, kitchenId: kitchenA.id, queueId: rowA.id },
+      { id: REPORT_C, kitchenId: kitchenB.id, queueId: rowA.id },
+    ]);
+    expect(lines.get(REPORT_A)).toBeDefined();
+    expect(lines.has(REPORT_C)).toBe(false);
+  });
+});
+
+describe("ISO-29: annotateCookReport", () => {
+  it("answers NOT_FOUND when kitchen B annotates kitchen A's report and leaves A's note unchanged", async () => {
+    const reportId = "3f8fad5b-d9cb-469f-a165-70867728950e";
+    await callerA.submitCookReport(makeReport(reportId, { note: "original note" }));
+    const beforeA = await snapshotRow(db, cookReports, reportId);
+
+    await expect(
+      callerB.annotateCookReport({ id: reportId, note: "tampered note" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(await snapshotRow(db, cookReports, reportId)).toEqual(beforeA);
+  });
+});
+
+describe("ISO-30: parseGroceryInput", () => {
+  it("parses groceries via the provider without storing anything another kitchen can read", async () => {
+    connected.pantry = true;
+    provider.onNextChat(() => ({
+      content: JSON.stringify({
+        items: [{ text: "2 avocados", suggestedSection: "Fridge" }],
+      }),
+      finishReason: "stop",
+    }));
+
+    const result = await callerB.parseGroceryInput({
+      type: "text",
+      content: "2 avocados",
+    });
+    expect(result.items).toEqual([{ text: "2 avocados", suggestedSection: "Fridge" }]);
+    expect("kitchenId" in result).toBe(false);
+    expect(provider.chatCalls).toHaveLength(1);
+    expect(await callerA.getKitchenQueue({ status: "pending" })).toEqual([]);
+  });
+});
+
+describe("ISO-31: addIngredientsToPantry", () => {
+  it("delegates to the pantry hook when called with a kitchen session", async () => {
+    connected.pantry = true;
+    mockPantryAddItems.mockResolvedValueOnce({ added: 1 });
+    expect(
+      await callerB.addIngredientsToPantry({ items: [{ text: "2 avocados" }] }),
+    ).toEqual({ success: true, count: 1 });
+    expect(mockPantryAddItems).toHaveBeenCalledWith([{ text: "2 avocados" }]);
+  });
+});
+
+describe("ISO-32: getRecipePantryReconciliation", () => {
+  it("answers NOT_FOUND for kitchen A's queueId whether pantry is connected or not, with no model or hook call", async () => {
+    const rowA = await seedQueueRow(db, kitchenA.id, {
+      recipeData: SECRET_RECIPE_A,
+    });
+    const beforeA = await snapshotRow(db, kitchenQueue, rowA.id);
+
+    for (const isConnected of [true, false]) {
+      connected.pantry = isConnected;
+      await expect(
+        callerB.getRecipePantryReconciliation({ queueId: rowA.id }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(await snapshotRow(db, kitchenQueue, rowA.id)).toEqual(beforeA);
+    }
+    expect(mockPantryReadSections).not.toHaveBeenCalled();
+    expect(provider.chatCalls).toHaveLength(0);
+  });
+});
+
+describe("ISO-33: applyPantryReconciliation", () => {
+  it("answers NOT_FOUND for kitchen A's queueId whether pantry is connected or not, with no hook write", async () => {
+    const rowA = await seedQueueRow(db, kitchenA.id, {
+      recipeData: SECRET_RECIPE_A,
+    });
+    const beforeA = await snapshotRow(db, kitchenQueue, rowA.id);
+
+    for (const isConnected of [true, false]) {
+      connected.pantry = isConnected;
+      await expect(
+        callerB.applyPantryReconciliation({
+          queueId: rowA.id,
+          actions: [{ action: "delete", oldText: "2 avocados" }],
+        }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(await snapshotRow(db, kitchenQueue, rowA.id)).toEqual(beforeA);
+    }
+    expect(mockPantryApplyUpdates).not.toHaveBeenCalled();
+  });
+});
+
+describe("ISO-34: getShoppingList", () => {
+  it("returns the shopping-list hook answer when called with a kitchen session", async () => {
+    const syncedAt = new Date("2026-10-04T18:00:00.000Z");
+    mockShoppingList.mockResolvedValueOnce({ items: [], syncedAt });
+    expect(await callerB.getShoppingList()).toEqual({ items: [], syncedAt });
+    expect(mockShoppingList).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ISO-35: addShoppingListItems", () => {
+  it("returns the shopping-list hook answer when called with a kitchen session", async () => {
+    mockShoppingAdd.mockResolvedValueOnce({ added: ["Milk"] });
+    expect(
+      await callerB.addShoppingListItems({ items: [{ item: "Milk" }] }),
+    ).toEqual({ added: ["Milk"] });
+    expect(mockShoppingAdd).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ISO-36: removeShoppingListItem", () => {
+  it("returns the shopping-list hook answer when called with a kitchen session", async () => {
+    mockShoppingRemove.mockResolvedValueOnce({ removed: true });
+    expect(
+      await callerB.removeShoppingListItem({ rawOrKey: "Milk" }),
+    ).toEqual({ removed: true });
+    expect(mockShoppingRemove).toHaveBeenCalledWith("Milk");
+  });
+});
+
+describe("ISO-37: clearShoppingList", () => {
+  it("returns the shopping-list hook answer when called with a kitchen session", async () => {
+    mockShoppingClear.mockResolvedValueOnce({ cleared: 2 });
+    expect(await callerB.clearShoppingList()).toEqual({ cleared: 2 });
+    expect(mockShoppingClear).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("STRUCT-1: router procedure inventory", () => {
+  it("exposes exactly the 37 documented procedures", () => {
+    const expected = [
+      "health",
+      "chatCooking",
+      "addToKitchenQueue",
+      "getKitchenQueue",
+      "getKitchenQueueItem",
+      "ensureIntake",
+      "ensureCookPlan",
+      "updateKitchenQueueStatus",
+      "markCookActivity",
+      "autoFinishCook",
+      "reopenCook",
+      "retryCookLog",
+      "rateCook",
+      "getCookAsk",
+      "dismissCookAsk",
+      "removeFromKitchenQueue",
+      "getRecentCookingItems",
+      "importRecipeFromUrl",
+      "importRecipeFromText",
+      "importRecipeFromImage",
+      "getShelf",
+      "getPack",
+      "libraryPlanReport",
+      "syncRecipes",
+      "queueFromPack",
+      "getRecipeIdeas",
+      "saveRecipeIdea",
+      "submitCookReport",
+      "annotateCookReport",
+      "parseGroceryInput",
+      "addIngredientsToPantry",
+      "getRecipePantryReconciliation",
+      "applyPantryReconciliation",
+      "getShoppingList",
+      "addShoppingListItems",
+      "removeShoppingListItem",
+      "clearShoppingList",
+    ];
+    expect(expected).toHaveLength(37);
+    expect(Object.keys(appRouter._def.procedures).sort()).toEqual(
+      [...expected].sort(),
+    );
+  });
+});
+
+describe("STRUCT-2: router input schemas never accept kitchen or member ownership", () => {
+  const FORBIDDEN_KEYS = new Set(["kitchenId", "kitchen", "memberId"]);
+  const ALLOWED_DEPRECATED_SLUGS: Readonly<Record<string, "userId" | "targetUser">> = {
+    addToKitchenQueue: "targetUser",
+    getKitchenQueue: "userId",
+    getCookAsk: "userId",
+    getRecentCookingItems: "userId",
+    queueFromPack: "targetUser",
+  };
+
+  interface ZodLikeSchema {
+    shape?: Record<string, ZodLikeSchema>;
+    unwrap?: () => ZodLikeSchema;
+    isOptional?: () => boolean;
+    def?: { type?: string; innerType?: ZodLikeSchema; schema?: ZodLikeSchema };
+    _def?: { typeName?: string; innerType?: ZodLikeSchema; schema?: ZodLikeSchema };
+  }
+
+  function objectShape(schema: unknown): Record<string, ZodLikeSchema> | null {
+    let current = schema as ZodLikeSchema | undefined;
+    const seen = new Set<unknown>();
+    while (current && !seen.has(current)) {
+      seen.add(current);
+      if (current.shape && typeof current.shape === "object") {
+        return current.shape;
+      }
+      const next =
+        current.def?.innerType ??
+        current.def?.schema ??
+        current._def?.innerType ??
+        current._def?.schema ??
+        (typeof current.unwrap === "function" ? current.unwrap() : undefined);
+      current = next;
+    }
+    return null;
+  }
+
+  it("forbids kitchenId, kitchen and memberId on all inputs and allows userId/targetUser only as optional on the five legacy procedures", () => {
+    const procedures = appRouter._def.procedures as Record<
+      string,
+      { _def?: { inputs?: unknown[] } }
+    >;
+
+    const foundSlugKeys: Record<string, string[]> = {};
+
+    for (const [name, procedure] of Object.entries(procedures)) {
+      const inputs = procedure._def?.inputs ?? [];
+      for (const inputSchema of inputs) {
+        const shape = objectShape(inputSchema);
+        expect(shape, `Procedure ${name} should have an inspectable object input schema`).not.toBeNull();
+        if (!shape) continue;
+
+        for (const [key, fieldSchema] of Object.entries(shape)) {
+          expect(
+            FORBIDDEN_KEYS.has(key),
+            `Procedure ${name} must not accept "${key}" in its input`,
+          ).toBe(false);
+
+          if (key === "userId" || key === "targetUser") {
+            foundSlugKeys[name] = [...(foundSlugKeys[name] ?? []), key];
+            expect(
+              ALLOWED_DEPRECATED_SLUGS[name],
+              `Procedure ${name} must not accept "${key}"`,
+            ).toBe(key);
+            expect(
+              typeof fieldSchema.isOptional === "function" && fieldSchema.isOptional(),
+              `Procedure ${name}.${key} must be optional`,
+            ).toBe(true);
+          }
+        }
+      }
+    }
+
+    expect(foundSlugKeys).toEqual({
+      addToKitchenQueue: ["targetUser"],
+      getKitchenQueue: ["userId"],
+      getCookAsk: ["userId"],
+      getRecentCookingItems: ["userId"],
+      queueFromPack: ["targetUser"],
+    });
+  });
+});
+
+describe("AUTH-2: public health procedure", () => {
+  it("answers without a session and returns only status and timestamp", async () => {
+    vi.stubEnv("SOUS_SIGN_IN", "on");
+    const unauthenticatedCaller = appRouter.createCaller(
+      await createTRPCContext(),
+    );
+    const result = await unauthenticatedCaller.health();
+    expect(Object.keys(result).sort()).toEqual(["status", "timestamp"]);
+    expect(result.status).toBe("ok");
+    expect(typeof result.timestamp).toBe("string");
+    expect(Number.isNaN(Date.parse(result.timestamp))).toBe(false);
   });
 });

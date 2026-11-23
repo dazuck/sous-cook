@@ -22,6 +22,13 @@
       "when": 1795405199604,
       "tag": "0002_queue_target_user_optional",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795411589345,
+      "tag": "0003_kitchen_owner_required",
+      "breakpoints": true
     }
   ]
 }

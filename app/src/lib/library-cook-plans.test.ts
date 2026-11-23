@@ -21,6 +21,7 @@ vi.mock("@/lib/db", async () =>
 
 import * as dbModule from "./db";
 import { conversationLogs, db, docRecipes } from "./db";
+import { homeKitchen } from "./__tests__/kitchens";
 import { cookPlanStamp, planSourceHash } from "./kitchen/cook-plan-stamp";
 import { CostLedger, callCostUsd } from "./cook-plan-cost";
 import { docRecipeToQueueData } from "./recipe-sync";
@@ -33,6 +34,7 @@ import {
   libraryPlanReport,
   libraryPlanStatus,
   libraryRecipeForPlan,
+  libraryRecipeLockKey,
   planBudget,
   planForChunk,
   readLibraryPlanRows,
@@ -46,10 +48,12 @@ import {
 
 const client = (dbModule as unknown as { client: PGlite }).client;
 const mockChat = chat as Mock;
+let homeId: string;
 
 beforeEach(async () => {
   mockChat.mockReset();
   await client.exec("delete from doc_recipes; delete from conversation_logs");
+  homeId = (await homeKitchen(db)).id;
 });
 
 const OPEN: PlanBudget = { start: () => new CostLedger(Infinity).meter() };
@@ -85,6 +89,7 @@ const REWORDED: RecipeForPlan = {
 
 async function insertRow(docSlug: string, over: Partial<typeof docRecipes.$inferInsert> = {}) {
   await db.insert(docRecipes).values({
+    kitchenId: homeId,
     docSlug,
     name: docSlug,
     rawDocText: docSlug,
@@ -149,7 +154,7 @@ describe("planBudget", () => {
     const budget = planBudget(REFRESH_PLAN_BUDGET_MS, Date.now, ledger);
     const outcomes: string[] = [];
     for (let i = 0; i < 10; i++) {
-      outcomes.push((await planForChunk(`r${i}`, ZUCCHINI_RECIPE, undefined, budget)).outcome);
+      outcomes.push((await planForChunk(homeId, `r${i}`, ZUCCHINI_RECIPE, undefined, budget)).outcome);
     }
     // About $0.09 a call billed at its bound: five fit under $0.50, the rest wait.
     expect(outcomes.filter((o) => o === "derived").length).toBe(5);
@@ -160,14 +165,14 @@ describe("planBudget", () => {
 
 describe("planForChunk", () => {
   it("plans nothing for a recipe with no steps, with no call", async () => {
-    const plan = await planForChunk("x", { ingredients: [], steps: [] }, undefined, OPEN);
+    const plan = await planForChunk(homeId, "x", { ingredients: [], steps: [] }, undefined, OPEN);
     expect(plan).toEqual({ outcome: "none", columns: NO_PLAN });
     expect(mockChat).not.toHaveBeenCalled();
   });
 
   it("derives a new recipe's plan, stamped with its derive input", async () => {
     replyPlan();
-    const plan = await planForChunk("zucchini-wraps", ZUCCHINI_RECIPE, undefined, OPEN);
+    const plan = await planForChunk(homeId, "zucchini-wraps", ZUCCHINI_RECIPE, undefined, OPEN);
     expect(plan).toEqual({
       outcome: "derived",
       columns: { cookPlan: ZUCCHINI_PLAN, cookPlanError: null, cookPlanSourceHash: HASH, cookPlanStamp: cookPlanStamp() },
@@ -176,7 +181,7 @@ describe("planForChunk", () => {
   });
 
   it("reuses a saved plan when the derive input and stamp are unchanged: zero calls", async () => {
-    const plan = await planForChunk("zucchini-wraps", ZUCCHINI_RECIPE, saved(), SPENT);
+    const plan = await planForChunk(homeId, "zucchini-wraps", ZUCCHINI_RECIPE, saved(), SPENT);
     expect(plan.outcome).toBe("reused");
     expect(plan.columns.cookPlan).toEqual(ZUCCHINI_PLAN);
     expect(mockChat).not.toHaveBeenCalled();
@@ -184,7 +189,7 @@ describe("planForChunk", () => {
 
   it("re-derives when the same text extracts as different steps (hash)", async () => {
     replyPlan();
-    const plan = await planForChunk("zucchini-wraps", REWORDED, saved(), OPEN);
+    const plan = await planForChunk(homeId, "zucchini-wraps", REWORDED, saved(), OPEN);
     expect(plan.outcome).toBe("derived");
     expect(plan.columns.cookPlanSourceHash).toBe(planSourceHash(REWORDED));
     expect(mockChat).toHaveBeenCalledTimes(1);
@@ -192,7 +197,7 @@ describe("planForChunk", () => {
 
   it("re-derives a plan from an older prompt or version (stamp)", async () => {
     replyPlan();
-    const plan = await planForChunk("zucchini-wraps", ZUCCHINI_RECIPE, saved({ cookPlanStamp: "3:0000" }), OPEN);
+    const plan = await planForChunk(homeId, "zucchini-wraps", ZUCCHINI_RECIPE, saved({ cookPlanStamp: "3:0000" }), OPEN);
     expect(plan.outcome).toBe("derived");
     expect(plan.columns.cookPlanStamp).toBe(cookPlanStamp());
   });
@@ -200,7 +205,7 @@ describe("planForChunk", () => {
   it("re-derives a stored plan that no longer validates, though hash and stamp match", async () => {
     replyPlan();
     const corrupt = { ...ZUCCHINI_PLAN, tasks: ZUCCHINI_PLAN.tasks.slice(1) };
-    const plan = await planForChunk("zucchini-wraps", ZUCCHINI_RECIPE, saved({ cookPlan: corrupt }), OPEN);
+    const plan = await planForChunk(homeId, "zucchini-wraps", ZUCCHINI_RECIPE, saved({ cookPlan: corrupt }), OPEN);
     expect(plan.outcome).toBe("derived");
     expect(plan.columns.cookPlan).toEqual(ZUCCHINI_PLAN);
   });
@@ -208,6 +213,7 @@ describe("planForChunk", () => {
   it("keeps a settled error on a same-hash Refresh, with no call", async () => {
     const error = "rejected (uncovered-step): step 4 is carried by no task";
     const plan = await planForChunk(
+      homeId,
       "zucchini-wraps",
       ZUCCHINI_RECIPE,
       saved({ cookPlan: null, cookPlanError: error }),
@@ -223,6 +229,7 @@ describe("planForChunk", () => {
   it("retries a settled error once the recipe's text changes", async () => {
     replyPlan();
     const plan = await planForChunk(
+      homeId,
       "zucchini-wraps",
       REWORDED,
       saved({ cookPlan: null, cookPlanError: "rejected (cycle): a needs b needs a" }),
@@ -234,6 +241,7 @@ describe("planForChunk", () => {
   it("retries a transient error once on the next Refresh", async () => {
     replyPlan();
     const plan = await planForChunk(
+      homeId,
       "zucchini-wraps",
       ZUCCHINI_RECIPE,
       saved({ cookPlan: null, cookPlanError: "Cook plan derivation timed out after 45 s" }),
@@ -245,7 +253,7 @@ describe("planForChunk", () => {
   });
 
   it("starts no derivation once the budget is spent: pending, no plan, the old one cleared", async () => {
-    const plan = await planForChunk("zucchini-wraps", REWORDED, saved(), SPENT);
+    const plan = await planForChunk(homeId, "zucchini-wraps", REWORDED, saved(), SPENT);
     expect(plan).toEqual({ outcome: "pending", columns: NO_PLAN });
     expect(mockChat).not.toHaveBeenCalled();
   });
@@ -253,7 +261,7 @@ describe("planForChunk", () => {
   it("stores a refusal as a settled error with its hash and stamp, logging each reply", async () => {
     replyUncovered();
     replyUncovered();
-    const plan = await planForChunk("zucchini-wraps", ZUCCHINI_RECIPE, undefined, OPEN);
+    const plan = await planForChunk(homeId, "zucchini-wraps", ZUCCHINI_RECIPE, undefined, OPEN);
     expect(plan.outcome).toBe("derived");
     expect(plan.columns.cookPlan).toBeNull();
     expect(plan.columns.cookPlanError).toMatch(/^rejected \(uncovered-step\)/);
@@ -264,7 +272,7 @@ describe("planForChunk", () => {
 
   it("stores a provider error as a transient error, never throwing", async () => {
     mockChat.mockRejectedValueOnce(new Error("429 Too Many Requests"));
-    const plan = await planForChunk("zucchini-wraps", ZUCCHINI_RECIPE, undefined, OPEN);
+    const plan = await planForChunk(homeId, "zucchini-wraps", ZUCCHINI_RECIPE, undefined, OPEN);
     expect(plan.columns).toEqual({
       cookPlan: null,
       cookPlanError: "429 Too Many Requests",
@@ -280,7 +288,7 @@ describe("planForChunk", () => {
       usage: { inputTokens: 3300, outputTokens: 1000 },
     });
     const ledger = new CostLedger(1);
-    await planForChunk("zucchini-wraps", ZUCCHINI_RECIPE, undefined, { start: () => ledger.meter() });
+    await planForChunk(homeId, "zucchini-wraps", ZUCCHINI_RECIPE, undefined, { start: () => ledger.meter() });
     expect(ledger.calls).toBe(1);
     expect(ledger.spentUsd).toBeCloseTo(callCostUsd(3300, 1000));
   });
@@ -289,7 +297,7 @@ describe("planForChunk", () => {
     mockChat.mockResolvedValueOnce({ content: '{"tasks": [', finishReason: "max_tokens" });
     // Room for the first call's bound, not for the truncation retry's.
     const ledger = new CostLedger(callCostUsd(15_000, 10_000));
-    const plan = await planForChunk("zucchini-wraps", REWORDED, saved(), { start: () => ledger.meter() });
+    const plan = await planForChunk(homeId, "zucchini-wraps", REWORDED, saved(), { start: () => ledger.meter() });
     expect(plan).toEqual({ outcome: "pending", columns: NO_PLAN });
     expect(mockChat).toHaveBeenCalledTimes(1);
     expect(ledger.refused).toBe(1);
@@ -300,14 +308,27 @@ describe("readSavedPlan", () => {
   it("reads a row that extracted, and nothing for one that failed", async () => {
     await insertRow("ok", { cookPlan: ZUCCHINI_PLAN, cookPlanSourceHash: HASH, cookPlanStamp: "s" });
     await insertRow("failed", { extractionError: "no recipe here", steps: null });
-    expect(await readSavedPlan("ok")).toEqual({
+    expect(await readSavedPlan(homeId, "ok")).toEqual({
       cookPlan: ZUCCHINI_PLAN,
       cookPlanError: null,
       cookPlanSourceHash: HASH,
       cookPlanStamp: "s",
     });
-    expect(await readSavedPlan("failed")).toBeUndefined();
-    expect(await readSavedPlan("absent")).toBeUndefined();
+    expect(await readSavedPlan(homeId, "failed")).toBeUndefined();
+    expect(await readSavedPlan(homeId, "absent")).toBeUndefined();
+  });
+});
+
+describe("libraryRecipeLockKey", () => {
+  it("gives different keys for two kitchens with the same slug and the same key for the same kitchen and slug", () => {
+    const kitchenA = "00000000-0000-4000-8000-000000000001";
+    const kitchenB = "00000000-0000-4000-8000-000000000002";
+    expect(libraryRecipeLockKey(kitchenA, "zucchini-wraps")).toBe(
+      libraryRecipeLockKey(kitchenA, "zucchini-wraps"),
+    );
+    expect(libraryRecipeLockKey(kitchenA, "zucchini-wraps")).not.toBe(
+      libraryRecipeLockKey(kitchenB, "zucchini-wraps"),
+    );
   });
 });
 
@@ -321,7 +342,7 @@ describe("storeLibraryPlan", () => {
 
   it("writes a plan to the row it was made for", async () => {
     await insertRow("zucchini-wraps");
-    expect(await storeLibraryPlan("zucchini-wraps", HASH, columns)).toBe("stored");
+    expect(await storeLibraryPlan(homeId, "zucchini-wraps", HASH, columns)).toBe("stored");
     expect(await planColumns("zucchini-wraps")).toEqual(columns);
   });
 
@@ -329,28 +350,28 @@ describe("storeLibraryPlan", () => {
     await insertRow("zucchini-wraps");
     // A Refresh rewrites the steps between the derivation and the write.
     await db.update(docRecipes).set({ steps: REWORDED.steps }).where(eq(docRecipes.docSlug, "zucchini-wraps"));
-    expect(await storeLibraryPlan("zucchini-wraps", HASH, columns)).toBe("changed under it");
+    expect(await storeLibraryPlan(homeId, "zucchini-wraps", HASH, columns)).toBe("changed under it");
     expect(await planColumns("zucchini-wraps")).toEqual(NO_PLAN);
   });
 
   it("leaves a current plan alone", async () => {
     await insertRow("zucchini-wraps", columns);
     const other = { ...columns, cookPlan: null, cookPlanError: "rejected (cycle): x" };
-    expect(await storeLibraryPlan("zucchini-wraps", HASH, other)).toBe("already current");
+    expect(await storeLibraryPlan(homeId, "zucchini-wraps", HASH, other)).toBe("already current");
     expect(await planColumns("zucchini-wraps")).toEqual(columns);
   });
 
   it("replaces a settled error (--retry-failed) and a stale plan", async () => {
     await insertRow("failed", { ...columns, cookPlan: null, cookPlanError: "rejected (cycle): x" });
     await insertRow("stale", { ...columns, cookPlanStamp: "3:0000" });
-    expect(await storeLibraryPlan("failed", HASH, columns)).toBe("stored");
-    expect(await storeLibraryPlan("stale", HASH, columns)).toBe("stored");
+    expect(await storeLibraryPlan(homeId, "failed", HASH, columns)).toBe("stored");
+    expect(await storeLibraryPlan(homeId, "stale", HASH, columns)).toBe("stored");
   });
 
   it("skips a row that is gone or whose extraction failed", async () => {
     await insertRow("failed", { extractionError: "no recipe here" });
-    expect(await storeLibraryPlan("failed", HASH, columns)).toBe("changed under it");
-    expect(await storeLibraryPlan("absent", HASH, columns)).toBe("changed under it");
+    expect(await storeLibraryPlan(homeId, "failed", HASH, columns)).toBe("changed under it");
+    expect(await storeLibraryPlan(homeId, "absent", HASH, columns)).toBe("changed under it");
   });
 });
 
@@ -398,7 +419,7 @@ describe("libraryPlanReport", () => {
     await insertRow("old", { cookPlan: ZUCCHINI_PLAN, cookPlanSourceHash: HASH, cookPlanStamp: "3:0000" });
     await insertRow("crackers", { extractionError: "no recipe here", steps: null });
 
-    expect(await libraryPlanReport()).toEqual({
+    expect(await libraryPlanReport(homeId)).toEqual({
       needFixes: [
         { slug: "salad", name: "Tomato and herb salad", error: "rejected (uncovered-step): step 2 is carried by no task" },
       ],
@@ -409,7 +430,7 @@ describe("libraryPlanReport", () => {
 
   it("reads whether a plan is stored, not the plan", async () => {
     await insertRow("current", { cookPlan: ZUCCHINI_PLAN, cookPlanSourceHash: HASH, cookPlanStamp: cookPlanStamp() });
-    const [row] = await readLibraryPlanRows();
+    const [row] = await readLibraryPlanRows(homeId);
     expect(row).not.toHaveProperty("cookPlan");
     expect(row!.hasPlan).toBe(true);
     expect(libraryPlanStatus(row!)).toBe("current");
@@ -433,7 +454,7 @@ describe("auditLibraryPlans", () => {
     await insertRow("missing", { docPosition: 3 });
     await insertRow("transient", { cookPlanError: "429", cookPlanSourceHash: HASH, cookPlanStamp: stamp, docPosition: 4 });
 
-    const audit = auditLibraryPlans(await readLibraryPlansForAudit());
+    const audit = auditLibraryPlans(await readLibraryPlansForAudit(homeId));
     expect(audit.rows.map((r) => [r.slug, r.status, r.invalid])).toEqual([
       ["good", "current", false],
       ["bad", "current", true],

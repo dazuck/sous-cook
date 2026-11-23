@@ -22,6 +22,7 @@ vi.mock("@/lib/db", async () =>
 
 import * as dbModule from "./db";
 import { conversationLogs, db, docRecipes } from "./db";
+import { homeKitchen } from "./__tests__/kitchens";
 import { CostLedger } from "./cook-plan-cost";
 import { OUTPUT_TOKENS } from "./kitchen/cook-plan-derive";
 import { cookPlanStamp, planSourceHash } from "./kitchen/cook-plan-stamp";
@@ -38,10 +39,12 @@ const client = (dbModule as unknown as { client: PGlite }).client;
 const mockChat = chat as Mock;
 const HASH = planSourceHash(ZUCCHINI_RECIPE);
 const OPEN = () => new CostLedger(100);
+let homeId: string;
 
 beforeEach(async () => {
   mockChat.mockReset();
   await client.exec("delete from doc_recipes; delete from conversation_logs");
+  homeId = (await homeKitchen(db)).id;
 });
 
 /** A step marker the stubbed chat answers by: a refused plan, a failure for now, or a reply too long for the first call. */
@@ -78,6 +81,7 @@ function stubChat(reported: { inputTokens: number; outputTokens: number } | null
 let position = 0;
 async function insertRow(docSlug: string, over: Partial<typeof docRecipes.$inferInsert> = {}) {
   await db.insert(docRecipes).values({
+    kitchenId: homeId,
     docSlug,
     name: docSlug,
     rawDocText: docSlug,
@@ -90,11 +94,11 @@ async function insertRow(docSlug: string, over: Partial<typeof docRecipes.$infer
 }
 
 async function statuses() {
-  return Object.fromEntries((await readLibraryPlanRows()).map((r) => [r.docSlug, libraryPlanStatus(r)]));
+  return Object.fromEntries((await readLibraryPlanRows(homeId)).map((r) => [r.docSlug, libraryPlanStatus(r)]));
 }
 
 async function targets(options?: Parameters<typeof selectBackfillRows>[1]) {
-  return selectBackfillRows(await readLibraryPlanRows(), options).targets;
+  return selectBackfillRows(await readLibraryPlanRows(homeId), options).targets;
 }
 
 /** What one plain recipe costs when its one call is charged its whole bound. */
@@ -102,7 +106,7 @@ async function oneRecipeAtBound(): Promise<number> {
   stubChat(null);
   await insertRow("probe");
   const ledger = OPEN();
-  await runLibraryBackfill(await targets(), ledger);
+  await runLibraryBackfill(homeId, await targets(), ledger);
   await client.exec("delete from doc_recipes; delete from conversation_logs");
   mockChat.mockReset();
   position = 0;
@@ -124,7 +128,7 @@ describe("selectBackfillRows", () => {
   });
 
   it("takes the pending rows in Doc order, with each one's hash", async () => {
-    const { targets, skipped, unknown } = selectBackfillRows(await readLibraryPlanRows());
+    const { targets, skipped, unknown } = selectBackfillRows(await readLibraryPlanRows(homeId));
     expect(targets.map((t) => [t.slug, t.status])).toEqual([
       ["missing", "missing"],
       ["old", "stale (stamp)"],
@@ -136,12 +140,12 @@ describe("selectBackfillRows", () => {
   });
 
   it("takes settled failures too with retryFailed", async () => {
-    const { targets } = selectBackfillRows(await readLibraryPlanRows(), { retryFailed: true });
+    const { targets } = selectBackfillRows(await readLibraryPlanRows(homeId), { retryFailed: true });
     expect(targets.map((t) => t.slug)).toEqual(["missing", "old", "salad", "transient"]);
   });
 
   it("narrows to the named slugs, saying which it skips and which don't exist", async () => {
-    const selection = selectBackfillRows(await readLibraryPlanRows(), { only: ["missing", "current", "salad", "nope"] });
+    const selection = selectBackfillRows(await readLibraryPlanRows(homeId), { only: ["missing", "current", "salad", "nope"] });
     expect(selection.targets.map((t) => t.slug)).toEqual(["missing"]);
     expect(selection.skipped).toEqual([
       { slug: "current", status: "current" },
@@ -200,7 +204,7 @@ describe("runLibraryBackfill", () => {
     await insertRow("busy", { steps: withStep(FOR_NOW) });
     const ledger = OPEN();
 
-    const result = await runLibraryBackfill(await targets(), ledger);
+    const result = await runLibraryBackfill(homeId, await targets(), ledger);
     expect(Object.fromEntries(result.rows.map((r) => [r.slug, [r.outcome, r.stored]]))).toEqual({
       wraps: ["plan", "stored"],
       salty: ["failed settled", "stored"],
@@ -224,14 +228,14 @@ describe("runLibraryBackfill", () => {
     for (const slug of ["a", "b", "c", "d", "e"]) await insertRow(slug);
     let inFlight = 0;
     let most = 0;
-    const slow: DeriveLibraryRow = async (slug, recipe, meter) => {
+    const slow: DeriveLibraryRow = async (kitchenId, slug, recipe, meter) => {
       inFlight++;
       most = Math.max(most, inFlight);
       await new Promise((resolve) => setTimeout(resolve, 5));
       inFlight--;
-      return deriveLibraryPlan(slug, recipe, meter);
+      return deriveLibraryPlan(kitchenId, slug, recipe, meter);
     };
-    const result = await runLibraryBackfill(await targets(), OPEN(), { derive: slow });
+    const result = await runLibraryBackfill(homeId, await targets(), OPEN(), { derive: slow });
     expect(result.rows).toHaveLength(5);
     expect(most).toBe(2);
   });
@@ -242,7 +246,7 @@ describe("runLibraryBackfill", () => {
     for (const slug of ["a", "b", "c", "d", "e", "f", "g", "h"]) await insertRow(slug);
     // Room for two and a half recipes: two run at once, the third call is refused.
     const ledger = new CostLedger(2.5 * perRecipe);
-    const first = await runLibraryBackfill(await targets(), ledger);
+    const first = await runLibraryBackfill(homeId, await targets(), ledger);
     expect(first.stop).toBe("cap");
     expect(first.rows.map((r) => r.slug)).toEqual(["a", "b"]);
     expect(first.left).toEqual(["c", "d", "e", "f", "g", "h"]);
@@ -254,7 +258,7 @@ describe("runLibraryBackfill", () => {
 
     const rest = await targets();
     expect(rest.map((t) => t.slug)).toEqual(first.left);
-    const second = await runLibraryBackfill(rest, OPEN());
+    const second = await runLibraryBackfill(homeId, rest, OPEN());
     expect(second).toMatchObject({ stop: null, left: [] });
     expect(Object.values(await statuses()).every((s) => s === "current")).toBe(true);
   });
@@ -265,7 +269,7 @@ describe("runLibraryBackfill", () => {
     await insertRow("long", { steps: withStep(LONG) });
     // The first call fits; its 16,384-token retry does not.
     const ledger = new CostLedger(1.5 * perRecipe);
-    const result = await runLibraryBackfill(await targets(), ledger);
+    const result = await runLibraryBackfill(homeId, await targets(), ledger);
     expect(result).toMatchObject({ rows: [], left: ["long"], stop: "cap" });
     expect(mockChat).toHaveBeenCalledTimes(1);
     expect(ledger.spentUsd).toBeLessThanOrEqual(ledger.maxUsd);
@@ -278,7 +282,7 @@ describe("runLibraryBackfill", () => {
     await insertRow("salty", { steps: withStep(REFUSED) });
     // The first call fits; the re-ask, carrying the reply and the correction, does not.
     const ledger = new CostLedger(1.5 * perRecipe);
-    const result = await runLibraryBackfill(await targets(), ledger);
+    const result = await runLibraryBackfill(homeId, await targets(), ledger);
     expect(result).toMatchObject({ rows: [], left: ["salty"], stop: "cap" });
     expect(mockChat).toHaveBeenCalledTimes(1);
     expect(ledger.refused).toBe(1);
@@ -297,7 +301,7 @@ describe("runLibraryBackfill", () => {
     const perRecipe = await oneRecipeAtBound();
     stubChat(null);
     await insertRow("a");
-    const result = await runLibraryBackfill(await targets(), new CostLedger(perRecipe / 2));
+    const result = await runLibraryBackfill(homeId, await targets(), new CostLedger(perRecipe / 2));
     expect(result).toMatchObject({ rows: [], left: ["a"], stop: "cap" });
     expect(mockChat).not.toHaveBeenCalled();
   });
@@ -305,7 +309,7 @@ describe("runLibraryBackfill", () => {
   it("stops on a valid rate below the gate once 10 outcomes have settled", async () => {
     stubChat();
     for (let i = 0; i < 14; i++) await insertRow(`r${String(i).padStart(2, "0")}`, { steps: withStep(REFUSED) });
-    const result = await runLibraryBackfill(await targets(), OPEN());
+    const result = await runLibraryBackfill(homeId, await targets(), OPEN());
     expect(result.stop).toBe("valid rate");
     expect(result.settled).toBeGreaterThanOrEqual(10);
     expect(result.valid).toBe(0);
@@ -323,14 +327,14 @@ describe("runLibraryBackfill", () => {
   it.each([1, 10, 14])("never stops on a lone miss, here at row %i of 15", async (miss) => {
     stubChat();
     await insertRun(15, [miss]);
-    const result = await runLibraryBackfill(await targets(), OPEN(), { concurrency: 1 });
+    const result = await runLibraryBackfill(homeId, await targets(), OPEN(), { concurrency: 1 });
     expect(result).toMatchObject({ stop: null, left: [], valid: 14, settled: 15 });
   });
 
   it("stops on a second miss by row 15, at that row", async () => {
     stubChat();
     await insertRun(20, [14, 15]);
-    const result = await runLibraryBackfill(await targets(), OPEN(), { concurrency: 1 });
+    const result = await runLibraryBackfill(homeId, await targets(), OPEN(), { concurrency: 1 });
     expect(result).toMatchObject({ stop: "valid rate", valid: 13, settled: 15 });
     expect(result.left).toEqual(["r16", "r17", "r18", "r19", "r20"]);
   });
@@ -338,7 +342,7 @@ describe("runLibraryBackfill", () => {
   it("goes on with two misses in 30 (28/30, at the gate), and stops on the third", async () => {
     stubChat();
     await insertRun(31, [1, 30, 31]);
-    const result = await runLibraryBackfill(await targets(), OPEN(), { concurrency: 1 });
+    const result = await runLibraryBackfill(homeId, await targets(), OPEN(), { concurrency: 1 });
     // Row 30 left the run going at 28/30; row 31's miss made 28/31.
     expect(result.rows).toHaveLength(31);
     expect(result).toMatchObject({ stop: "valid rate", left: [], valid: 28, settled: 31 });
@@ -347,7 +351,7 @@ describe("runLibraryBackfill", () => {
   it("doesn't judge the rate before 10 settled outcomes", async () => {
     stubChat();
     for (let i = 0; i < 9; i++) await insertRow(`r${i}`, { steps: withStep(REFUSED) });
-    const result = await runLibraryBackfill(await targets(), OPEN());
+    const result = await runLibraryBackfill(homeId, await targets(), OPEN());
     expect(result).toMatchObject({ stop: null, left: [], settled: 9 });
   });
 
@@ -358,7 +362,7 @@ describe("runLibraryBackfill", () => {
       await db.update(docRecipes).set({ steps: withStep(REFUSED) }).where(eq(docRecipes.docSlug, "wraps"));
       return { content: JSON.stringify(zucchiniRaw()), finishReason: "stop" };
     });
-    const result = await runLibraryBackfill(await targets(), OPEN());
+    const result = await runLibraryBackfill(homeId, await targets(), OPEN());
     expect(result.rows).toEqual([
       { slug: "wraps", name: "wraps", outcome: "plan", stored: "changed under it", detail: null },
     ]);
@@ -372,11 +376,11 @@ describe("runLibraryBackfill", () => {
     stubChat();
     await insertRow("a");
     await insertRow("b");
-    const flaky: DeriveLibraryRow = async (slug, recipe, meter) => {
+    const flaky: DeriveLibraryRow = async (kitchenId, slug, recipe, meter) => {
       if (slug === "a") throw new Error("connection reset");
-      return deriveLibraryPlan(slug, recipe, meter);
+      return deriveLibraryPlan(kitchenId, slug, recipe, meter);
     };
-    const result = await runLibraryBackfill(await targets(), OPEN(), { derive: flaky, concurrency: 1 });
+    const result = await runLibraryBackfill(homeId, await targets(), OPEN(), { derive: flaky, concurrency: 1 });
     expect(result.rows.map((r) => [r.slug, r.outcome, r.stored, r.detail])).toEqual([
       ["a", "threw", null, "connection reset"],
       ["b", "plan", "stored", null],
@@ -390,7 +394,7 @@ describe("runLibraryBackfill", () => {
     const store = async (): Promise<never> => {
       throw new Error("deadlock detected");
     };
-    const result = await runLibraryBackfill(await targets(), OPEN(), { store });
+    const result = await runLibraryBackfill(homeId, await targets(), OPEN(), { store });
     expect(result.rows).toEqual([{ slug: "a", name: "a", outcome: "threw", stored: null, detail: "deadlock detected" }]);
   });
 });

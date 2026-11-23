@@ -159,6 +159,128 @@ describe("Database migrations", () => {
     }
   }, 15_000);
 
+  it("MIG-3: backfills rows written with a null kitchen_id since 0001, deduplicates recipe_ideas_cache per kitchen, and enforces not-null and unique constraints", async () => {
+    const cut = migrationsUpTo(2);
+    const { client, db } = await migratedTestDb(cut.dir);
+    try {
+      const home = await homeKitchen(db);
+      const { kitchen: other } = await seedKitchen(db, {
+        slug: "other-kitchen",
+        name: "Other Kitchen",
+      });
+
+      const reportId = "1f8fad5b-d9cb-469f-a165-70867728950e";
+      const ideaOlderId = "00000000-0000-4000-8000-000000000010";
+      const ideaNewerId = "00000000-0000-4000-8000-000000000020";
+      const ideaTieLowId = "00000000-0000-4000-8000-000000000030";
+      const ideaTieHighId = "00000000-0000-4000-8000-000000000040";
+
+      await client.exec(`
+        -- Rows written with null kitchen_id between 0001 and 0003 in all five owned tables.
+        INSERT INTO "kitchen_queue" ("kitchen_id", "recipe_data", "status")
+        VALUES (NULL, '{"name":"Null Kitchen Soup"}'::jsonb, 'pending');
+
+        INSERT INTO "doc_recipes" ("kitchen_id", "doc_slug", "name", "raw_doc_text")
+        VALUES (NULL, 'null-kitchen-dal', 'Null Kitchen Dal', 'Dal recipe');
+
+        INSERT INTO "conversation_logs" ("kitchen_id", "session_id", "role", "content")
+        VALUES (NULL, 'null-session', 'user', 'Hello');
+
+        INSERT INTO "cook_reports" (
+          "id", "kitchen_id", "captured_at", "build", "path", "screen", "recipe_name",
+          "state", "context", "events", "dom"
+        ) VALUES (
+          '${reportId}',
+          NULL,
+          '2026-10-10T10:00:00.000Z',
+          'test-build-2',
+          '/kitchen/queue/2',
+          'step',
+          'Dal',
+          '{"mode":"first"}'::jsonb,
+          '{"online":true}'::jsonb,
+          '[]'::jsonb,
+          '<div>step</div>'
+        );
+
+        -- Home gets two recipe_ideas_cache rows (one older with null kitchen_id, one newer with home's id).
+        INSERT INTO "recipe_ideas_cache" ("id", "kitchen_id", "text", "synced_at")
+        VALUES
+          ('${ideaOlderId}', NULL, 'Older home ideas', '2026-10-01T10:00:00.000Z'),
+          ('${ideaNewerId}', '${home.id}', 'Newer home ideas', '2026-10-02T10:00:00.000Z');
+
+        -- Other kitchen gets two recipe_ideas_cache rows with the exact same synced_at: higher id survives.
+        INSERT INTO "recipe_ideas_cache" ("id", "kitchen_id", "text", "synced_at")
+        VALUES
+          ('${ideaTieLowId}', '${other.id}', 'Tied low id', '2026-10-03T10:00:00.000Z'),
+          ('${ideaTieHighId}', '${other.id}', 'Tied high id', '2026-10-03T10:00:00.000Z');
+      `);
+
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+
+      // All previously-null rows now belong to home.
+      const queueRows = await client.query<{ kitchen_id: string }>(
+        `SELECT kitchen_id FROM "kitchen_queue"`,
+      );
+      expect(queueRows.rows).toEqual([{ kitchen_id: home.id }]);
+
+      const docRows = await client.query<{ kitchen_id: string; doc_slug: string }>(
+        `SELECT kitchen_id, doc_slug FROM "doc_recipes"`,
+      );
+      expect(docRows.rows).toEqual([
+        { kitchen_id: home.id, doc_slug: "null-kitchen-dal" },
+      ]);
+
+      const logRows = await client.query<{ kitchen_id: string }>(
+        `SELECT kitchen_id FROM "conversation_logs"`,
+      );
+      expect(logRows.rows).toEqual([{ kitchen_id: home.id }]);
+
+      const reportRows = await client.query<{ id: string; kitchen_id: string }>(
+        `SELECT id, kitchen_id FROM "cook_reports"`,
+      );
+      expect(reportRows.rows).toEqual([{ id: reportId, kitchen_id: home.id }]);
+
+      // Exactly one ideas cache row survives per kitchen: newer for home, higher id for tie.
+      const ideasRows = await client.query<{
+        id: string;
+        kitchen_id: string;
+        text: string;
+      }>(
+        `SELECT id, kitchen_id, text FROM "recipe_ideas_cache" ORDER BY id`,
+      );
+      expect(ideasRows.rows).toEqual([
+        { id: ideaNewerId, kitchen_id: home.id, text: "Newer home ideas" },
+        { id: ideaTieHighId, kitchen_id: other.id, text: "Tied high id" },
+      ]);
+
+      // Two kitchens can hold the same doc_slug after the unique constraint swap.
+      await client.exec(`
+        INSERT INTO "doc_recipes" ("kitchen_id", "doc_slug", "name", "raw_doc_text")
+        VALUES ('${other.id}', 'null-kitchen-dal', 'Other Dal', 'Other Dal recipe');
+      `);
+
+      // Unique constraint on recipe_ideas_cache (kitchen_id) holds.
+      await expect(
+        client.exec(`
+          INSERT INTO "recipe_ideas_cache" ("kitchen_id", "text")
+          VALUES ('${home.id}', 'Duplicate home ideas');
+        `),
+      ).rejects.toThrow(/recipe_ideas_cache_kitchen_unique/);
+
+      // Not-null constraint on kitchen_id holds.
+      await expect(
+        client.exec(`
+          INSERT INTO "kitchen_queue" ("kitchen_id", "recipe_data", "status")
+          VALUES (NULL, '{"name":"Rejected"}'::jsonb, 'pending');
+        `),
+      ).rejects.toThrow(/kitchen_id/);
+    } finally {
+      await client.close();
+      cut.cleanup();
+    }
+  }, 15_000);
+
   it("MIG-4: a migration that fails part-way rolls back its DDL and records no migration row", async () => {
     const tmpDir = mkdtempSync(path.join(os.tmpdir(), "sous-mig4-"));
     const client = new PGlite();

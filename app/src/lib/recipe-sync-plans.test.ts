@@ -26,6 +26,7 @@ vi.mock("@/lib/db", async () =>
 
 import * as dbModule from "./db";
 import { db, docRecipes } from "./db";
+import { homeKitchen } from "./__tests__/kitchens";
 import { chat } from "./ai";
 import { extractRecipeFromText, type ImportedRecipe } from "./recipe-import";
 import type { LibraryTab } from "./hooks/types";
@@ -37,12 +38,14 @@ import { CostLedger, callCostUsd } from "./cook-plan-cost";
 const client = (dbModule as unknown as { client: PGlite }).client;
 const mockChat = chat as Mock;
 const mockExtract = extractRecipeFromText as Mock;
+let homeId: string;
 
 beforeEach(async () => {
   mockChat.mockReset();
   mockExtract.mockReset();
   readTabs.mockReset();
   await client.exec("delete from doc_recipes; delete from conversation_logs");
+  homeId = (await homeKitchen(db)).id;
 });
 
 const OPEN: PlanBudget = { start: () => new CostLedger(Infinity).meter() };
@@ -99,7 +102,7 @@ describe("Refresh's plans", () => {
     extractAs(ZUCCHINI_RECIPE);
     mockChat.mockResolvedValue(replyPlan());
 
-    const result = await syncRecipesFromDoc({ planBudget: OPEN });
+    const result = await syncRecipesFromDoc(homeId, { planBudget: OPEN });
 
     expect(result.plans).toEqual({ derived: 2, reused: 0, pending: 0, failed: [] });
     expect(mockChat).toHaveBeenCalledTimes(2);
@@ -114,10 +117,10 @@ describe("Refresh's plans", () => {
     docOf("Zucchini wraps", "Paratha rolls");
     extractAs(ZUCCHINI_RECIPE);
     mockChat.mockResolvedValue(replyPlan());
-    await syncRecipesFromDoc({ planBudget: OPEN });
+    await syncRecipesFromDoc(homeId, { planBudget: OPEN });
     mockChat.mockClear();
 
-    const again = await syncRecipesFromDoc({ planBudget: OPEN });
+    const again = await syncRecipesFromDoc(homeId, { planBudget: OPEN });
 
     expect(again.plans).toEqual({ derived: 0, reused: 2, pending: 0, failed: [] });
     expect(mockChat).not.toHaveBeenCalled();
@@ -128,11 +131,11 @@ describe("Refresh's plans", () => {
     docOf("Zucchini wraps");
     extractAs(ZUCCHINI_RECIPE);
     mockChat.mockResolvedValue(replyPlan());
-    await syncRecipesFromDoc({ planBudget: OPEN });
+    await syncRecipesFromDoc(homeId, { planBudget: OPEN });
 
     extractAs(REWORDED);
     mockChat.mockClear();
-    const result = await syncRecipesFromDoc({ planBudget: OPEN });
+    const result = await syncRecipesFromDoc(homeId, { planBudget: OPEN });
 
     expect(result.plans.derived).toBe(1);
     expect(mockChat).toHaveBeenCalledTimes(1);
@@ -145,12 +148,12 @@ describe("Refresh's plans", () => {
     docOf("Zucchini wraps", "Paratha rolls", "Wrap night");
     extractAs(ZUCCHINI_RECIPE);
     mockChat.mockResolvedValue(replyPlan());
-    await syncRecipesFromDoc({ planBudget: OPEN });
+    await syncRecipesFromDoc(homeId, { planBudget: OPEN });
 
     // The Doc's steps change, and the budget is already spent.
     extractAs(REWORDED);
     mockChat.mockClear();
-    const result = await syncRecipesFromDoc({ planBudget: planBudget(0) });
+    const result = await syncRecipesFromDoc(homeId, { planBudget: planBudget(0) });
 
     expect(result.plans).toEqual({ derived: 0, reused: 0, pending: 3, failed: [] });
     expect(result.succeeded).toBe(3);
@@ -175,10 +178,10 @@ describe("Refresh's plans", () => {
       return t;
     };
 
-    const first = await syncRecipesFromDoc({ planBudget: planBudget(REFRESH_PLAN_BUDGET_MS, clock) });
+    const first = await syncRecipesFromDoc(homeId, { planBudget: planBudget(REFRESH_PLAN_BUDGET_MS, clock) });
     expect(first.plans).toEqual({ derived: 1, reused: 0, pending: 2, failed: [] });
 
-    const second = await syncRecipesFromDoc({ planBudget: OPEN });
+    const second = await syncRecipesFromDoc(homeId, { planBudget: OPEN });
     expect(second.plans).toEqual({ derived: 2, reused: 1, pending: 0, failed: [] });
     expect(mockChat).toHaveBeenCalledTimes(3);
   });
@@ -193,13 +196,13 @@ describe("Refresh's plans", () => {
     }));
     // Room for two calls' bounds, with four derivations in flight at once.
     const ledger = new CostLedger(callCostUsd(2 * 13_000, 2 * 8_192));
-    const first = await syncRecipesFromDoc({ planBudget: planBudget(REFRESH_PLAN_BUDGET_MS, Date.now, ledger) });
+    const first = await syncRecipesFromDoc(homeId, { planBudget: planBudget(REFRESH_PLAN_BUDGET_MS, Date.now, ledger) });
     expect(first.plans).toEqual({ derived: 2, reused: 0, pending: 3, failed: [] });
     expect(first.succeeded).toBe(5);
     expect(ledger.spentUsd).toBeLessThanOrEqual(ledger.maxUsd);
     expect(mockChat).toHaveBeenCalledTimes(2);
 
-    const second = await syncRecipesFromDoc({ planBudget: planBudget() });
+    const second = await syncRecipesFromDoc(homeId, { planBudget: planBudget() });
     expect(second.plans).toEqual({ derived: 3, reused: 2, pending: 0, failed: [] });
   });
 
@@ -207,7 +210,7 @@ describe("Refresh's plans", () => {
     docOf("Zucchini wraps", "Paratha rolls", "Wrap night");
     extractAs(ZUCCHINI_RECIPE);
     mockChat.mockResolvedValue(replyPlan());
-    await syncRecipesFromDoc({ planBudget: OPEN });
+    await syncRecipesFromDoc(homeId, { planBudget: OPEN });
 
     // The next Refresh rewords a step; one recipe's derivation never returns.
     extractAs(REWORDED);
@@ -216,7 +219,7 @@ describe("Refresh's plans", () => {
     mockChat
       .mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
       .mockResolvedValue(replyPlan());
-    const run = syncRecipesFromDoc({ planBudget: OPEN });
+    const run = syncRecipesFromDoc(homeId, { planBudget: OPEN });
 
     await vi.waitFor(async () => {
       const rows = await db.select().from(docRecipes);
@@ -240,14 +243,14 @@ describe("Refresh's plans", () => {
     extractAs(ZUCCHINI_RECIPE);
     mockChat.mockResolvedValue(replyUncovered());
 
-    const first = await syncRecipesFromDoc({ planBudget: OPEN });
+    const first = await syncRecipesFromDoc(homeId, { planBudget: OPEN });
     expect(first.plans.failed).toEqual([
       { name: "Tomato and herb salad", error: expect.stringMatching(/^rejected \(uncovered-step\)/), settled: true },
     ]);
     expect((await row("tomato-and-herb-salad"))?.cookPlanError).toMatch(/^rejected/);
 
     mockChat.mockClear();
-    const again = await syncRecipesFromDoc({ planBudget: OPEN });
+    const again = await syncRecipesFromDoc(homeId, { planBudget: OPEN });
     expect(mockChat).not.toHaveBeenCalled();
     expect(again.plans.reused).toBe(1);
     expect(again.plans.failed).toEqual([expect.objectContaining({ name: "Tomato and herb salad", settled: true })]);
@@ -258,11 +261,11 @@ describe("Refresh's plans", () => {
     extractAs(ZUCCHINI_RECIPE);
     mockChat.mockRejectedValueOnce(new Error("429 Too Many Requests"));
 
-    const first = await syncRecipesFromDoc({ planBudget: OPEN });
+    const first = await syncRecipesFromDoc(homeId, { planBudget: OPEN });
     expect(first.plans.failed).toEqual([{ name: "Zucchini wraps", error: "429 Too Many Requests", settled: false }]);
 
     mockChat.mockResolvedValue(replyPlan());
-    const second = await syncRecipesFromDoc({ planBudget: OPEN });
+    const second = await syncRecipesFromDoc(homeId, { planBudget: OPEN });
     expect(second.plans).toEqual({ derived: 1, reused: 0, pending: 0, failed: [] });
     expect((await row("zucchini-wraps"))?.cookPlan).toEqual(ZUCCHINI_PLAN);
   });
@@ -271,12 +274,12 @@ describe("Refresh's plans", () => {
     docOf("Zucchini wraps");
     extractAs(ZUCCHINI_RECIPE);
     mockChat.mockResolvedValue(replyPlan());
-    await syncRecipesFromDoc({ planBudget: OPEN });
+    await syncRecipesFromDoc(homeId, { planBudget: OPEN });
 
     // The unchanged tab comes back without its steps: the saved recipe is kept.
     extractAs({ ingredients: ZUCCHINI_RECIPE.ingredients });
     mockChat.mockClear();
-    const result = await syncRecipesFromDoc({ planBudget: OPEN });
+    const result = await syncRecipesFromDoc(homeId, { planBudget: OPEN });
 
     expect(result.failures).toEqual([{ name: "Zucchini wraps", error: expect.stringMatching(/saved recipe was kept/) }]);
     expect(result.plans).toEqual({ derived: 0, reused: 0, pending: 0, failed: [] });
@@ -292,7 +295,7 @@ describe("Refresh's plans", () => {
       text.startsWith("Crackers") ? null : { recipe: { name: "Zucchini wraps", serves: 4, ...ZUCCHINI_RECIPE }, notices: [] },
     );
     mockChat.mockResolvedValue(replyPlan());
-    await syncRecipesFromDoc({ planBudget: OPEN });
+    await syncRecipesFromDoc(homeId, { planBudget: OPEN });
     const crackers = await row("crackers");
     expect(crackers?.extractionError).not.toBeNull();
     expect(crackers?.cookPlan).toBeNull();
@@ -300,7 +303,7 @@ describe("Refresh's plans", () => {
 
     mockExtract.mockResolvedValue(null);
     mockChat.mockClear();
-    const result = await syncRecipesFromDoc({ planBudget: OPEN });
+    const result = await syncRecipesFromDoc(homeId, { planBudget: OPEN });
     expect(mockChat).not.toHaveBeenCalled();
     expect(result.plans).toEqual({ derived: 0, reused: 0, pending: 0, failed: [] });
     expect((await row("zucchini-wraps"))?.cookPlan).toEqual(ZUCCHINI_PLAN);
@@ -309,7 +312,7 @@ describe("Refresh's plans", () => {
   it("a recipe with no steps is saved with no plan and no call", async () => {
     docOf("Zucchini wraps");
     extractAs({ ingredients: ZUCCHINI_RECIPE.ingredients, steps: [] });
-    const result = await syncRecipesFromDoc({ planBudget: OPEN });
+    const result = await syncRecipesFromDoc(homeId, { planBudget: OPEN });
     expect(mockChat).not.toHaveBeenCalled();
     expect(result.plans).toEqual({ derived: 0, reused: 0, pending: 0, failed: [] });
     expect((await row("zucchini-wraps"))?.cookPlan).toBeNull();
@@ -321,9 +324,9 @@ describe("readFamilyLibrary", () => {
     docOf("Zucchini wraps");
     extractAs(ZUCCHINI_RECIPE);
     mockChat.mockResolvedValue(replyPlan());
-    await syncRecipesFromDoc({ planBudget: OPEN });
+    await syncRecipesFromDoc(homeId, { planBudget: OPEN });
 
-    const [shelfRow] = await readFamilyLibrary();
+    const [shelfRow] = await readFamilyLibrary(homeId);
     expect(shelfRow).not.toHaveProperty("cookPlan");
     expect(shelfRow).toMatchObject({ docSlug: "zucchini-wraps", cookPlanSourceHash: HASH, cookPlanError: null });
   });

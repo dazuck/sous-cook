@@ -8,6 +8,7 @@ import {
   bigint,
   boolean,
   index,
+  unique,
   check,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
@@ -86,9 +87,11 @@ export const conversationLogs = pgTable(
   "conversation_logs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    kitchenId: uuid("kitchen_id").references(() => kitchens.id, {
-      onDelete: "restrict",
-    }),
+    kitchenId: uuid("kitchen_id")
+      .notNull()
+      .references(() => kitchens.id, {
+        onDelete: "restrict",
+      }),
     sessionId: text("session_id").notNull(),
     role: text("role").notNull(), // 'user' | 'assistant' | 'system'
     content: text("content").notNull(),
@@ -192,9 +195,11 @@ function servesEstimateChecks(
  */
 export const kitchenQueue = pgTable("kitchen_queue", {
   id: uuid("id").primaryKey().defaultRandom(),
-  kitchenId: uuid("kitchen_id").references(() => kitchens.id, {
-    onDelete: "restrict",
-  }),
+  kitchenId: uuid("kitchen_id")
+    .notNull()
+    .references(() => kitchens.id, {
+      onDelete: "restrict",
+    }),
   recipeNotionId: text("recipe_notion_id"), // Reference to Notion recipe (optional)
   recipeData: jsonb("recipe_data").$type<KitchenQueueRecipeData>(), // Full recipe data if no Notion ID
   targetUser: text("target_user"), // deprecated cook slug; kept nullable until a later cleanup migration drops it
@@ -338,10 +343,12 @@ export type CookLogRef = {
  */
 export const docRecipes = pgTable("doc_recipes", {
   id: uuid("id").primaryKey().defaultRandom(),
-  kitchenId: uuid("kitchen_id").references(() => kitchens.id, {
-    onDelete: "restrict",
-  }),
-  docSlug: text("doc_slug").notNull().unique(),
+  kitchenId: uuid("kitchen_id")
+    .notNull()
+    .references(() => kitchens.id, {
+      onDelete: "restrict",
+    }),
+  docSlug: text("doc_slug").notNull(),
   name: text("name").notNull(),
   category: text("category"), // cuisine divider it fell under, e.g. "indian"
   ingredients: jsonb("ingredients").$type<ChatRecipeIngredient[]>(),
@@ -405,20 +412,27 @@ export const docRecipes = pgTable("doc_recipes", {
     "doc_recipes_cook_plan_or_error",
     sql`${t.cookPlan} is null or ${t.cookPlanError} is null`,
   ),
+  unique("doc_recipes_kitchen_slug_unique").on(t.kitchenId, t.docSlug),
 ]).enableRLS();
 
 /**
  * Single-row cache of the recipe-idea backlog doc, refreshed when read so the
  * ideas tab degrades to the last-known list if the doc fetch fails.
  */
-export const recipeIdeasCache = pgTable("recipe_ideas_cache", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  kitchenId: uuid("kitchen_id").references(() => kitchens.id, {
-    onDelete: "restrict",
-  }),
-  text: text("text").notNull(),
-  syncedAt: timestamp("synced_at").defaultNow().notNull(),
-}).enableRLS();
+export const recipeIdeasCache = pgTable(
+  "recipe_ideas_cache",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kitchenId: uuid("kitchen_id")
+      .notNull()
+      .references(() => kitchens.id, {
+        onDelete: "restrict",
+      }),
+    text: text("text").notNull(),
+    syncedAt: timestamp("synced_at").defaultNow().notNull(),
+  },
+  (t) => [unique("recipe_ideas_cache_kitchen_unique").on(t.kitchenId)],
+).enableRLS();
 
 // =============================================================================
 // Cook reports (B2: the dogfood flag)
@@ -441,9 +455,11 @@ export const cookReports = pgTable(
   "cook_reports",
   {
     id: uuid("id").primaryKey(),
-    kitchenId: uuid("kitchen_id").references(() => kitchens.id, {
-      onDelete: "restrict",
-    }),
+    kitchenId: uuid("kitchen_id")
+      .notNull()
+      .references(() => kitchens.id, {
+        onDelete: "restrict",
+      }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

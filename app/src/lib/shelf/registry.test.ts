@@ -54,7 +54,7 @@ const noFamily: FamilyLibraryReader = () =>
 function docRow(slug: string, over: Partial<DocRecipeRow> = {}): DocRecipeRow {
   return {
     id: `00000000-0000-4000-8000-${slug.padStart(12, "0").slice(-12)}`,
-    kitchenId: null,
+    kitchenId: "00000000-0000-4000-8000-000000000001",
     docSlug: slug,
     name: slug,
     category: null,

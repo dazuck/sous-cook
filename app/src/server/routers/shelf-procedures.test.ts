@@ -49,8 +49,10 @@ vi.mock("../../lib/shelf/load", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../lib/shelf/load")>();
   return {
     ...original,
-    loadAppShelf: (options?: Parameters<typeof original.loadAppShelf>[0]) =>
-      original.loadAppShelf({ ...options, ...shelfAt }),
+    loadAppShelf: (
+      kitchenId: string,
+      options?: Parameters<typeof original.loadAppShelf>[1],
+    ) => original.loadAppShelf(kitchenId, { ...options, ...shelfAt }),
   };
 });
 
@@ -70,7 +72,7 @@ const QUEUE_ID = "3f1c2a9e-5b7d-4e8f-9a0b-1c2d3e4f5a6b";
 function docRow(slug: string, over: Partial<DocRecipeRow> = {}): DocRecipeRow {
   return {
     id: `00000000-0000-4000-8000-${slug.padStart(12, "0").slice(-12)}`,
-    kitchenId: null,
+    kitchenId: HOME.id,
     docSlug: slug,
     name: slug,
     category: "indian",

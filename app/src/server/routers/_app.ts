@@ -250,10 +250,10 @@ async function queueWithStoredPlan(
  * can't read leaves the count off rather than the shelf (the ideas are
  * non-critical, as the Ideas list's own cached fallback has it); it is logged.
  */
-async function ideasCount(): Promise<number | null> {
+async function ideasCount(kitchenId: string): Promise<number | null> {
   if (!connected.ideas) return 0;
   try {
-    return await cachedIdeasCount();
+    return await cachedIdeasCount(kitchenId);
   } catch (error) {
     console.error("[shelf] the ideas cache couldn't be read:", error);
     return null;
@@ -621,7 +621,7 @@ export const appRouter = router({
   // ==========================================================================
 
   // Import a recipe from a URL
-  importRecipeFromUrl: publicProcedure
+  importRecipeFromUrl: kitchenProcedure
     .input(z.object({ url: z.string().url() }))
     .mutation(async ({ input }) => {
       const extraction = await extractRecipeFromUrl(input.url);
@@ -633,7 +633,7 @@ export const appRouter = router({
     }),
 
   // Import a recipe from pasted text
-  importRecipeFromText: publicProcedure
+  importRecipeFromText: kitchenProcedure
     .input(z.object({ text: z.string().min(10) }))
     .mutation(async ({ input }) => {
       const extraction = await extractRecipeFromText(input.text);
@@ -645,7 +645,7 @@ export const appRouter = router({
     }),
 
   // Import a recipe from an image (photo of recipe)
-  importRecipeFromImage: publicProcedure
+  importRecipeFromImage: kitchenProcedure
     .input(z.object({ imageBase64: z.string() }))
     .mutation(async ({ input }) => {
       const extraction = await extractRecipeFromImage(input.imageBase64);
@@ -668,51 +668,54 @@ export const appRouter = router({
   // library connected), the creator packs in registry order, and the ideas
   // count from the cache (no hook is read). A pack that fails validation is
   // left off and logged.
-  getShelf: publicProcedure.query(async () => {
+  getShelf: kitchenProcedure.query(async ({ ctx }) => {
     if (!connected["recipe-library"]) {
-      const shelf = await loadAppShelf({ sources: PACK_FILE_SOURCES });
+      const shelf = await loadAppShelf(ctx.kitchen.id, { sources: PACK_FILE_SOURCES });
       return {
-        ...shelfView(shelf, await ideasCount()),
+        ...shelfView(shelf, await ideasCount(ctx.kitchen.id)),
         household: null,
       };
     }
-    const shelf = await loadAppShelf();
-    return shelfView(shelf, await ideasCount());
+    const shelf = await loadAppShelf(ctx.kitchen.id);
+    return shelfView(shelf, await ideasCount(ctx.kitchen.id));
   }),
 
   // A pack as its view draws it, or null when no pack on the shelf has the id.
   // Rows carry a title and one fact, never steps or ingredients.
-  getPack: publicProcedure
+  getPack: kitchenProcedure
     .input(z.object({ packId: z.string().min(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       if (!connected["recipe-library"]) {
         if (input.packId === HOUSEHOLD_PACK.id) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Pack not found" });
         }
-        return packView(await loadAppShelf({ sources: PACK_FILE_SOURCES }), input.packId);
+        return packView(
+          await loadAppShelf(ctx.kitchen.id, { sources: PACK_FILE_SOURCES }),
+          input.packId,
+        );
       }
-      return packView(await loadAppShelf(), input.packId);
+      return packView(await loadAppShelf(ctx.kitchen.id), input.packId);
     }),
 
   // The library's cook plans at a glance (slice P): the recipes whose plan
   // failed for good (a Doc edit is the fix), and how many still wait on one.
   // Free: it reads the columns, never a plan or the model.
-  libraryPlanReport: publicProcedure.query(() => {
+  libraryPlanReport: kitchenProcedure.query(({ ctx }) => {
     if (!connected["recipe-library"]) {
       return { needFixes: [], pending: 0, total: 0 };
     }
-    return libraryPlanReport();
+    return libraryPlanReport(ctx.kitchen.id);
   }),
 
   // Re-sync the library from its source (read → chunk → extract → upsert)
-  syncRecipes: publicProcedure.mutation(async () => {
+  syncRecipes: kitchenProcedure.mutation(async ({ ctx }) => {
     if (!connected["recipe-library"]) {
       throw new TRPCError({
         code: "FORBIDDEN",
         message: "Recipe sync is not available: no recipe library is connected",
       });
     }
-    return syncRecipesFromDoc();
+    return syncRecipesFromDoc(ctx.kitchen.id);
   }),
 
   // Queues a recipe from a pack with the plan worked out ahead for it, or
@@ -727,7 +730,8 @@ export const appRouter = router({
       z.object({
         packId: z.string().min(1),
         recipeId: z.string().min(1),
-        targetUser: UserIdSchema,
+        /** @deprecated Ignored: the kitchen comes from the session. FIXME(Part B): remove with cook-id.ts. */
+        targetUser: UserIdSchema.optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -738,7 +742,7 @@ export const appRouter = router({
         if (!connected["recipe-library"]) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Pack not found" });
         }
-        const recipe = await getDocRecipeBySlug(input.recipeId);
+        const recipe = await getDocRecipeBySlug(ctx.kitchen.id, input.recipeId);
         if (!recipe) {
           throw new TRPCError({ code: "NOT_FOUND", message: `Recipe not found in the household book: ${input.recipeId}` });
         }
@@ -763,6 +767,7 @@ export const appRouter = router({
         };
       } else {
         const shelf = await loadAppShelf(
+          ctx.kitchen.id,
           connected["recipe-library"] ? undefined : { sources: PACK_FILE_SOURCES },
         );
         const pack = shelf.packs.find((p) => p.pack.id === input.packId)?.pack;
@@ -804,15 +809,15 @@ export const appRouter = router({
     }),
 
   // Get the recipe-idea backlog (from the ideas hook, cached for resilience)
-  getRecipeIdeas: publicProcedure.query(async () => {
+  getRecipeIdeas: kitchenProcedure.query(async ({ ctx }) => {
     if (!connected.ideas) {
       return { ideas: [], syncedAt: new Date(0), stale: false };
     }
-    return getRecipeIdeas();
+    return getRecipeIdeas(ctx.kitchen.id);
   }),
 
   // Append a recipe idea to the ideas list ("save as inspiration")
-  saveRecipeIdea: publicProcedure
+  saveRecipeIdea: kitchenProcedure
     .input(z.object({ text: z.string().min(1) }))
     .mutation(async ({ input }) => {
       if (!connected.ideas) {
@@ -827,17 +832,23 @@ export const appRouter = router({
   // ==========================================================================
 
   // Store a flagged moment. A resend of a stored id counts as sent and sets
-  // the row's note to the one it carries (F4, M1); past the global cap of 100
-  // a day the outbox keeps the report waiting (F7). The cap is decided under
-  // a lock in the DB (`storeCookReport`), so racing submits can't pass it.
-  submitCookReport: publicProcedure
+  // the row's note to the one it carries; past the per-kitchen cap of 100
+  // a day the outbox keeps the report waiting. A resend whose id belongs to
+  // another kitchen answers CONFLICT.
+  submitCookReport: kitchenProcedure
     .input(CookReportInputSchema)
-    .mutation(async ({ input }) => {
-      const outcome = await storeCookReport(input);
+    .mutation(async ({ ctx, input }) => {
+      const outcome = await storeCookReport(ctx.kitchen.id, input, ctx.member?.id ?? null);
       if (outcome === "capped") {
         throw new TRPCError({
           code: "TOO_MANY_REQUESTS",
           message: `At most ${REPORTS_PER_DAY} reports a day`,
+        });
+      }
+      if (outcome === "conflict") {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Report id already in use",
         });
       }
       return { id: input.id, duplicate: outcome === "duplicate" };
@@ -845,10 +856,10 @@ export const appRouter = router({
 
   // Set a stored report's note. NOT_FOUND keeps the outbox's note dirty
   // until its report is sent (F9).
-  annotateCookReport: publicProcedure
+  annotateCookReport: kitchenProcedure
     .input(z.object({ id: z.uuid(), note: NoteSchema }))
-    .mutation(async ({ input }) => {
-      if (!(await annotateCookReport(input.id, input.note))) {
+    .mutation(async ({ ctx, input }) => {
+      if (!(await annotateCookReport(ctx.kitchen.id, input.id, input.note))) {
         throw new TRPCError({ code: "NOT_FOUND", message: "No such report" });
       }
       return { id: input.id };
@@ -859,7 +870,7 @@ export const appRouter = router({
   // ==========================================================================
 
   // Parse groceries from photo, pasted text, or voice transcript
-  parseGroceryInput: publicProcedure
+  parseGroceryInput: kitchenProcedure
     .input(
       z.object({
         type: z.enum(["image", "text", "voice"]),
@@ -875,7 +886,7 @@ export const appRouter = router({
     }),
 
   // Append new items to the pantry under target headings
-  addIngredientsToPantry: publicProcedure
+  addIngredientsToPantry: kitchenProcedure
     .input(
       z.object({
         items: z
@@ -900,12 +911,9 @@ export const appRouter = router({
   getRecipePantryReconciliation: kitchenProcedure
     .input(z.object({ queueId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
+      const stored = await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
       if (!connected.pantry) {
         return { candidates: [] };
-      }
-      const stored = await getQueueItem(ctx.kitchen.id, input.queueId);
-      if (!stored) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Queue item not found" });
       }
       // The lines the cook cooked from: intake's cut when there is one.
       const item = withCookRecipe(stored);
@@ -925,7 +933,7 @@ export const appRouter = router({
     }),
 
   // Apply confirmed deletions and quantity decrements to the pantry
-  applyPantryReconciliation: publicProcedure
+  applyPantryReconciliation: kitchenProcedure
     .input(
       z.object({
         queueId: z.string().uuid().optional(),
@@ -939,7 +947,10 @@ export const appRouter = router({
         ),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      if (input.queueId !== undefined) {
+        await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
+      }
       if (!connected.pantry) {
         return { success: true, updated: 0 };
       }
@@ -951,14 +962,14 @@ export const appRouter = router({
   // Shopping List
   // ==========================================================================
 
-  getShoppingList: publicProcedure.query(async () => {
+  getShoppingList: kitchenProcedure.query(async () => {
     if (!connected["shopping-list"]) {
       return { items: [], syncedAt: new Date(0) };
     }
     return hook("shopping-list").list();
   }),
 
-  addShoppingListItems: publicProcedure
+  addShoppingListItems: kitchenProcedure
     .input(
       z.object({
         items: z
@@ -984,7 +995,7 @@ export const appRouter = router({
       return hook("shopping-list").add(input.items);
     }),
 
-  removeShoppingListItem: publicProcedure
+  removeShoppingListItem: kitchenProcedure
     .input(
       z.object({
         rawOrKey: z
@@ -1002,7 +1013,7 @@ export const appRouter = router({
       return hook("shopping-list").remove(input.rawOrKey);
     }),
 
-  clearShoppingList: publicProcedure.mutation(async () => {
+  clearShoppingList: kitchenProcedure.mutation(async () => {
     if (!connected["shopping-list"]) {
       return { cleared: 0 };
     }

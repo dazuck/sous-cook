@@ -75,6 +75,7 @@ import {
 import { db, docRecipes } from "./db";
 import {
   NO_PLAN,
+  libraryRecipeLockKey,
   planBudget,
   planForChunk,
   readSavedPlan,
@@ -381,7 +382,7 @@ type ChunkServes =
   | { ok: false; reason: string };
 
 /** The library row's stored estimate and the hash of the text it was made from, if any. */
-async function savedEstimate(docSlug: string) {
+async function savedEstimate(kitchenId: string, docSlug: string) {
   const [row] = await db
     .select({
       servesEstimate: docRecipes.servesEstimate,
@@ -389,7 +390,13 @@ async function savedEstimate(docSlug: string) {
       servesEstimateSourceHash: docRecipes.servesEstimateSourceHash,
     })
     .from(docRecipes)
-    .where(and(eq(docRecipes.docSlug, docSlug), isNull(docRecipes.extractionError)));
+    .where(
+      and(
+        eq(docRecipes.kitchenId, kitchenId),
+        eq(docRecipes.docSlug, docSlug),
+        isNull(docRecipes.extractionError),
+      ),
+    );
   return row;
 }
 
@@ -398,9 +405,13 @@ async function savedEstimate(docSlug: string) {
  * count; the saved one when the tab is unchanged since it was made; else one
  * estimator call over the tab's text.
  */
-async function servesForChunk(chunk: RecipeChunk, recipe: ImportedRecipe): Promise<ChunkServes> {
+async function servesForChunk(
+  kitchenId: string,
+  chunk: RecipeChunk,
+  recipe: ImportedRecipe,
+): Promise<ChunkServes> {
   if (recipe.serves != null) return { ok: true, servesEstimate: null };
-  const saved = await savedEstimate(chunk.docSlug);
+  const saved = await savedEstimate(kitchenId, chunk.docSlug);
   if (
     saved !== undefined &&
     saved.servesEstimateSourceHash === sourceHash("doc_recipes", chunk.rawText) &&
@@ -454,11 +465,13 @@ async function servesForChunk(chunk: RecipeChunk, recipe: ImportedRecipe): Promi
  * writes none (and, like the rest, only over a row that never extracted).
  */
 async function saveRecipe(
+  kitchenId: string,
   { chunk, recipe, error }: ExtractionOutcome,
   servesEstimate: ServesEstimate | null = null,
   plan: LibraryPlanColumns = NO_PLAN,
 ): Promise<string | null> {
   const values = {
+    kitchenId,
     docSlug: chunk.docSlug,
     name: chunk.name,
     category: chunk.category,
@@ -479,7 +492,7 @@ async function saveRecipe(
     servesEstimateSourceHash: servesEstimate ? sourceHash("doc_recipes", chunk.rawText) : null,
     ...(recipe === null ? NO_PLAN : plan),
   };
-  const { docSlug: _docSlug, ...set } = values;
+  const { kitchenId: _kitchenId, docSlug: _docSlug, ...set } = values;
 
   try {
     if (recipe === null) {
@@ -487,7 +500,7 @@ async function saveRecipe(
         .insert(docRecipes)
         .values(values)
         .onConflictDoUpdate({
-          target: docRecipes.docSlug,
+          target: [docRecipes.kitchenId, docRecipes.docSlug],
           set,
           setWhere: isNotNull(docRecipes.extractionError),
         });
@@ -495,7 +508,7 @@ async function saveRecipe(
     }
     return await db.transaction(async (tx) => {
       await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtext(${chunk.docSlug}))`,
+        sql`select pg_advisory_xact_lock(hashtext(${libraryRecipeLockKey(kitchenId, chunk.docSlug)}))`,
       );
       const [saved] = await tx
         .select({
@@ -508,6 +521,7 @@ async function saveRecipe(
         .from(docRecipes)
         .where(
           and(
+            eq(docRecipes.kitchenId, kitchenId),
             eq(docRecipes.docSlug, chunk.docSlug),
             isNull(docRecipes.extractionError),
           ),
@@ -529,14 +543,17 @@ async function saveRecipe(
           await tx
             .update(docRecipes)
             .set({ category: chunk.category, categoryTitle: chunk.categoryTitle, docPosition: chunk.position })
-            .where(eq(docRecipes.docSlug, chunk.docSlug));
+            .where(and(eq(docRecipes.kitchenId, kitchenId), eq(docRecipes.docSlug, chunk.docSlug)));
           return keptMessage(lost);
         }
       }
       await tx
         .insert(docRecipes)
         .values(values)
-        .onConflictDoUpdate({ target: docRecipes.docSlug, set });
+        .onConflictDoUpdate({
+          target: [docRecipes.kitchenId, docRecipes.docSlug],
+          set,
+        });
       return null;
     });
   } catch (saveError) {
@@ -550,12 +567,16 @@ async function saveRecipe(
  * Names of library recipes (rows that extracted) whose slug is not in
  * `keepSlugs`: their tab was renamed or deleted since they synced.
  */
-export async function findStaleRecipes(keepSlugs: string[]): Promise<string[]> {
+export async function findStaleRecipes(
+  kitchenId: string,
+  keepSlugs: string[],
+): Promise<string[]> {
   const rows = await db
     .select({ name: docRecipes.name })
     .from(docRecipes)
     .where(
       and(
+        eq(docRecipes.kitchenId, kitchenId),
         isNull(docRecipes.extractionError),
         notInArray(docRecipes.docSlug, keepSlugs),
       ),
@@ -589,7 +610,10 @@ export function slugsInDoc(
  * chapter. Rows the walk produces that have never been saved are written
  * with their order by the save itself.
  */
-export async function writeDocOrder(chunks: readonly RecipeChunk[]): Promise<void> {
+export async function writeDocOrder(
+  kitchenId: string,
+  chunks: readonly RecipeChunk[],
+): Promise<void> {
   const walk =
     chunks.length === 0
       ? sql`select null::text as slug, null::integer as pos, null::text as title where false`
@@ -602,16 +626,19 @@ export async function writeDocOrder(chunks: readonly RecipeChunk[]): Promise<voi
       doc_position = w.pos,
       category_title = case when w.slug is null then doc_recipes.category_title else w.title end
     from doc_recipes r
-    left join (${walk}) as w(slug, pos, title) on w.slug = r.doc_slug
+    left join (${walk}) as w(slug, pos, title)
+      on w.slug = r.doc_slug and r.kitchen_id = ${kitchenId}
     where doc_recipes.id = r.id
+      and doc_recipes.kitchen_id = ${kitchenId}
+      and r.kitchen_id = ${kitchenId}
       and (w.slug is not null or doc_recipes.doc_position is not null)`);
 }
 
 /**
  * Reads the recipe library's tabs, chunks them, extracts every recipe, and
- * upserts each into doc_recipes on docSlug. Extractions run with bounded
- * concurrency and each recipe is written as soon as it extracts, so a run cut
- * short (a timeout, a crash) keeps what it finished. Skipped tabs count
+ * upserts each into doc_recipes on (kitchenId, docSlug). Extractions run with
+ * bounded concurrency and each recipe is written as soon as it extracts, so a
+ * run cut short (a timeout, a crash) keeps what it finished. Skipped tabs count
  * toward `total` and are listed first in `failures`, then failed extractions
  * and writes in doc order.
  *
@@ -628,6 +655,7 @@ export async function writeDocOrder(chunks: readonly RecipeChunk[]): Promise<voi
  * after that save with no plan and count as `pending` (Refresh again).
  */
 export async function syncRecipesFromDoc(
+  kitchenId: string,
   options: SyncRecipesOptions = {},
 ): Promise<SyncRecipesResult> {
   const budget = options.planBudget ?? planBudget();
@@ -651,7 +679,7 @@ export async function syncRecipesFromDoc(
   }
 
   // The Doc's order first: free, and kept even if the run is cut short.
-  await writeDocOrder(chunks);
+  await writeDocOrder(kitchenId, chunks);
 
   const outcomes = await mapWithConcurrency(
     chunks,
@@ -659,24 +687,25 @@ export async function syncRecipesFromDoc(
     async (chunk) => {
       const extraction = await extractChunk(chunk);
       if (extraction.recipe === null) {
-        const saveError = await saveRecipe(extraction);
+        const saveError = await saveRecipe(kitchenId, extraction);
         return { name: chunk.name, error: extraction.error ?? saveError, notices: extraction.notices, plan: null };
       }
-      const serves = await servesForChunk(chunk, extraction.recipe);
+      const serves = await servesForChunk(kitchenId, chunk, extraction.recipe);
       if (!serves.ok) {
         // Saved as a failed extraction: a saved recipe is kept whole (the
         // upsert only overwrites a row that never extracted).
         const error = `Couldn't estimate a serving count: ${serves.reason}`;
-        const saveError = await saveRecipe({ chunk, recipe: null, notices: [], error });
+        const saveError = await saveRecipe(kitchenId, { chunk, recipe: null, notices: [], error });
         return { name: chunk.name, error: saveError ?? error, notices: [], plan: null };
       }
       const plan = await planForChunk(
+        kitchenId,
         chunk.docSlug,
         extraction.recipe,
-        await readSavedPlan(chunk.docSlug),
+        await readSavedPlan(kitchenId, chunk.docSlug),
         budget,
       );
-      const saveError = await saveRecipe(extraction, serves.servesEstimate, plan.columns);
+      const saveError = await saveRecipe(kitchenId, extraction, serves.servesEstimate, plan.columns);
       // A kept recipe (or a failed write) didn't take this plan.
       return { name: chunk.name, error: saveError, notices: extraction.notices, plan: saveError === null ? plan : null };
     },
@@ -703,7 +732,7 @@ export async function syncRecipesFromDoc(
     failed: failures.length,
     failures,
     notices,
-    stale: await findStaleRecipes(slugsInDoc(chunks, skipped)),
+    stale: await findStaleRecipes(kitchenId, slugsInDoc(chunks, skipped)),
     plans: tallyPlans(outcomes),
   };
 }
@@ -743,20 +772,27 @@ export type FamilyLibraryRow = Omit<DocRecipeRow, "cookPlan">;
  * P, about 300 KB over the library) stay behind: a send reads its one row's
  * plan with `getDocRecipeBySlug`.
  */
-export async function readFamilyLibrary(): Promise<FamilyLibraryRow[]> {
+export async function readFamilyLibrary(
+  kitchenId: string,
+): Promise<FamilyLibraryRow[]> {
   const { cookPlan: _cookPlan, ...columns } = getTableColumns(docRecipes);
   return db
     .select(columns)
     .from(docRecipes)
+    .where(eq(docRecipes.kitchenId, kitchenId))
     .orderBy(sql`${docRecipes.docPosition} asc nulls last`, asc(docRecipes.name));
 }
 
-/** Fetches a single library recipe by its slug, or null if absent. */
+/** Fetches a single library recipe for a kitchen by its slug, or null if absent. */
 export async function getDocRecipeBySlug(
+  kitchenId: string,
   docSlug: string,
 ): Promise<DocRecipeRow | null> {
   const row = await db.query.docRecipes.findFirst({
-    where: eq(docRecipes.docSlug, docSlug),
+    where: and(
+      eq(docRecipes.kitchenId, kitchenId),
+      eq(docRecipes.docSlug, docSlug),
+    ),
   });
   return row ?? null;
 }

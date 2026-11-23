@@ -20,6 +20,8 @@ const TZ = "UTC";
 function row(overrides?: Partial<ListedReport>): ListedReport {
   return {
     id: "0f8fad5b-d9cb-469f-a165-70867728950e",
+    kitchenId: "00000000-0000-4000-8000-000000000001",
+    kitchenSlug: "home",
     createdAt: new Date("2026-10-04T18:00:01.000Z"),
     capturedAt: new Date("2026-10-04T18:00:00.500Z"),
     build: "b-123",
@@ -124,32 +126,69 @@ describe("movedBeforeFlag (F3)", () => {
 });
 
 describe("formatHeader", () => {
-  it("leads with the 24 h count against the cap", () => {
-    expect(formatHeader({ lastDay: 3, shown: 3, since: null, all: false }, TZ)).toBe(
-      "cook_reports: 3 in the last 24 h (cap 100). Showing 3, newest first; deploy checks hidden.",
+  it("leads with the 24 h counts per kitchen against the per-kitchen cap", () => {
+    expect(
+      formatHeader(
+        { lastDayByKitchen: [{ kitchenSlug: "home", count: 3 }], shown: 3, since: null, all: false },
+        TZ,
+      ),
+    ).toBe(
+      "cook_reports: 3 in the last 24 h (home 3/100; cap 100 per kitchen). Showing 3, newest first; deploy checks hidden.",
     );
   });
 
-  it("says when the cap is used up", () => {
-    expect(formatHeader({ lastDay: 100, shown: 20, since: null, all: true }, TZ)).toBe(
-      "cook_reports: 100 in the last 24 h (cap 100, reached: new reports wait in the outbox). Showing 20, newest first.",
+  it("says none when no kitchen has reports in the last 24 h", () => {
+    expect(
+      formatHeader(
+        { lastDayByKitchen: [], shown: 0, since: null, all: false },
+        TZ,
+      ),
+    ).toBe(
+      "cook_reports: 0 in the last 24 h (none; cap 100 per kitchen). Showing 0, newest first; deploy checks hidden.",
+    );
+  });
+
+  it("says when a kitchen's cap is used up while another kitchen still has room", () => {
+    expect(
+      formatHeader(
+        {
+          lastDayByKitchen: [
+            { kitchenSlug: "home", count: 100 },
+            { kitchenSlug: "north", count: 2 },
+          ],
+          shown: 20,
+          since: null,
+          all: true,
+        },
+        TZ,
+      ),
+    ).toBe(
+      "cook_reports: 102 in the last 24 h (home 100/100 (cap reached: new reports wait in the outbox), north 2/100; cap 100 per kitchen). Showing 20, newest first.",
     );
   });
 
   it("names the --since bound", () => {
     expect(
-      formatHeader({ lastDay: 1, shown: 0, since: new Date("2026-10-01T00:00:00Z"), all: false }, TZ),
+      formatHeader(
+        {
+          lastDayByKitchen: [{ kitchenSlug: "home", count: 1 }],
+          shown: 0,
+          since: new Date("2026-10-01T00:00:00Z"),
+          all: false,
+        },
+        TZ,
+      ),
     ).toBe(
-      "cook_reports: 1 in the last 24 h (cap 100). Showing 0 since 2026-10-01 00:00:00Z, newest first; deploy checks hidden.",
+      "cook_reports: 1 in the last 24 h (home 1/100; cap 100 per kitchen). Showing 0 since 2026-10-01 00:00:00Z, newest first; deploy checks hidden.",
     );
   });
 });
 
 describe("formatSummary", () => {
-  it("names where and when: time, recipe, screen, step, chapter, mode", () => {
+  it("names where and when: time, recipe, screen, step, chapter, mode, and kitchen", () => {
     const lines = formatSummary(row(), null, TZ);
     expect(lines[0]).toBe("2026-10-04 18:00:00Z  Mole · step · s2+s3 · chapter batch:s2 · go");
-    expect(lines).toContain("  id 0f8fad5b-d9cb-469f-a165-70867728950e · build b-123 · part 1/2 · pane open · voice always/listening");
+    expect(lines).toContain("  kitchen home · id 0f8fad5b-d9cb-469f-a165-70867728950e · build b-123 · part 1/2 · pane open · voice always/listening");
     expect(lines).toContain("  note: (none)");
   });
 
@@ -160,7 +199,7 @@ describe("formatSummary", () => {
       context: { ...base, layers: { pane: false, card: null, more: false, level: 2, read: true } },
     });
     expect(formatSummary(n, null, TZ)).toContain(
-      "  id 0f8fad5b-d9cb-469f-a165-70867728950e · build b-123 · part 1/2 · look-ahead Whole cook · step read · voice always/listening",
+      "  kitchen home · id 0f8fad5b-d9cb-469f-a165-70867728950e · build b-123 · part 1/2 · look-ahead Whole cook · step read · voice always/listening",
     );
     const atStretch = row({ context: { ...base, layers: { pane: false, card: null, more: false, level: 1, read: false } } });
     expect(formatSummary(atStretch, null, TZ).join("\n")).toContain("look-ahead Until you can step away");
@@ -210,7 +249,7 @@ describe("formatSummary", () => {
       TZ,
     );
     expect(lines).toContain(
-      "  id 0f8fad5b-d9cb-469f-a165-70867728950e · build b-123 · card on screen · voice always/listening · Ask open · DOM cut at 200 KB",
+      "  kitchen home · id 0f8fad5b-d9cb-469f-a165-70867728950e · build b-123 · card on screen · voice always/listening · Ask open · DOM cut at 200 KB",
     );
   });
 

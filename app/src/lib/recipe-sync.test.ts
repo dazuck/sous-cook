@@ -490,6 +490,7 @@ describe("slugsInDoc", () => {
 });
 
 describe("syncRecipesFromDoc", () => {
+  const KITCHEN_ID = "00000000-0000-4000-8000-000000000001";
   const values = vi.fn();
   const onConflictDoUpdate = vi.fn();
   let staleQuery = createMockQueryBuilder<{ name: string }>([]);
@@ -543,7 +544,7 @@ describe("syncRecipesFromDoc", () => {
       from: () => query,
       where: async (condition: SQL) => {
         record("read", condition);
-        const row = saved[txSteps[txSteps.length - 1].params[0] as string];
+        const row = saved[txSteps[txSteps.length - 1].params[1] as string];
         return row ? [row] : [];
       },
     };
@@ -598,7 +599,7 @@ describe("syncRecipesFromDoc", () => {
       const query = {
         from: () => query,
         where: async (condition: SQL) => {
-          const slug = dialect.sqlToQuery(condition).params[0] as string;
+          const slug = dialect.sqlToQuery(condition).params[1] as string;
           const row = savedEstimates[slug];
           return row ? [row] : [];
         },
@@ -662,7 +663,7 @@ describe("syncRecipesFromDoc", () => {
       text.startsWith("minced lamb") ? null : extracted(text),
     );
 
-    const result = await syncRecipesFromDoc();
+    const result = await syncRecipesFromDoc(KITCHEN_ID);
 
     expect(readTabs).toHaveBeenCalledTimes(1);
     expect(extractRecipeFromText).toHaveBeenCalledTimes(8);
@@ -713,7 +714,7 @@ describe("syncRecipesFromDoc", () => {
       return extracted(text);
     });
 
-    const result = await syncRecipesFromDoc();
+    const result = await syncRecipesFromDoc(KITCHEN_ID);
 
     const good = conflictFor("garlic-chutney");
     expect(good.setWhere).toBeUndefined();
@@ -722,6 +723,7 @@ describe("syncRecipesFromDoc", () => {
       name: "garlic chutney",
     });
     expect(good.set).not.toHaveProperty("docSlug");
+    expect(good.set).not.toHaveProperty("kitchenId");
 
     const failed = conflictFor("minced-lamb");
     expect(dialect.sqlToQuery(failed.setWhere as SQL).sql).toBe(
@@ -737,7 +739,9 @@ describe("syncRecipesFromDoc", () => {
     });
     // A failure is written outside any transaction, without reading first.
     expect(db.insert).toHaveBeenCalledTimes(1);
-    expect(txSteps.map((step) => step.params[0])).not.toContain("minced-lamb");
+    expect(
+      txSteps.some((step) => step.params.some((p) => String(p).includes("minced-lamb"))),
+    ).toBe(false);
   });
 
   it("locks the slug and reads the saved recipe before writing an extraction", async () => {
@@ -746,7 +750,7 @@ describe("syncRecipesFromDoc", () => {
       extracted(text),
     );
 
-    await syncRecipesFromDoc();
+    await syncRecipesFromDoc(KITCHEN_ID);
 
     expect(extractRecipeFromText).toHaveBeenCalledWith(CHUTNEY_TEXT);
     expect(db.transaction).toHaveBeenCalledTimes(1);
@@ -754,14 +758,14 @@ describe("syncRecipesFromDoc", () => {
       {
         step: "lock",
         sql: "select pg_advisory_xact_lock(hashtext($1))",
-        params: ["garlic-chutney"],
+        params: [`${KITCHEN_ID}:garlic-chutney`],
       },
       {
         step: "read",
         sql:
-          '("doc_recipes"."doc_slug" = $1 and ' +
+          '("doc_recipes"."kitchen_id" = $1 and "doc_recipes"."doc_slug" = $2 and ' +
           '"doc_recipes"."extraction_error" is null)',
-        params: ["garlic-chutney"],
+        params: [KITCHEN_ID, "garlic-chutney"],
       },
       { step: "write", sql: "", params: [] },
     ]);
@@ -784,7 +788,7 @@ describe("syncRecipesFromDoc", () => {
         : extracted(text),
     );
 
-    const result = await syncRecipesFromDoc();
+    const result = await syncRecipesFromDoc(KITCHEN_ID);
 
     const dropped = conflictFor("garlic-chutney");
     expect(dropped.setWhere).toBeUndefined();
@@ -805,7 +809,7 @@ describe("syncRecipesFromDoc", () => {
       notices: [],
     });
 
-    const result = await syncRecipesFromDoc();
+    const result = await syncRecipesFromDoc(KITCHEN_ID);
 
     expect(values).not.toHaveBeenCalled();
     expect(result.failures).toEqual([
@@ -828,14 +832,14 @@ describe("syncRecipesFromDoc", () => {
       notices: [],
     });
 
-    const result = await syncRecipesFromDoc();
+    const result = await syncRecipesFromDoc(KITCHEN_ID);
 
     expect(values).not.toHaveBeenCalled();
     expect(txSteps.slice(2)).toEqual([
       {
         step: "update",
-        sql: '"doc_recipes"."doc_slug" = $1',
-        params: ["garlic-chutney"],
+        sql: '("doc_recipes"."kitchen_id" = $1 and "doc_recipes"."doc_slug" = $2)',
+        params: [KITCHEN_ID, "garlic-chutney"],
         fields: { category: "entrees", categoryTitle: "entrees", docPosition: 0 },
       },
     ]);
@@ -850,7 +854,7 @@ describe("syncRecipesFromDoc", () => {
       notices: [stepsLeftOut],
     });
 
-    const result = await syncRecipesFromDoc();
+    const result = await syncRecipesFromDoc(KITCHEN_ID);
 
     expect(result.failures[0].error).toBe(
       "This sync's extraction came back without its ingredients, steps and " +
@@ -862,7 +866,7 @@ describe("syncRecipesFromDoc", () => {
     readTabs.mockResolvedValueOnce(CHUTNEY_TABS);
     saved = { "garlic-chutney": { ...SAVED_CHUTNEY, steps: null } };
 
-    const again = await syncRecipesFromDoc();
+    const again = await syncRecipesFromDoc(KITCHEN_ID);
 
     expect(again.failures[0].error).toMatch(
       /without its ingredients and notes,/,
@@ -881,7 +885,7 @@ describe("syncRecipesFromDoc", () => {
       notices: [],
     });
 
-    const result = await syncRecipesFromDoc();
+    const result = await syncRecipesFromDoc(KITCHEN_ID);
 
     expect(conflictFor("garlic-chutney").set).toMatchObject({
       steps: [],
@@ -905,7 +909,7 @@ describe("syncRecipesFromDoc", () => {
       notices: [stepsLeftOut],
     });
 
-    const result = await syncRecipesFromDoc();
+    const result = await syncRecipesFromDoc(KITCHEN_ID);
 
     expect(conflictFor("garlic-chutney").set).toMatchObject({ steps: [] });
     expect(result.failures).toEqual([]);
@@ -921,7 +925,7 @@ describe("syncRecipesFromDoc", () => {
       notices: [],
     });
 
-    const result = await syncRecipesFromDoc();
+    const result = await syncRecipesFromDoc(KITCHEN_ID);
 
     expect(conflictFor("garlic-chutney").setWhere).toBeUndefined();
     expect(result.failures).toEqual([]);
@@ -939,7 +943,7 @@ describe("syncRecipesFromDoc", () => {
       return { onConflictDoUpdate };
     });
 
-    await syncRecipesFromDoc();
+    await syncRecipesFromDoc(KITCHEN_ID);
 
     const extracts = events.filter((e) => e.startsWith("extract"));
     expect(extracts).toHaveLength(8);
@@ -960,7 +964,7 @@ describe("syncRecipesFromDoc", () => {
           : onConflictDoUpdate,
     }));
 
-    const result = await syncRecipesFromDoc();
+    const result = await syncRecipesFromDoc(KITCHEN_ID);
 
     expect(values).toHaveBeenCalledTimes(8);
     expect(onConflictDoUpdate).toHaveBeenCalledTimes(7);
@@ -979,16 +983,16 @@ describe("syncRecipesFromDoc", () => {
       notices: [],
     });
 
-    await syncRecipesFromDoc();
+    await syncRecipesFromDoc(KITCHEN_ID);
 
     expect(staleQuery.where).toHaveBeenCalledTimes(1);
     const [where] = staleQuery.where.mock.calls[0] as unknown as [SQL];
     const query = dialect.sqlToQuery(where);
     expect(query.sql).toMatch(
-      /^\("doc_recipes"\."extraction_error" is null and "doc_recipes"\."doc_slug" not in \(\$1(, \$\d+)*\)\)$/,
+      /^\("doc_recipes"\."kitchen_id" = \$1 and "doc_recipes"\."extraction_error" is null and "doc_recipes"\."doc_slug" not in \(\$2(, \$\d+)*\)\)$/,
     );
     const { chunks, skipped } = chunkRecipeTabs(fixtureTabs());
-    expect(query.params).toEqual(slugsInDoc(chunks, skipped));
+    expect(query.params).toEqual([KITCHEN_ID, ...slugsInDoc(chunks, skipped)]);
     expect(query.params).toContain("shaved-brussel-sprout-salad");
   });
 
@@ -1004,7 +1008,7 @@ describe("syncRecipesFromDoc", () => {
         servesEstimateSourceHash: sourceHash("doc_recipes", CHUTNEY_TEXT),
       };
 
-      await syncRecipesFromDoc();
+      await syncRecipesFromDoc(KITCHEN_ID);
 
       expect(chat).not.toHaveBeenCalled();
       expect(conflictFor("garlic-chutney").set).toMatchObject({
@@ -1019,7 +1023,7 @@ describe("syncRecipesFromDoc", () => {
       vi.mocked(extractRecipeFromText).mockResolvedValue({ recipe: CHUTNEY, notices: [] });
       vi.mocked(chat).mockResolvedValue({ content: JSON.stringify(CHUTNEY_ESTIMATE), finishReason: "stop" });
 
-      const result = await syncRecipesFromDoc();
+      const result = await syncRecipesFromDoc(KITCHEN_ID);
 
       expect(chat).toHaveBeenCalledTimes(1);
       const prompt = vi.mocked(chat).mock.calls[0]![0].messages[0]!.content;
@@ -1045,7 +1049,7 @@ describe("syncRecipesFromDoc", () => {
         servesEstimateSourceHash: sourceHash("doc_recipes", CHUTNEY_TEXT),
       };
 
-      await syncRecipesFromDoc();
+      await syncRecipesFromDoc(KITCHEN_ID);
 
       expect(chat).not.toHaveBeenCalled();
       expect(conflictFor("garlic-chutney").set).toMatchObject({
@@ -1066,7 +1070,7 @@ describe("syncRecipesFromDoc", () => {
         servesEstimateSourceHash: sourceHash("doc_recipes", "garlic chutney\n(the text before)"),
       };
 
-      await syncRecipesFromDoc();
+      await syncRecipesFromDoc(KITCHEN_ID);
 
       expect(chat).toHaveBeenCalledTimes(1);
       expect(conflictFor("garlic-chutney").set).toMatchObject({
@@ -1085,7 +1089,7 @@ describe("syncRecipesFromDoc", () => {
         servesEstimateSourceHash: sourceHash("doc_recipes", `${CHUTNEY_TEXT}\n(an older version)`),
       };
 
-      await syncRecipesFromDoc();
+      await syncRecipesFromDoc(KITCHEN_ID);
 
       expect(chat).toHaveBeenCalledTimes(1);
       expect(conflictFor("garlic-chutney").set).toMatchObject({ servesEstimate: 8 });
@@ -1098,7 +1102,7 @@ describe("syncRecipesFromDoc", () => {
         notices: [],
       });
 
-      await syncRecipesFromDoc();
+      await syncRecipesFromDoc(KITCHEN_ID);
 
       expect(vi.mocked(chat).mock.calls[0]![0].messages[0]!.content).toContain("Amounts in the ingredient lines: none.");
       expect(conflictFor("garlic-chutney").set).toMatchObject({
@@ -1112,7 +1116,7 @@ describe("syncRecipesFromDoc", () => {
       vi.mocked(extractRecipeFromText).mockResolvedValue({ recipe: CHUTNEY, notices: [] });
       vi.mocked(chat).mockRejectedValue(new Error("GOOGLE_AI_API_KEY is not set"));
 
-      const result = await syncRecipesFromDoc();
+      const result = await syncRecipesFromDoc(KITCHEN_ID);
 
       const write = conflictFor("garlic-chutney");
       // Only a row that never extracted takes the failure.
@@ -1143,23 +1147,25 @@ describe("syncRecipesFromDoc", () => {
       throw new Error("model down");
     });
 
-    const result = await syncRecipesFromDoc();
+    const result = await syncRecipesFromDoc(KITCHEN_ID);
 
     expect(events[0]).toBe("order");
     expect(events.filter((e) => e === "order")).toHaveLength(1);
     expect(result.succeeded).toBe(0);
     const [write] = orderWrites;
     expect(write!.sql).toMatch(/^\s*update doc_recipes set\s+doc_position = w\.pos/);
-    // Each recipe the walk produces, with its place and its chapter as the Doc writes it.
+    // Each recipe the walk produces, with its place and its chapter as the Doc writes it,
+    // followed by the kitchen filter parameters on the join and both table aliases.
     expect(write!.params.slice(0, 6)).toEqual(["garlic-chutney", 0, "indian", "minced-lamb", 1, "indian"]);
-    expect(write!.params).toHaveLength(8 * 3);
+    expect(write!.params).toHaveLength(8 * 3 + 3);
+    expect(write!.params.slice(-3)).toEqual([KITCHEN_ID, KITCHEN_ID, KITCHEN_ID]);
   });
 
   it("writes each recipe with its place and chapter title", async () => {
     readTabs.mockResolvedValueOnce(fixtureTabs());
     vi.mocked(extractRecipeFromText).mockImplementation(async (text) => extracted(text));
 
-    await syncRecipesFromDoc();
+    await syncRecipesFromDoc(KITCHEN_ID);
 
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({ docSlug: "key-lime-cheesecake", docPosition: 5, categoryTitle: "desserts" }),
@@ -1169,7 +1175,7 @@ describe("syncRecipesFromDoc", () => {
   it("fails loudly when no tab holds a recipe", async () => {
     readTabs.mockResolvedValueOnce([tab("entrees", [], [tab("indian")]), tab("drinks")]);
 
-    await expect(syncRecipesFromDoc()).rejects.toThrow(/No recipes found in the recipe library/);
+    await expect(syncRecipesFromDoc(KITCHEN_ID)).rejects.toThrow(/No recipes found in the recipe library/);
     expect(extractRecipeFromText).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
   });
@@ -1177,7 +1183,7 @@ describe("syncRecipesFromDoc", () => {
   it("fails before any write when the library can't be read, saying so", async () => {
     readTabs.mockRejectedValueOnce(new Error("503 backend error"));
 
-    await expect(syncRecipesFromDoc()).rejects.toThrow("Couldn't read the recipe library: 503 backend error");
+    await expect(syncRecipesFromDoc(KITCHEN_ID)).rejects.toThrow("Couldn't read the recipe library: 503 backend error");
     expect(orderPass).not.toHaveBeenCalled();
     expect(extractRecipeFromText).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();

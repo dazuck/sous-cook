@@ -130,6 +130,7 @@ export interface BackfillResult {
 
 /** `deriveLibraryPlan`, in the script and the tests (over a stubbed chat). */
 export type DeriveLibraryRow = (
+  kitchenId: string,
   slug: string,
   recipe: RecipeForPlan,
   meter: DeriveMeter,
@@ -141,6 +142,7 @@ function outcomeOf(columns: LibraryPlanColumns): BackfillOutcome {
 }
 
 export async function runLibraryBackfill(
+  kitchenId: string,
   targets: readonly BackfillTarget[],
   ledger: CostLedger,
   {
@@ -169,7 +171,7 @@ export async function runLibraryBackfill(
     const base = { slug: target.slug, name: target.name };
     let columns: LibraryPlanColumns;
     try {
-      columns = await derive(target.slug, target.recipe, ledger.meter());
+      columns = await derive(kitchenId, target.slug, target.recipe, ledger.meter());
     } catch (err) {
       if (err instanceof CookPlanCapReached) return null;
       ledger.finishRecipe();
@@ -180,7 +182,7 @@ export async function runLibraryBackfill(
     if (outcome === "plan") valid++;
     if (outcome !== "failed transient") settled++;
     try {
-      const stored = await store(target.slug, target.madeFor, columns);
+      const stored = await store(kitchenId, target.slug, target.madeFor, columns);
       return { ...base, outcome, stored, detail: columns.cookPlanError };
     } catch (err) {
       return { ...base, outcome: "threw", stored: null, detail: err instanceof Error ? err.message : String(err) };

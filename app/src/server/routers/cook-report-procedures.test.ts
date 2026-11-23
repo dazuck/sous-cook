@@ -24,8 +24,10 @@ import {
 } from "../../lib/cook-reports";
 import { DOM_MAX_BYTES, NOTE_MAX_BYTES, type CookReport } from "../../lib/kitchen/report-capture";
 import { appRouter } from "./_app";
+import { callerFor } from "../../lib/__tests__/kitchens";
 
-const caller = appRouter.createCaller({ db: {} as never });
+const HOME = { id: "00000000-0000-4000-8000-000000000001", slug: "home" };
+const caller = callerFor(HOME);
 const REPORT_ID = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -84,7 +86,8 @@ describe("submitCookReport", () => {
       duplicate: false,
     });
     expect(storeCookReport).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(storeCookReport).mock.calls[0]?.[0]).toEqual(report());
+    expect(vi.mocked(storeCookReport).mock.calls[0]?.[0]).toBe(HOME.id);
+    expect(vi.mocked(storeCookReport).mock.calls[0]?.[1]).toEqual(report());
   });
 
   it("counts a conflict on the id as sent (F4)", async () => {
@@ -102,7 +105,7 @@ describe("submitCookReport", () => {
       context: { ...report().context, env: { KEY: "secret" } },
     };
     await caller.submitCookReport(extra as never);
-    expect(JSON.stringify(vi.mocked(storeCookReport).mock.calls[0]?.[0])).not.toContain("secret");
+    expect(JSON.stringify(vi.mocked(storeCookReport).mock.calls[0]?.[1])).not.toContain("secret");
   });
 
   it("takes the deploy check's screen, and refuses a screen it doesn't know", async () => {
@@ -215,7 +218,7 @@ describe("annotateCookReport", () => {
     await expect(
       caller.annotateCookReport({ id: REPORT_ID, note: "timer read 5 min, should be 8" }),
     ).resolves.toEqual({ id: REPORT_ID });
-    expect(annotateCookReport).toHaveBeenCalledWith(REPORT_ID, "timer read 5 min, should be 8");
+    expect(annotateCookReport).toHaveBeenCalledWith(HOME.id, REPORT_ID, "timer read 5 min, should be 8");
   });
 
   it("answers NOT_FOUND for an id the table doesn't hold (F9)", async () => {

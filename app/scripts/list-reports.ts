@@ -20,9 +20,8 @@
  */
 
 import { writeFileSync } from "node:fs";
-import { and, desc, eq, gte, inArray, ne, sql, type SQL } from "drizzle-orm";
-import { conversationLogs, cookReports, db, kitchenQueue } from "../src/lib/db";
-import { describeIntake, queueIntake } from "../src/lib/pack-convert/intake-state";
+import { and, asc, desc, eq, gte, ne, sql, type SQL } from "drizzle-orm";
+import { cookReports, db, kitchens } from "../src/lib/db";
 import {
   DEPLOY_CHECK_SCREEN,
   RATE_WINDOW_MS,
@@ -33,15 +32,18 @@ import {
   formatHeader,
   formatSummary,
   parseListArgs,
-  type AskExchange,
   type FullReport,
+  type KitchenReportCount,
   type ListedReport,
 } from "../src/lib/report-listing";
+import { askExchange, intakeLines } from "../src/lib/report-listing-queries";
 
 const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const listed = {
   id: cookReports.id,
+  kitchenId: kitchens.id,
+  kitchenSlug: kitchens.slug,
   createdAt: cookReports.createdAt,
   capturedAt: cookReports.capturedAt,
   build: cookReports.build,
@@ -61,46 +63,6 @@ const listed = {
   noteAt: cookReports.noteAt,
 };
 
-/** The last message of a role in the report's Ask session, at or before the flag. */
-async function lastMessage(report: ListedReport, role: "user" | "assistant"): Promise<string | null> {
-  const [row] = await db
-    .select({ content: conversationLogs.content })
-    .from(conversationLogs)
-    .where(
-      and(
-        eq(conversationLogs.sessionId, report.context.ask.sessionId),
-        eq(conversationLogs.role, role),
-        // created_at is a timestamp without zone, written in the session's
-        // TimeZone; the cast reads the flag's moment in that same zone.
-        sql`${conversationLogs.createdAt} <= ${report.capturedAt.toISOString()}::timestamptz::timestamp`,
-      ),
-    )
-    .orderBy(desc(conversationLogs.createdAt))
-    .limit(1);
-  return row ? row.content : null;
-}
-
-async function askExchange(report: ListedReport): Promise<AskExchange | null> {
-  if (report.context.ask.sessionId === "") return null;
-  return {
-    question: await lastMessage(report, "user"),
-    answer: await lastMessage(report, "assistant"),
-  };
-}
-
-/** Each report's queue item's intake line, by queue id; a row that never asked has none. */
-async function intakeLines(reports: readonly ListedReport[]): Promise<Map<string, string>> {
-  const ids = [...new Set(reports.map((r) => r.queueId).filter((id): id is string => id !== null))];
-  if (ids.length === 0) return new Map();
-  const rows = await db.query.kitchenQueue.findMany({ where: inArray(kitchenQueue.id, ids) });
-  const lines = new Map<string, string>();
-  for (const row of rows) {
-    const line = describeIntake(queueIntake(row), { nudges: row.intakeNudges, attempts: row.intakeAttempts });
-    if (line !== null) lines.set(row.id, line);
-  }
-  return lines;
-}
-
 async function main(): Promise<void> {
   const options = parseListArgs(process.argv.slice(2));
 
@@ -108,6 +70,7 @@ async function main(): Promise<void> {
     const [report] = await db
       .select({ ...listed, plan: cookReports.plan, dom: cookReports.dom })
       .from(cookReports)
+      .innerJoin(kitchens, eq(cookReports.kitchenId, kitchens.id))
       .where(eq(cookReports.id, options.id));
     if (!report) throw new Error(`No report ${options.id}`);
     const full: FullReport = report;
@@ -120,7 +83,7 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(full, null, 2));
     } else {
       console.log(formatFull(full, await askExchange(full), timeZone));
-      const intake = full.queueId === null ? undefined : (await intakeLines([full])).get(full.queueId);
+      const intake = full.queueId === null ? undefined : (await intakeLines([full])).get(full.id);
       if (intake !== undefined) console.log(intake);
     }
     return;
@@ -132,18 +95,31 @@ async function main(): Promise<void> {
   const reports: ListedReport[] = await db
     .select(listed)
     .from(cookReports)
+    .innerJoin(kitchens, eq(cookReports.kitchenId, kitchens.id))
     .where(and(...filters))
     .orderBy(desc(cookReports.capturedAt))
     .limit(options.limit);
-  const lastDay = await countCookReportsSince(new Date(Date.now() - RATE_WINDOW_MS));
+
+  const since24h = new Date(Date.now() - RATE_WINDOW_MS);
+  const allKitchens = await db
+    .select({ id: kitchens.id, slug: kitchens.slug })
+    .from(kitchens)
+    .orderBy(asc(kitchens.slug));
+  const lastDayByKitchen: KitchenReportCount[] = [];
+  for (const k of allKitchens) {
+    const count = await countCookReportsSince(k.id, since24h);
+    if (count > 0) {
+      lastDayByKitchen.push({ kitchenSlug: k.slug, count });
+    }
+  }
 
   if (options.json) {
-    console.log(JSON.stringify({ lastDay, reports }, null, 2));
+    console.log(JSON.stringify({ lastDayByKitchen, reports }, null, 2));
     return;
   }
   console.log(
     formatHeader(
-      { lastDay, shown: reports.length, since: options.since, all: options.all },
+      { lastDayByKitchen, shown: reports.length, since: options.since, all: options.all },
       timeZone,
     ),
   );
@@ -151,7 +127,7 @@ async function main(): Promise<void> {
   for (const report of reports) {
     console.log("");
     for (const line of formatSummary(report, await askExchange(report), timeZone)) console.log(line);
-    const intake = report.queueId === null ? undefined : intakes.get(report.queueId);
+    const intake = report.queueId === null ? undefined : intakes.get(report.id);
     if (intake !== undefined) console.log(`  ${intake}`);
   }
 }

@@ -139,6 +139,7 @@ describe("Pantry & Grocery tRPC procedures", () => {
 
   describe("applyPantryReconciliation", () => {
     it("calls updatePantryItems and returns updated count", async () => {
+      vi.mocked(getQueueItem).mockResolvedValueOnce({ id: QUEUE_ID } as never);
       updatePantryItems.mockResolvedValueOnce({ updated: 2 });
 
       const res = await caller.applyPantryReconciliation({
@@ -151,6 +152,7 @@ describe("Pantry & Grocery tRPC procedures", () => {
 
       expect(res.success).toBe(true);
       expect(res.updated).toBe(2);
+      expect(getQueueItem).toHaveBeenCalledWith(HOME.id, QUEUE_ID);
       expect(updatePantryItems).toHaveBeenCalledWith([
         { action: "delete", oldText: "2 avocados" },
         { action: "decrement", oldText: "5 lbs potatoes", newText: "4 lbs potatoes" },
@@ -219,6 +221,7 @@ describe("Pantry & Grocery tRPC procedures", () => {
   describe("with the hooks not connected", () => {
     it("answers the pantry's procedures empty and calls no store", async () => {
       connected.pantry = false;
+      vi.mocked(getQueueItem).mockResolvedValueOnce({ id: QUEUE_ID } as never);
 
       expect(await caller.parseGroceryInput({ type: "text", content: "2 avocados" })).toEqual({ items: [] });
       expect(await caller.addIngredientsToPantry({ items: [{ text: "2 avocados" }] })).toEqual({
@@ -231,10 +234,25 @@ describe("Pantry & Grocery tRPC procedures", () => {
       ).toEqual({ success: true, updated: 0 });
 
       expect(parseGroceryInput).not.toHaveBeenCalled();
-      expect(getQueueItem).not.toHaveBeenCalled();
+      expect(getQueueItem).toHaveBeenCalledWith(HOME.id, QUEUE_ID);
       expect(readSections).not.toHaveBeenCalled();
       expect(addPantryItems).not.toHaveBeenCalled();
       expect(updatePantryItems).not.toHaveBeenCalled();
+    });
+
+    it("throws NOT_FOUND for a missing queueId even when the pantry hook is not connected", async () => {
+      connected.pantry = false;
+      vi.mocked(getQueueItem).mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+
+      await expect(
+        caller.getRecipePantryReconciliation({ queueId: QUEUE_ID }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(
+        caller.applyPantryReconciliation({
+          queueId: QUEUE_ID,
+          actions: [{ action: "delete", oldText: "2 avocados" }],
+        }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
 
     it("answers the shopping list's procedures empty and calls no store", async () => {

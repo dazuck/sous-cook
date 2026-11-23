@@ -24,12 +24,18 @@ export const PACKS_DIR = path.resolve(process.cwd(), "..", "packs");
  */
 export const PACK_PLANS_DIR = path.resolve(process.cwd(), "pack-plans");
 
-/** The shelf as the app reads it: the registry's sources, the repo's packs, the family library from the DB. */
-export function loadAppShelf({
-  sources = SHELF_SOURCES,
-  packsDir = PACKS_DIR,
-}: { sources?: readonly ShelfSource[]; packsDir?: string } = {}): Promise<Shelf> {
-  return loadShelf(sources, { packsDir, readFamilyLibrary });
+/** The shelf as the app reads it: the registry's sources, the repo's packs, the kitchen's family library from the DB. */
+export function loadAppShelf(
+  kitchenId: string,
+  {
+    sources = SHELF_SOURCES,
+    packsDir = PACKS_DIR,
+  }: { sources?: readonly ShelfSource[]; packsDir?: string } = {},
+): Promise<Shelf> {
+  return loadShelf(sources, {
+    packsDir,
+    readFamilyLibrary: () => readFamilyLibrary(kitchenId),
+  });
 }
 
 const packFilesBySources = new Map<readonly ShelfSource[], Promise<PackFiles>>();

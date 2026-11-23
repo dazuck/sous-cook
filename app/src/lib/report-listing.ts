@@ -12,6 +12,8 @@ import { REPORTS_PER_DAY } from "./cook-reports";
 /** A row as the listing reads it: everything but the plan and the DOM's text. */
 export interface ListedReport {
   id: string;
+  kitchenId: string;
+  kitchenSlug: string;
   createdAt: Date;
   capturedAt: Date;
   build: string;
@@ -29,6 +31,12 @@ export interface ListedReport {
   domBytes: number;
   note: string;
   noteAt: Date | null;
+}
+
+/** One kitchen's 24-hour report count against the per-kitchen daily cap. */
+export interface KitchenReportCount {
+  kitchenSlug: string;
+  count: number;
 }
 
 export interface FullReport extends ListedReport {
@@ -158,16 +166,28 @@ export function movedBeforeFlag(report: ListedReport): { ms: number; detail: str
 }
 
 export function formatHeader(
-  counts: { lastDay: number; shown: number; since: Date | null; all: boolean },
+  counts: {
+    lastDayByKitchen: readonly KitchenReportCount[];
+    shown: number;
+    since: Date | null;
+    all: boolean;
+  },
   timeZone: string,
 ): string {
-  const cap =
-    counts.lastDay >= REPORTS_PER_DAY
-      ? `cap ${REPORTS_PER_DAY}, reached: new reports wait in the outbox`
-      : `cap ${REPORTS_PER_DAY}`;
+  const total = counts.lastDayByKitchen.reduce((sum, entry) => sum + entry.count, 0);
+  const perKitchen =
+    counts.lastDayByKitchen.length === 0
+      ? "none"
+      : counts.lastDayByKitchen
+          .map((entry) =>
+            entry.count >= REPORTS_PER_DAY
+              ? `${entry.kitchenSlug} ${entry.count}/${REPORTS_PER_DAY} (cap reached: new reports wait in the outbox)`
+              : `${entry.kitchenSlug} ${entry.count}/${REPORTS_PER_DAY}`,
+          )
+          .join(", ");
   const since = counts.since ? ` since ${formatTime(counts.since, timeZone)}` : "";
   const hidden = counts.all ? "" : "; deploy checks hidden";
-  return `cook_reports: ${counts.lastDay} in the last 24 h (${cap}). Showing ${counts.shown}${since}, newest first${hidden}.`;
+  return `cook_reports: ${total} in the last 24 h (${perKitchen}; cap ${REPORTS_PER_DAY} per kitchen). Showing ${counts.shown}${since}, newest first${hidden}.`;
 }
 
 function oneLine(text: string): string {
@@ -185,6 +205,7 @@ const LOOK_LEVELS = ["Now", "Until you can step away", "Whole cook", "Whole reci
 function where(report: ListedReport): string[] {
   const { context } = report;
   return [
+    `kitchen ${report.kitchenSlug}`,
     `id ${report.id}`,
     `build ${report.build}`,
     ...(context.part ? [`part ${context.part.at}/${context.part.of}`] : []),
