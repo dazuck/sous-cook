@@ -535,9 +535,29 @@ export async function baselineDatabase(
     `),
   ).sort((a, b) => compareStrings(a.name, b.name));
 
+  // Types that are not a table's own row type or an array type: enums,
+  // domains, ranges. Creating a table also creates a type with the table's
+  // name, so one of these with a later table's name makes that migration fail.
+  const standalonePublicTypes = extractRows<{ name: string }>(
+    await db.execute(sql`
+      SELECT t.typname AS name
+      FROM pg_type t
+      JOIN pg_namespace n ON n.oid = t.typnamespace
+      WHERE n.nspname = 'public' AND t.typrelid = 0 AND t.typelem = 0
+    `),
+  ).sort((a, b) => compareStrings(a.name, b.name));
+
   const targetCatalog = await readCatalog(db, baselineTableNames);
   const differences = diffCatalogs(referenceCatalog, targetCatalog);
   const warnings: string[] = [];
+
+  for (const type of standalonePublicTypes) {
+    if (laterMigrationTables.has(type.name)) {
+      differences.push(
+        `Type "${type.name}" already exists, but a later migration creates a table with that name`,
+      );
+    }
+  }
 
   for (const relation of allPublicRelations) {
     if (baselineTableSet.has(relation.name)) continue;

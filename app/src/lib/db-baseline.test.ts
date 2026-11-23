@@ -456,5 +456,21 @@ describe("Database baseline", () => {
         await client.close();
       }
     }, 15_000);
+
+    it("refuses when an enum type with the name of a later-migration table (kitchens) already exists, against the real migrations folder", async () => {
+      const client = new PGlite();
+      try {
+        await execBaselineSqlDirectly(client);
+        await client.exec(`CREATE TYPE "kitchens" AS ENUM ('a')`);
+        const db = drizzle(client, { schema });
+
+        const err = await expectRefusal(() =>
+          baselineDatabase(db, MIGRATIONS_DIR),
+        );
+        expect(err.message).toMatch(/Type "kitchens" already exists/);
+      } finally {
+        await client.close();
+      }
+    }, 15_000);
   });
 });
