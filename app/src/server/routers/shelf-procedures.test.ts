@@ -61,9 +61,10 @@ import { getDocRecipeBySlug, readFamilyLibrary, syncRecipesFromDoc, type DocReci
 import { cachedIdeasCount, getRecipeIdeas, saveRecipeIdea } from "../../lib/recipe-ideas";
 import { PACK_PLANS_DIR, PACKS_DIR } from "../../lib/shelf/load";
 import { readPackPlanFile } from "../../lib/pack-cook-plans";
-import { appRouter } from "./_app";
+import { callerFor } from "../../lib/__tests__/kitchens";
 
-const caller = appRouter.createCaller({ db: {} as never });
+const HOME = { id: "00000000-0000-4000-8000-000000000001", slug: "home" };
+const caller = callerFor(HOME);
 const QUEUE_ID = "3f1c2a9e-5b7d-4e8f-9a0b-1c2d3e4f5a6b";
 
 function docRow(slug: string, over: Partial<DocRecipeRow> = {}): DocRecipeRow {
@@ -209,8 +210,8 @@ describe("queueFromPack: a pack file", () => {
       targetUser: "cook",
     });
     expect(result).toEqual({ id: QUEUE_ID });
-    const queued = vi.mocked(addToKitchenQueue).mock.calls[0]![0];
-    expect(queued.targetUser).toBe("cook");
+    const [queuedKitchenId, queued] = vi.mocked(addToKitchenQueue).mock.calls[0]!;
+    expect(queuedKitchenId).toBe(HOME.id);
     expect(queued.recipeData).toMatchObject({
       name: "Thin White Sauce",
       source: "pack:fannie-farmer-1896/thin-white-sauce",

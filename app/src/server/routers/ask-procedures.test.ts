@@ -16,9 +16,10 @@ vi.mock("../../lib/claude", async (importOriginal) => ({
 
 import { chatCookingAssistant } from "../../lib/claude";
 import { AnswerCutOff, ASK_CUT_OFF_CODE } from "../../lib/kitchen/ask-failure";
-import { appRouter } from "./_app";
+import { callerFor } from "../../lib/__tests__/kitchens";
 
-const caller = appRouter.createCaller({ db: {} as never });
+const HOME = { id: "00000000-0000-4000-8000-000000000001", slug: "home" };
+const caller = callerFor(HOME);
 const INPUT = {
   sessionId: "cook-queue-1",
   messages: [{ role: "user" as const, content: "Can the noodles go in now?" }],

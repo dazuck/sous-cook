@@ -27,8 +27,10 @@ vi.mock("./ai", () => ({
 
 const mockGetQueueItem = vi.fn();
 vi.mock("./kitchen-queue", () => ({
-  getQueueItem: (...args: unknown[]) => mockGetQueueItem(...args),
+  getQueueItemForKitchen: (...args: unknown[]) => mockGetQueueItem(...args),
 }));
+
+const KITCHEN_ID = "00000000-0000-4000-8000-000000000001";
 
 const mockLoadAppPackFiles = vi.fn();
 vi.mock("./shelf/load", () => ({
@@ -244,6 +246,7 @@ describe("chatCookingAssistant", () => {
     expect(COOKING_MAX_TOKENS).toBe(350);
 
     const res = await chatCookingAssistant(
+      KITCHEN_ID,
       "cook-session-1",
       [{ role: "user", content: "Is 150°F okay for chicken?" }],
       "Roast Chicken",
@@ -273,6 +276,7 @@ describe("chatCookingAssistant", () => {
 
   it("with no hook connected (as shipped), answers with no household reference block", async () => {
     await chatCookingAssistant(
+      KITCHEN_ID,
       "cook-session-unconnected",
       [{ role: "user", content: "Is 150°F okay for chicken?" }],
       "Roast Chicken",
@@ -412,6 +416,7 @@ describe("chatCookingAssistant", () => {
     });
 
     await chatCookingAssistant(
+      KITCHEN_ID,
       "cook-session-2",
       [{ role: "user", content: "How much salt and how do I know the skin is ready?" }],
       "Crispy Pan Salmon",
@@ -469,6 +474,7 @@ describe("chatCookingAssistant", () => {
 
     try {
       await chatCookingAssistant(
+        KITCHEN_ID,
         "cook-session-missing",
         [{ role: "user", content: "What next?" }],
         "Fallback Recipe Text: Boil water.",
@@ -491,6 +497,7 @@ describe("chatCookingAssistant", () => {
 
   it("omits recipe context cleanly when includeRecipeContext is false", async () => {
     await chatCookingAssistant(
+      KITCHEN_ID,
       "cook-session-photo-no-context",
       [{ role: "user", content: "How does this look?" }],
       "Should Not Appear Recipe",

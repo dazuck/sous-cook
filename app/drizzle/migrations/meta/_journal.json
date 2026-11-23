@@ -15,6 +15,13 @@
       "when": 1795403852783,
       "tag": "0001_kitchens",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795405199604,
+      "tag": "0002_queue_target_user_optional",
+      "breakpoints": true
     }
   ]
 }

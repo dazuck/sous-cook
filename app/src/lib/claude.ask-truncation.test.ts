@@ -26,7 +26,7 @@ vi.mock("./db", () => ({
 }));
 // Never reached (no queueId); mocked so the database modules behind them
 // aren't loaded.
-vi.mock("./kitchen-queue", () => ({ getQueueItem: vi.fn() }));
+vi.mock("./kitchen-queue", () => ({ getQueueItemForKitchen: vi.fn() }));
 vi.mock("./shelf/load", () => ({ loadAppPackFiles: vi.fn() }));
 
 const fetchMock = vi.fn<(url: unknown, init?: RequestInit) => Promise<Response>>();
@@ -73,6 +73,7 @@ function geminiReply(
 
 function ask() {
   return chatCookingAssistant(
+    "00000000-0000-4000-8000-000000000001",
     "ask-session",
     [{ role: "user", content: QUESTION }],
     "Noodle soup",

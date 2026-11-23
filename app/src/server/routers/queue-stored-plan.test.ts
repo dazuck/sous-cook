@@ -48,16 +48,19 @@ import { cookPlanStamp, planSourceHash } from "../../lib/kitchen/cook-plan-stamp
 import { chainPlan } from "../../lib/kitchen/__tests__/chain-plan";
 import { fannie } from "../../lib/pack-convert/__tests__/fannie-native";
 import { checkPackPlans, packPlanPath, serializePackPlanFile, type PackPlanFile } from "../../lib/pack-cook-plans";
-import { appRouter } from "./_app";
+import { callerFor, homeKitchen } from "../../lib/__tests__/kitchens";
 
 const client = (dbModule as unknown as { client: PGlite }).client;
 const mockChat = chat as Mock;
-const caller = appRouter.createCaller({ db: {} as never });
+let caller: ReturnType<typeof callerFor>;
 const HASH = planSourceHash(ZUCCHINI_RECIPE);
 const SETTLED = "rejected (uncovered-step): step 4 is in no task";
 
 let info: MockInstance<typeof console.info>;
 let error: MockInstance<typeof console.error>;
+beforeAll(async () => {
+  caller = callerFor(await homeKitchen(db));
+});
 beforeEach(async () => {
   mockChat.mockReset();
   scheduled.length = 0;

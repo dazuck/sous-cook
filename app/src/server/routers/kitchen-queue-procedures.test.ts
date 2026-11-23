@@ -52,9 +52,10 @@ import type { KitchenQueueRecipeData } from "../../../drizzle/schema";
 import { getDocRecipeBySlug, type DocRecipeRow } from "../../lib/recipe-sync";
 import { chat } from "../../lib/ai";
 import { sourceHash } from "../../lib/serves-estimate-plan";
-import { appRouter } from "./_app";
+import { callerFor } from "../../lib/__tests__/kitchens";
 
-const caller = appRouter.createCaller({ db: {} as never });
+const HOME = { id: "00000000-0000-4000-8000-000000000001", slug: "home" };
+const caller = callerFor(HOME);
 const QUEUE_ID = "3f1c2a9e-5b7d-4e8f-9a0b-1c2d3e4f5a6b";
 
 /** Runs what the procedure handed to `after()`, as Next would post-response. */
@@ -83,7 +84,7 @@ describe("addToKitchenQueue", () => {
     expect(after).toHaveBeenCalledTimes(1);
     expect(prepareQueueItemInBackground).not.toHaveBeenCalled();
     runScheduled();
-    expect(prepareQueueItemInBackground).toHaveBeenCalledWith(QUEUE_ID);
+    expect(prepareQueueItemInBackground).toHaveBeenCalledWith(HOME.id, QUEUE_ID);
   });
 
   it("schedules nothing when the add fails", async () => {
@@ -112,7 +113,7 @@ describe("queueFromPack: the household pack (the library row, as sendDocRecipeTo
 
     expect(result).toEqual({ id: QUEUE_ID });
     runScheduled();
-    expect(prepareQueueItemInBackground).toHaveBeenCalledWith(QUEUE_ID);
+    expect(prepareQueueItemInBackground).toHaveBeenCalledWith(HOME.id, QUEUE_ID);
   });
 });
 
@@ -186,7 +187,7 @@ describe("the pack-recipe check on adds", () => {
       caller.queueFromPack({ packId: "household-book", recipeId: "dal", targetUser: "cook-2" }),
     ).resolves.toEqual({ id: QUEUE_ID });
     // Queued as stored: the blank lines are skipped on read, never rewritten.
-    expect(vi.mocked(addToKitchenQueue).mock.calls[0]?.[0]).toMatchObject({
+    expect(vi.mocked(addToKitchenQueue).mock.calls[0]?.[1]).toMatchObject({
       recipeData: { ingredients: WITH_BLANKS.ingredients, steps: WITH_BLANKS.steps },
     });
   });
@@ -244,7 +245,7 @@ describe("ensureCookPlan", () => {
     await expect(caller.ensureCookPlan({ queueId: QUEUE_ID })).resolves.toEqual(
       outcome,
     );
-    expect(cookPlanForCook).toHaveBeenCalledWith(QUEUE_ID);
+    expect(cookPlanForCook).toHaveBeenCalledWith(HOME.id, QUEUE_ID);
     expect(after).not.toHaveBeenCalled();
   });
 
@@ -328,8 +329,10 @@ describe("getKitchenQueueItem: the stored recipe read as a pack recipe", () => {
 
     const item = await caller.getKitchenQueueItem({ queueId: QUEUE_ID });
 
+    const { kitchenId: _omitted, ...expectedRow } = row;
+    expect(item).not.toHaveProperty("kitchenId");
     expect(item).toEqual({
-      ...row,
+      ...expectedRow,
       packRecipe: {
         id: QUEUE_ID,
         title: "Dal",
@@ -471,8 +474,10 @@ describe("getKitchenQueueItem: the stored recipe read as a pack recipe", () => {
 
       const item = await caller.getKitchenQueueItem({ queueId: QUEUE_ID });
 
+      const { kitchenId: _omitted, ...expectedRow } = row;
+      expect(item).not.toHaveProperty("kitchenId");
       expect(item).toEqual({
-        ...row,
+        ...expectedRow,
         packRecipe: null,
         conversionError: reason,
         reading: "projection",
@@ -496,8 +501,10 @@ describe("getKitchenQueueItem: the stored recipe read as a pack recipe", () => {
 
     const item = await caller.getKitchenQueueItem({ queueId: QUEUE_ID });
 
+    const { kitchenId: _omitted, ...expectedRow } = row;
+    expect(item).not.toHaveProperty("kitchenId");
     expect(item).toEqual({
-      ...row,
+      ...expectedRow,
       packRecipe: null,
       conversionError: null,
       reading: "projection",
@@ -598,7 +605,7 @@ describe("ensureIntake", () => {
 
     const item = await caller.ensureIntake({ queueId: QUEUE_ID, ask: "opening" });
 
-    expect(ensureIntakeForCook).toHaveBeenCalledWith(QUEUE_ID, "opening");
+    expect(ensureIntakeForCook).toHaveBeenCalledWith(HOME.id, QUEUE_ID, "opening");
     expect(item.recipeData).toEqual(CUT);
     expect(item.packRecipe?.steps.map((s) => s.text)).toEqual(["Toast the bread.", "Butter it."]);
     expect(item.intake).toEqual({ state: "normalized", error: null });
@@ -631,7 +638,7 @@ describe("ensureIntake", () => {
 
     const item = await caller.ensureIntake({ queueId: QUEUE_ID, ask: "started" });
 
-    expect(ensureIntakeForCook).toHaveBeenCalledWith(QUEUE_ID, "started");
+    expect(ensureIntakeForCook).toHaveBeenCalledWith(HOME.id, QUEUE_ID, "started");
     expect(item.intake.state).toBe("as-sent");
     expect(item.recipeData).toEqual(SENT);
   });
@@ -663,12 +670,14 @@ describe("the serving estimate on adds (slice B4b)", () => {
     await caller.addToKitchenQueue({ recipeData: STEW, targetUser: "cook" });
 
     expect(chat).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(addToKitchenQueue).mock.calls[0]![0]).toEqual({
-      recipeNotionId: undefined,
-      recipeData: STEW,
-      targetUser: "cook",
-      servesEstimate: { count: 3, basis: "1 lb beef and 4 carrots: about 3 bowls." },
-    });
+    expect(vi.mocked(addToKitchenQueue).mock.calls[0]).toEqual([
+      HOME.id,
+      {
+        recipeNotionId: undefined,
+        recipeData: STEW,
+        servesEstimate: { count: 3, basis: "1 lb beef and 4 carrots: about 3 bowls." },
+      },
+    ]);
   });
 
   it("addToKitchenQueue: an estimate that can't be made refuses the add, queueing nothing", async () => {
@@ -689,7 +698,7 @@ describe("the serving estimate on adds (slice B4b)", () => {
     vi.mocked(addToKitchenQueue).mockResolvedValue({ id: QUEUE_ID });
     await caller.addToKitchenQueue({ recipeData: { ...STEW, serves: 6 }, targetUser: "cook" });
     expect(chat).not.toHaveBeenCalled();
-    expect(vi.mocked(addToKitchenQueue).mock.calls[0]![0].servesEstimate).toBeUndefined();
+    expect(vi.mocked(addToKitchenQueue).mock.calls[0]![1].servesEstimate).toBeUndefined();
   });
 
   it("queueFromPack: the library row's estimate travels byte for byte, no call", async () => {
@@ -706,7 +715,7 @@ describe("the serving estimate on adds (slice B4b)", () => {
     await caller.queueFromPack({ packId: "household-book", recipeId: "stew", targetUser: "cook-2" });
 
     expect(chat).not.toHaveBeenCalled();
-    expect(vi.mocked(addToKitchenQueue).mock.calls[0]![0].servesEstimate).toEqual({
+    expect(vi.mocked(addToKitchenQueue).mock.calls[0]![1].servesEstimate).toEqual({
       count: 3,
       basis: "1 lb beef and 4 carrots: about 3 bowls.",
     });

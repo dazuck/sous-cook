@@ -197,7 +197,7 @@ export const kitchenQueue = pgTable("kitchen_queue", {
   }),
   recipeNotionId: text("recipe_notion_id"), // Reference to Notion recipe (optional)
   recipeData: jsonb("recipe_data").$type<KitchenQueueRecipeData>(), // Full recipe data if no Notion ID
-  targetUser: text("target_user").notNull(), // a cook's slug (`src/lib/cook-id.ts`)
+  targetUser: text("target_user"), // deprecated cook slug; kept nullable until a later cleanup migration drops it
   status: text("status")
     .$type<KitchenQueueStatus>()
     .notNull()

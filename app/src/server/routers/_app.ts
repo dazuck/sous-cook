@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { TRPCError } from "@trpc/server";
-import { router, publicProcedure } from "../trpc";
+import { router, publicProcedure, kitchenProcedure } from "../trpc";
+import { requireOwnedQueueItem } from "../kitchen-access";
 import { z } from "zod";
 import {
   syncRecipesFromDoc,
@@ -44,7 +45,6 @@ import {
   ensureIntakeForCook,
   prepareQueueItemInBackground,
   type KitchenQueueItem,
-  type UserId,
 } from "../../lib/kitchen-queue";
 import { isValidUserId } from "../../lib/cook-id";
 import {
@@ -118,6 +118,12 @@ const CookingChatInputSchema = ChatInputSchema.extend({
 /** A cook's slug (`isValidUserId`); the app's own screens send `DEFAULT_COOK`. */
 const UserIdSchema = z.string().refine(isValidUserId, { message: "Not a cook's slug" });
 
+/** Strips the internal kitchen identifier before sending a queue item to the client. */
+function omitKitchenId<T extends { kitchenId?: unknown }>(item: T): Omit<T, "kitchenId"> {
+  const { kitchenId: _kitchenId, ...rest } = item;
+  return rest;
+}
+
 /**
  * A queue row as the cook page reads it (`getKitchenQueueItem`, and the
  * answer to `ensureIntake`). The recipe the cook meets: intake's cut when it
@@ -136,7 +142,7 @@ async function readForCook(stored: KitchenQueueItem) {
     console.error(`[queue] item ${item.id}: can't read its recipe as a pack recipe: ${reading.conversionError}`);
   }
   for (const line of log) console.info(`[queue] item ${item.id}: ${line}`);
-  return { ...item, ...reading };
+  return omitKitchenId({ ...item, ...reading });
 }
 
 const RecipeIngredientSchema = z.object({
@@ -222,7 +228,8 @@ async function servesEstimateFor(
  * is expected and logged as info.
  */
 async function queueWithStoredPlan(
-  input: { recipeData: KitchenQueueRecipeData; targetUser: UserId; servesEstimate?: ServesEstimateInput },
+  kitchenId: string,
+  input: { recipeData: KitchenQueueRecipeData; servesEstimate?: ServesEstimateInput },
   stored: StoredPlan | null,
   label: string,
 ): Promise<{ id: string }> {
@@ -232,8 +239,8 @@ async function queueWithStoredPlan(
     log(`[queue] ${label}: stored cook plan not copied (${checked.reason}), deriving instead`);
   }
   const plan = checked?.ok ? checked.copy : undefined;
-  const item = await addToKitchenQueue({ ...input, plan });
-  if (plan === undefined) after(() => prepareQueueItemInBackground(item.id));
+  const item = await addToKitchenQueue(kitchenId, { ...input, plan });
+  if (plan === undefined) after(() => prepareQueueItemInBackground(kitchenId, item.id));
   return item;
 }
 
@@ -256,7 +263,8 @@ async function ideasCount(): Promise<number | null> {
 const AddToKitchenQueueSchema = z.object({
   recipeNotionId: z.string().optional(),
   recipeData: KitchenQueueRecipeDataSchema.optional(),
-  targetUser: UserIdSchema,
+  /** @deprecated Ignored: the kitchen comes from the session. FIXME(Part B): remove with cook-id.ts. */
+  targetUser: UserIdSchema.optional(),
 });
 
 const NOTE_LIMIT = 500;
@@ -320,12 +328,13 @@ export const appRouter = router({
   // ==========================================================================
 
   // Cooking assistant (mid-cook questions)
-  chatCooking: publicProcedure
+  chatCooking: kitchenProcedure
     .input(CookingChatInputSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const messages: Message[] = input.messages;
       try {
         return await chatCookingAssistant(
+          ctx.kitchen.id,
           input.sessionId,
           messages,
           input.currentRecipe,
@@ -336,6 +345,7 @@ export const appRouter = router({
             currentStepIndex: input.currentStepIndex,
             timers: input.timers,
             includeRecipeContext: input.includeRecipeContext,
+            memberId: ctx.member?.id ?? null,
           },
         );
       } catch (err) {
@@ -354,32 +364,32 @@ export const appRouter = router({
 
   // Add a recipe to the kitchen queue; its cook plan is derived after the
   // response, so the add stays fast and the plan is usually ready on open.
-  addToKitchenQueue: publicProcedure
+  addToKitchenQueue: kitchenProcedure
     .input(AddToKitchenQueueSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const servesEstimate = await servesEstimateFor(input.recipeData, { mayEstimate: true });
       refuseUnreadable(input.recipeData, servesEstimate);
-      const item = await addToKitchenQueue({
+      const item = await addToKitchenQueue(ctx.kitchen.id, {
         recipeNotionId: input.recipeNotionId,
         recipeData: input.recipeData,
-        targetUser: input.targetUser,
         servesEstimate,
       });
-      after(() => prepareQueueItemInBackground(item.id));
+      after(() => prepareQueueItemInBackground(ctx.kitchen.id, item.id));
       return item;
     }),
 
-  // Get pending recipes in the kitchen queue for a user
-  getKitchenQueue: publicProcedure
+  // Get recipes in the kitchen queue for the session kitchen
+  getKitchenQueue: kitchenProcedure
     .input(
       z.object({
-        userId: UserIdSchema,
+        /** @deprecated Ignored: the kitchen comes from the session. FIXME(Part B): remove with cook-id.ts. */
+        userId: UserIdSchema.optional(),
         status: KitchenQueueStatusSchema.optional(),
       }),
     )
-    .query(async ({ input }) => {
-      return getKitchenQueue(
-        input.userId,
+    .query(async ({ ctx, input }) => {
+      const items = await getKitchenQueue(
+        ctx.kitchen.id,
         input.status as
           | "pending"
           | "cooking"
@@ -387,13 +397,14 @@ export const appRouter = router({
           | "cancelled"
           | undefined,
       );
+      return items.map(omitKitchenId);
     }),
 
   // Get a single queue item by ID
-  getKitchenQueueItem: publicProcedure
+  getKitchenQueueItem: kitchenProcedure
     .input(z.object({ queueId: z.string().uuid() }))
-    .query(async ({ input }) => {
-      const stored = await getQueueItem(input.queueId);
+    .query(async ({ ctx, input }) => {
+      const stored = await getQueueItem(ctx.kitchen.id, input.queueId);
       if (!stored) return null;
       return readForCook(stored);
     }),
@@ -407,14 +418,15 @@ export const appRouter = router({
   // reads it, so the page cooks what this call stored; nothing is read after
   // the write, so no failed read can lose a stored cut (C2; round-4, H1).
   // Never fails for the model: a failed intake comes back as sent.
-  ensureIntake: publicProcedure
+  ensureIntake: kitchenProcedure
     .input(z.object({ queueId: z.string().uuid(), ask: z.enum(["opening", "started"]) }))
-    .mutation(async ({ input }) => {
-      const item = await getQueueItem(input.queueId);
-      if (!item) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Queue item not found" });
-      }
-      const { item: stored } = await ensureIntakeForCook(input.queueId, input.ask);
+    .mutation(async ({ ctx, input }) => {
+      await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
+      const { item: stored } = await ensureIntakeForCook(
+        ctx.kitchen.id,
+        input.queueId,
+        input.ask,
+      );
       return readForCook(stored);
     }),
 
@@ -422,49 +434,43 @@ export const appRouter = router({
   // stored one. The cook view calls this once per open when it has no plan.
   // A settled error comes back with no model call (slice P decision 8). A
   // row still waiting for intake gets none (`cookPlanForCook`).
-  ensureCookPlan: publicProcedure
+  ensureCookPlan: kitchenProcedure
     .input(z.object({ queueId: z.string().uuid() }))
-    .mutation(async ({ input }) => {
-      const item = await getQueueItem(input.queueId);
-      if (!item) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Queue item not found" });
-      }
-      return cookPlanForCook(input.queueId);
+    .mutation(async ({ ctx, input }) => {
+      await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
+      return cookPlanForCook(ctx.kitchen.id, input.queueId);
     }),
 
   // Update the status of a queue item. A real transition into "completed"
   // writes the cook to the Cook Log after the response (when a Cook Log is
   // connected), so Done never waits on it; a repeat Done schedules nothing.
-  updateKitchenQueueStatus: publicProcedure
+  updateKitchenQueueStatus: kitchenProcedure
     .input(
       z.object({
         queueId: z.string().uuid(),
         status: KitchenQueueStatusSchema,
       }),
     )
-    .mutation(async ({ input }) => {
-      const item = await getQueueItem(input.queueId);
-      if (!item) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Queue item not found" });
-      }
+    .mutation(async ({ ctx, input }) => {
+      await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
       const { completed, started } = await updateQueueStatus(
+        ctx.kitchen.id,
         input.queueId,
         input.status as "pending" | "cooking" | "completed" | "cancelled",
       );
       const logs = connected["cook-log"];
       if (completed && logs) {
-        after(() => logCookInBackground(input.queueId));
+        after(() => logCookInBackground(ctx.kitchen.id, input.queueId));
       }
-      // A start finishes the cook left on its last screen (decision 7): a
-      // real one, not a repeat of a start already made (a retry after a lost
-      // answer), which could take a cook that only just reached its last screen.
+      // A start finishes any cook left on its last screen: a real transition,
+      // not a repeat of a start already made (a retry after a lost answer),
+      // which could take a cook that only just reached its last screen.
       if (started) {
-        const target = UserIdSchema.safeParse(item.targetUser);
-        if (!target.success) {
-          console.error(`[queue] item ${item.id}: unknown target user, so no left cook is finished`);
-        } else {
-          const left = await finishLeftCooks(target.data, input.queueId);
-          if (logs) for (const id of left) after(() => logCookInBackground(id));
+        const left = await finishLeftCooks(ctx.kitchen.id, input.queueId);
+        if (logs) {
+          for (const id of left) {
+            after(() => logCookInBackground(ctx.kitchen.id, id));
+          }
         }
       }
       return { success: true };
@@ -484,7 +490,7 @@ export const appRouter = router({
   // the reports of every page on the cook (`reportLastScreen`); a touch ahead
   // of the server's clock is refused, so a clock run fast can't shut the
   // other pages out.
-  markCookActivity: publicProcedure
+  markCookActivity: kitchenProcedure
     .input(
       z.object({
         queueId: z.string().uuid(),
@@ -492,20 +498,19 @@ export const appRouter = router({
         interactedAt: z.number().int().positive(),
       }),
     )
-    .mutation(async ({ input }) => {
-      const item = await getQueueItem(input.queueId);
-      if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Queue item not found" });
+    .mutation(async ({ ctx, input }) => {
+      await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
       const now = Date.now();
       const touched = touchOf(input.interactedAt, now);
       const at = input.idleForMs === null ? null : new Date(now - input.idleForMs);
-      return reportLastScreen(input.queueId, at, touched);
+      return reportLastScreen(ctx.kitchen.id, input.queueId, at, touched);
     }),
 
   // The open page's own finish of a cook idle on its last screen, dated to
   // its last activity; the same path as Done, without the pantry sheet.
   // Its idle time as the page counts it, at least the wait: never sooner.
   // Its last touch, by its own clock: a newer one on any page keeps the cook going.
-  autoFinishCook: publicProcedure
+  autoFinishCook: kitchenProcedure
     .input(
       z.object({
         queueId: z.string().uuid(),
@@ -513,47 +518,52 @@ export const appRouter = router({
         interactedAt: z.number().int().positive(),
       }),
     )
-    .mutation(async ({ input }) => {
-      const item = await getQueueItem(input.queueId);
-      if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Queue item not found" });
+    .mutation(async ({ ctx, input }) => {
+      await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
       const now = Date.now();
       const touched = touchOf(input.interactedAt, now);
       const at = new Date(now - input.idleForMs);
-      const { finished, autoFinished } = await autoFinishCook(input.queueId, at, touched);
+      const { finished, autoFinished } = await autoFinishCook(
+        ctx.kitchen.id,
+        input.queueId,
+        at,
+        touched,
+      );
       if (finished && connected["cook-log"]) {
-        after(() => logCookInBackground(input.queueId));
+        after(() => logCookInBackground(ctx.kitchen.id, input.queueId));
       }
       return { autoFinished };
     }),
 
   // A press on the open cook after the app finished it: the cook goes on.
-  reopenCook: publicProcedure
+  reopenCook: kitchenProcedure
     .input(z.object({ queueId: z.string().uuid() }))
-    .mutation(async ({ input }) => {
-      const item = await getQueueItem(input.queueId);
-      if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Queue item not found" });
-      return reopenAutoFinished(input.queueId);
+    .mutation(async ({ ctx, input }) => {
+      await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
+      return reopenAutoFinished(ctx.kitchen.id, input.queueId);
     }),
 
   // Write a finished cook's Cook Log row again, only once the first write
   // has failed (or was lost).
-  retryCookLog: publicProcedure
+  retryCookLog: kitchenProcedure
     .input(z.object({ queueId: z.string().uuid() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
       if (!connected["cook-log"]) {
         return { status: "failed" as const, error: "No Cook Log is connected" };
       }
-      return answeringConflicts(() => retryCookLog(input.queueId));
+      return answeringConflicts(() => retryCookLog(ctx.kitchen.id, input.queueId));
     }),
 
   // Rate a finished cook into its Cook Log row, with an optional note.
-  rateCook: publicProcedure
+  rateCook: kitchenProcedure
     .input(RateCookSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
       if (!connected["cook-log"]) {
         return { rated: false as const, error: "No Cook Log is connected" };
       }
-      return answeringConflicts(() => rateCook(input));
+      return answeringConflicts(() => rateCook(ctx.kitchen.id, input));
     }),
 
   // The kitchen's "How was it?": today's latest finished cook with its ask
@@ -561,44 +571,49 @@ export const appRouter = router({
   // cook's row while it asks, so a rating written there by anyone else closes
   // it. A read: it finishes nothing (the sweep does,
   // `POST /api/kitchen-queue/sweep`).
-  getCookAsk: publicProcedure
-    .input(z.object({ userId: UserIdSchema }))
-    .query(async ({ input }) => {
+  getCookAsk: kitchenProcedure
+    .input(
+      z.object({
+        /** @deprecated Ignored: the kitchen comes from the session. FIXME(Part B): remove with cook-id.ts. */
+        userId: UserIdSchema.optional(),
+      }),
+    )
+    .query(async ({ ctx }) => {
       if (!connected["cook-log"]) return null;
-      return openCookAsk(input.userId);
+      return openCookAsk(ctx.kitchen.id);
     }),
 
   // "Not now": close a finished cook's ask unanswered.
-  dismissCookAsk: publicProcedure
+  dismissCookAsk: kitchenProcedure
     .input(z.object({ queueId: z.string().uuid() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
       if (!connected["cook-log"]) return { success: true };
-      await answeringConflicts(() => dismissCookAsk(input.queueId));
+      await answeringConflicts(() => dismissCookAsk(ctx.kitchen.id, input.queueId));
       return { success: true };
     }),
 
   // Remove a recipe from the queue
-  removeFromKitchenQueue: publicProcedure
+  removeFromKitchenQueue: kitchenProcedure
     .input(z.object({ queueId: z.string().uuid() }))
-    .mutation(async ({ input }) => {
-      const item = await getQueueItem(input.queueId);
-      if (!item) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Queue item not found" });
-      }
-      await removeFromQueue(input.queueId);
+    .mutation(async ({ ctx, input }) => {
+      await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
+      await removeFromQueue(ctx.kitchen.id, input.queueId);
       return { success: true };
     }),
 
   // Get recent cooking items (for quick resume in kitchen mode)
-  getRecentCookingItems: publicProcedure
+  getRecentCookingItems: kitchenProcedure
     .input(
       z.object({
-        userId: UserIdSchema,
+        /** @deprecated Ignored: the kitchen comes from the session. FIXME(Part B): remove with cook-id.ts. */
+        userId: UserIdSchema.optional(),
         limit: z.number().min(1).max(10).optional(),
       }),
     )
-    .query(async ({ input }) => {
-      return getRecentCookingItems(input.userId, input.limit);
+    .query(async ({ ctx, input }) => {
+      const items = await getRecentCookingItems(ctx.kitchen.id, input.limit);
+      return items.map(omitKitchenId);
     }),
 
   // ==========================================================================
@@ -707,7 +722,7 @@ export const appRouter = router({
   // stored shape behind the round-trip guard (S-D12). Either way a recipe the
   // cook page couldn't read is refused with UNPROCESSABLE_CONTENT, so the
   // screen says "Couldn't read that recipe, so it wasn't sent."
-  queueFromPack: publicProcedure
+  queueFromPack: kitchenProcedure
     .input(
       z.object({
         packId: z.string().min(1),
@@ -715,8 +730,7 @@ export const appRouter = router({
         targetUser: UserIdSchema,
       }),
     )
-    .mutation(async ({ input }) => {
-      const targetUser = input.targetUser;
+    .mutation(async ({ ctx, input }) => {
       let recipeData: KitchenQueueRecipeData;
       let servesEstimate: ServesEstimateInput | undefined;
       let stored: StoredPlan | null = null;
@@ -782,7 +796,8 @@ export const appRouter = router({
       }
       refuseUnreadable(recipeData, servesEstimate);
       return queueWithStoredPlan(
-        { recipeData, targetUser, servesEstimate },
+        ctx.kitchen.id,
+        { recipeData, servesEstimate },
         stored,
         `${input.packId}/${input.recipeId}`,
       );
@@ -882,13 +897,13 @@ export const appRouter = router({
     }),
 
   // Reconcile recipe ingredients against the pantry's items upon cook finish
-  getRecipePantryReconciliation: publicProcedure
+  getRecipePantryReconciliation: kitchenProcedure
     .input(z.object({ queueId: z.string().uuid() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       if (!connected.pantry) {
         return { candidates: [] };
       }
-      const stored = await getQueueItem(input.queueId);
+      const stored = await getQueueItem(ctx.kitchen.id, input.queueId);
       if (!stored) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Queue item not found" });
       }

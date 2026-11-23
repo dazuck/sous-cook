@@ -6,7 +6,7 @@
  * That guarantee lives in SQL, so these run the real queries.
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import type { PGlite } from "@electric-sql/pglite";
 
@@ -16,14 +16,31 @@ vi.mock("@/lib/db", async () =>
 
 import * as dbModule from "./db";
 import { db, kitchenQueue } from "./db";
-import { getQueueItem, updateQueueStatus } from "./kitchen-queue";
+import { homeKitchen } from "./__tests__/kitchens";
+import {
+  getQueueItem,
+  updateQueueStatus as updateQueueStatusForKitchen,
+  type QueueFinish,
+  type QueueStatus,
+} from "./kitchen-queue";
 import { ACTIVITY_SLACK_MS, REOPEN_WINDOW_MS } from "./kitchen/auto-finish";
 
 const client = (dbModule as unknown as { client: PGlite }).client;
+let kitchenId: string;
+
+beforeAll(async () => {
+  kitchenId = (await homeKitchen(db)).id;
+});
 
 beforeEach(async () => {
   await client.exec("delete from kitchen_queue");
 });
+
+const updateQueueStatus = (
+  queueId: string,
+  status: QueueStatus,
+  finish?: QueueFinish,
+) => updateQueueStatusForKitchen(kitchenId, queueId, status, finish);
 
 const LOGGED = {
   row: 7,
@@ -37,13 +54,13 @@ async function insertItem(
 ): Promise<string> {
   const [row] = await db
     .insert(kitchenQueue)
-    .values({ recipeData: { name: "Dal" }, targetUser: "cook", ...values })
+    .values({ kitchenId, recipeData: { name: "Dal" }, ...values })
     .returning({ id: kitchenQueue.id });
   return row.id;
 }
 
 async function item(id: string) {
-  const found = await getQueueItem(id);
+  const found = await getQueueItem(kitchenId, id);
   if (!found) throw new Error(`missing ${id}`);
   return found;
 }

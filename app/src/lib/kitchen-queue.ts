@@ -39,7 +39,6 @@ import {
 } from "./pack-convert/intake-state";
 import { sourceHash } from "./serves-estimate-plan";
 import { ACTIVITY_SLACK_MS, REOPEN_WINDOW_MS } from "./kitchen/auto-finish";
-import { DEFAULT_COOK, isValidUserId, type UserId } from "./cook-id";
 
 // =============================================================================
 // Types
@@ -50,9 +49,6 @@ import { DEFAULT_COOK, isValidUserId, type UserId } from "./cook-id";
  */
 export type QueueStatus = KitchenQueueStatus;
 
-/** Who a queue row is for, and the one cook the app runs as (`lib/cook-id.ts`). */
-export { DEFAULT_COOK, isValidUserId, type UserId };
-
 /**
  * Input for adding a recipe to the kitchen queue.
  * Either recipeNotionId OR recipeData must be provided.
@@ -62,8 +58,6 @@ export interface KitchenQueueInput {
   recipeNotionId?: string;
   /** Full recipe data for imported/pasted recipes */
   recipeData?: KitchenQueueRecipeData;
-  /** Target user who should see this in their kitchen */
-  targetUser: UserId;
   /**
    * Sous's estimate of the serving count when the recipe states none (slice
    * B4b), stored beside the recipe in its own columns, never in it.
@@ -130,84 +124,63 @@ export function isValidQueueStatus(status: string): status is QueueStatus {
 // =============================================================================
 
 /**
- * Adds a recipe to the kitchen queue.
+ * Adds a recipe to a kitchen's queue.
  *
+ * @param kitchenId - The owning kitchen ID
  * @param input - Queue input with either recipeNotionId or recipeData
  * @returns The created queue item ID
  * @throws Error if input validation fails
  */
 export async function addToKitchenQueue(
+  kitchenId: string,
   input: KitchenQueueInput,
 ): Promise<{ id: string }> {
-  const { targetUser, ...rest } = input;
-  const [queueItem] = await addToKitchenQueueFor([targetUser], rest);
-  return queueItem!;
-}
-
-/**
- * Adds one recipe to several users' queues in one INSERT, so they are all
- * added or none is: a webhook retried after a partial failure would queue a
- * second copy for the user whose row had landed (round-3 review, C3).
- *
- * @returns the created rows' ids, in the order of `targetUsers`
- * @throws Error if input validation fails, or the insert does
- */
-export async function addToKitchenQueueFor(
-  targetUsers: readonly UserId[],
-  input: Omit<KitchenQueueInput, "targetUser">,
-): Promise<{ id: string }[]> {
-  // Validate target users
-  for (const targetUser of targetUsers) {
-    if (!isValidUserId(targetUser)) throw new Error(`Invalid target user: ${targetUser}`);
-  }
-  if (targetUsers.length === 0 || new Set(targetUsers).size !== targetUsers.length) {
-    throw new Error(`Target users must be one or more, each once: ${targetUsers.join(", ")}`);
-  }
-
   // Validate that at least one of recipeNotionId or recipeData is provided
   if (!input.recipeNotionId && !input.recipeData) {
     throw new Error("Either recipeNotionId or recipeData must be provided");
   }
 
-  const rows = targetUsers.map((targetUser) => ({
-    recipeNotionId: input.recipeNotionId ?? null,
-    recipeData: input.recipeData ?? null,
-    targetUser,
-    status: "pending" as const,
-    servesEstimate: input.servesEstimate?.count ?? null,
-    servesEstimateBasis: input.servesEstimate?.basis ?? null,
-    // The stored recipe the estimate goes with, hashed as the estimates
-    // file hashes a queue row (serves-estimate-plan.ts).
-    servesEstimateSourceHash:
-      input.servesEstimate && input.recipeData
-        ? sourceHash("kitchen_queue", input.recipeData)
-        : null,
-    cookPlan: input.plan?.cookPlan ?? null,
-    cookPlanError: input.plan?.cookPlanError ?? null,
-    intakeSourceHash:
-      input.intake && input.recipeData ? sourceHash("kitchen_queue", input.recipeData) : null,
-  }));
-  const inserted = await db
+  const [inserted] = await db
     .insert(kitchenQueue)
-    .values(rows)
-    .returning({ id: kitchenQueue.id, targetUser: kitchenQueue.targetUser });
-  return targetUsers.map((user) => ({ id: inserted.find((row) => row.targetUser === user)!.id }));
+    .values({
+      kitchenId,
+      recipeNotionId: input.recipeNotionId ?? null,
+      recipeData: input.recipeData ?? null,
+      status: "pending" as const,
+      servesEstimate: input.servesEstimate?.count ?? null,
+      servesEstimateBasis: input.servesEstimate?.basis ?? null,
+      // The stored recipe the estimate goes with, hashed as the estimates
+      // file hashes a queue row (serves-estimate-plan.ts).
+      servesEstimateSourceHash:
+        input.servesEstimate && input.recipeData
+          ? sourceHash("kitchen_queue", input.recipeData)
+          : null,
+      cookPlan: input.plan?.cookPlan ?? null,
+      cookPlanError: input.plan?.cookPlanError ?? null,
+      intakeSourceHash:
+        input.intake && input.recipeData
+          ? sourceHash("kitchen_queue", input.recipeData)
+          : null,
+    })
+    .returning({ id: kitchenQueue.id });
+
+  return { id: inserted!.id };
 }
 
 /**
- * Gets pending recipes in the kitchen queue for a user.
+ * Gets recipes in a kitchen's queue for the given status.
  *
- * @param userId - The user to get queue items for
+ * @param kitchenId - The owning kitchen ID
  * @param status - Optional status filter (default: "pending")
  * @returns Array of queue items, newest first
  */
 export async function getKitchenQueue(
-  userId: UserId,
+  kitchenId: string,
   status: QueueStatus = "pending",
 ): Promise<KitchenQueueItem[]> {
   return db.query.kitchenQueue.findMany({
     where: and(
-      eq(kitchenQueue.targetUser, userId),
+      eq(kitchenQueue.kitchenId, kitchenId),
       eq(kitchenQueue.status, status),
     ),
     orderBy: [desc(kitchenQueue.createdAt)],
@@ -215,20 +188,28 @@ export async function getKitchenQueue(
 }
 
 /**
- * Gets a single queue item by ID.
+ * Gets a single queue item owned by the given kitchen.
  *
+ * @param kitchenId - The owning kitchen ID
  * @param queueId - The queue item ID
- * @returns The queue item or null if not found
+ * @returns The queue item or null if not found in this kitchen
  */
-export async function getQueueItem(
+export async function getQueueItemForKitchen(
+  kitchenId: string,
   queueId: string,
 ): Promise<KitchenQueueItem | null> {
   const item = await db.query.kitchenQueue.findFirst({
-    where: eq(kitchenQueue.id, queueId),
+    where: and(
+      eq(kitchenQueue.kitchenId, kitchenId),
+      eq(kitchenQueue.id, queueId),
+    ),
   });
 
   return item ?? null;
 }
+
+/** Alias for `getQueueItemForKitchen`; every read is scoped to a kitchen. */
+export const getQueueItem = getQueueItemForKitchen;
 
 /**
  * How a finish came about: the cook's press, the open page's own finish of a
@@ -285,6 +266,7 @@ export type QueueFinish =
  * @throws Error if status is invalid
  */
 export async function updateQueueStatus(
+  kitchenId: string,
   queueId: string,
   status: QueueStatus,
   finish: QueueFinish = { by: "pressed" },
@@ -297,7 +279,13 @@ export async function updateQueueStatus(
     const moved = await db
       .update(kitchenQueue)
       .set({ status, startedAt: sql`now()`, finishedBy: null, lastScreenActiveAt: null, lastInteractionAt: null })
-      .where(and(eq(kitchenQueue.id, queueId), ne(kitchenQueue.status, status)))
+      .where(
+        and(
+          eq(kitchenQueue.kitchenId, kitchenId),
+          eq(kitchenQueue.id, queueId),
+          ne(kitchenQueue.status, status),
+        ),
+      )
       .returning({ id: kitchenQueue.id });
     return { completed: false, started: moved.length > 0 };
   }
@@ -332,8 +320,13 @@ export async function updateQueueStatus(
       })
       .where(
         finish.by === "pressed"
-          ? and(eq(kitchenQueue.id, queueId), ne(kitchenQueue.status, status))
+          ? and(
+              eq(kitchenQueue.kitchenId, kitchenId),
+              eq(kitchenQueue.id, queueId),
+              ne(kitchenQueue.status, status),
+            )
           : and(
+              eq(kitchenQueue.kitchenId, kitchenId),
               eq(kitchenQueue.id, queueId),
               eq(kitchenQueue.status, "cooking"),
               // Off the last screen (another page stepped back): never.
@@ -356,34 +349,40 @@ export async function updateQueueStatus(
   await db
     .update(kitchenQueue)
     .set({ status })
-    .where(eq(kitchenQueue.id, queueId));
+    .where(and(eq(kitchenQueue.kitchenId, kitchenId), eq(kitchenQueue.id, queueId)));
   return { completed: false, started: false };
 }
 
 /**
- * Removes an item from the kitchen queue.
+ * Removes an item from a kitchen's queue.
  *
+ * @param kitchenId - The owning kitchen ID
  * @param queueId - The queue item ID to remove
  */
-export async function removeFromQueue(queueId: string): Promise<void> {
-  await db.delete(kitchenQueue).where(eq(kitchenQueue.id, queueId));
+export async function removeFromQueue(
+  kitchenId: string,
+  queueId: string,
+): Promise<void> {
+  await db
+    .delete(kitchenQueue)
+    .where(and(eq(kitchenQueue.kitchenId, kitchenId), eq(kitchenQueue.id, queueId)));
 }
 
 /**
- * Gets the most recent items with "cooking" status.
+ * Gets the most recent items with "cooking" status for a kitchen.
  * Useful for showing recently active cooking sessions that can be resumed.
  *
- * @param userId - The user to get items for
+ * @param kitchenId - The owning kitchen ID
  * @param limit - Maximum number of items to return (default: 3)
  * @returns Array of cooking queue items, newest first
  */
 export async function getRecentCookingItems(
-  userId: UserId,
+  kitchenId: string,
   limit: number = 3,
 ): Promise<KitchenQueueItem[]> {
   return db.query.kitchenQueue.findMany({
     where: and(
-      eq(kitchenQueue.targetUser, userId),
+      eq(kitchenQueue.kitchenId, kitchenId),
       eq(kitchenQueue.status, "cooking"),
     ),
     orderBy: [desc(kitchenQueue.createdAt)],
@@ -423,7 +422,27 @@ function readsSameRecipe(intakeRecipe: KitchenQueueRecipeData | null) {
   return intakeRecipe === null ? isNull(kitchenQueue.intakeRecipe) : isNotNull(kitchenQueue.intakeRecipe);
 }
 
+/**
+ * Returns true if `err` or any error in its `cause` chain carries a
+ * PostgreSQL integrity constraint violation SQLSTATE (class 23: not-null,
+ * foreign-key, unique, or check violation).
+ */
+function isIntegrityError(err: unknown): boolean {
+  const seen = new Set<unknown>();
+  let cur: unknown = err;
+  while (cur !== null && cur !== undefined && typeof cur === "object" && !seen.has(cur)) {
+    seen.add(cur);
+    const code = (cur as { code?: unknown }).code;
+    if (typeof code === "string" && code.startsWith("23")) {
+      return true;
+    }
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 async function storeCookPlan(
+  kitchenId: string,
   queueId: string,
   plan: CookPlan,
   readFrom: KitchenQueueRecipeData | null,
@@ -431,12 +450,20 @@ async function storeCookPlan(
   const written = await db
     .update(kitchenQueue)
     .set({ cookPlan: plan, cookPlanError: null })
-    .where(and(eq(kitchenQueue.id, queueId), acceptsPlan(plan.version), readsSameRecipe(readFrom)))
+    .where(
+      and(
+        eq(kitchenQueue.kitchenId, kitchenId),
+        eq(kitchenQueue.id, queueId),
+        acceptsPlan(plan.version),
+        readsSameRecipe(readFrom),
+      ),
+    )
     .returning({ id: kitchenQueue.id });
   return written.length > 0;
 }
 
 async function storeCookPlanError(
+  kitchenId: string,
   queueId: string,
   error: string,
   readFrom: KitchenQueueRecipeData | null,
@@ -444,13 +471,23 @@ async function storeCookPlanError(
   const written = await db
     .update(kitchenQueue)
     .set({ cookPlanError: error })
-    .where(and(eq(kitchenQueue.id, queueId), acceptsPlan(COOK_PLAN_VERSION), readsSameRecipe(readFrom)))
+    .where(
+      and(
+        eq(kitchenQueue.kitchenId, kitchenId),
+        eq(kitchenQueue.id, queueId),
+        acceptsPlan(COOK_PLAN_VERSION),
+        readsSameRecipe(readFrom),
+      ),
+    )
     .returning({ id: kitchenQueue.id });
   return written.length > 0;
 }
 
-async function getQueueItemOrThrow(queueId: string): Promise<KitchenQueueItem> {
-  const item = await getQueueItem(queueId);
+async function getQueueItemOrThrow(
+  kitchenId: string,
+  queueId: string,
+): Promise<KitchenQueueItem> {
+  const item = await getQueueItem(kitchenId, queueId);
   if (!item) throw new Error(`Kitchen queue item not found: ${queueId}`);
   return item;
 }
@@ -490,9 +527,14 @@ export interface CookPlanBackfillSelection {
  * its `--apply` both read this, so the listing is exactly what `--apply`
  * would derive, and an empty `todo` means `--apply` would write nothing.
  */
-export async function selectCookPlanBackfill(): Promise<CookPlanBackfillSelection> {
+export async function selectCookPlanBackfill(
+  kitchenId: string,
+): Promise<CookPlanBackfillSelection> {
   const open = await db.query.kitchenQueue.findMany({
-    where: inArray(kitchenQueue.status, ["pending", "cooking"]),
+    where: and(
+      eq(kitchenQueue.kitchenId, kitchenId),
+      inArray(kitchenQueue.status, ["pending", "cooking"]),
+    ),
     orderBy: [kitchenQueue.createdAt],
   });
   return {
@@ -529,40 +571,45 @@ export async function selectCookPlanBackfill(): Promise<CookPlanBackfillSelectio
  *   the plan or its error could not be stored
  */
 export async function deriveAndStoreCookPlan(
+  kitchenId: string,
   queueId: string,
 ): Promise<CookPlanOutcome> {
-  return deriveAndStore(queueId, false);
+  return deriveAndStore(kitchenId, queueId, false);
 }
 
-async function deriveAndStore(queueId: string, again: boolean): Promise<CookPlanOutcome> {
-  const item = await getQueueItemOrThrow(queueId);
+async function deriveAndStore(
+  kitchenId: string,
+  queueId: string,
+  again: boolean,
+): Promise<CookPlanOutcome> {
+  const item = await getQueueItemOrThrow(kitchenId, queueId);
   const settled = cookPlanWithoutDerive(item);
   if (settled) return settled;
 
   const derived = await deriveCookPlanOutcome(queueIntake(item).recipe ?? {});
-  await logCookPlanRejections(`cook-plan:${queueId}`, randomUUID(), derived.rejections);
+  await logCookPlanRejections(kitchenId, `cook-plan:${queueId}`, randomUUID(), derived.rejections);
   /** The cut landed since the read: this derive planned a recipe the cook no longer meets. */
   const cutSince = (winner: KitchenQueueItem) =>
     !again && item.intakeRecipe === null && winner.intakeRecipe !== null;
 
   if (derived.plan !== null) {
-    if (await storeCookPlan(queueId, derived.plan, item.intakeRecipe)) {
+    if (await storeCookPlan(kitchenId, queueId, derived.plan, item.intakeRecipe)) {
       return { plan: derived.plan, error: null };
     }
-    const winner = await getQueueItemOrThrow(queueId);
+    const winner = await getQueueItemOrThrow(kitchenId, queueId);
     if (isCurrentCookPlan(winner.cookPlan)) return { plan: winner.cookPlan, error: null };
-    if (cutSince(winner)) return deriveAndStore(queueId, true);
+    if (cutSince(winner)) return deriveAndStore(kitchenId, queueId, true);
     // A plan from a newer version is left alone but can't be read here.
     return { plan: derived.plan, error: null };
   }
 
   const { error } = derived;
-  if (!(await storeCookPlanError(queueId, error, item.intakeRecipe))) {
-    const winner = await getQueueItemOrThrow(queueId);
+  if (!(await storeCookPlanError(kitchenId, queueId, error, item.intakeRecipe))) {
+    const winner = await getQueueItemOrThrow(kitchenId, queueId);
     if (isCurrentCookPlan(winner.cookPlan)) {
       return { plan: winner.cookPlan, error: null };
     }
-    if (cutSince(winner)) return deriveAndStore(queueId, true);
+    if (cutSince(winner)) return deriveAndStore(kitchenId, queueId, true);
   }
   return { plan: null, error };
 }
@@ -573,10 +620,12 @@ async function deriveAndStore(queueId: string, again: boolean): Promise<CookPlan
  * for a library row), so a bad plan can be read back after the fact (the
  * stored error keeps only the rule). The context names the derivation (two
  * can run at once for one item) and the model call the reply came from. A
- * failed write is logged and ignored: the record is for diagnosis and must
- * not change the plan's outcome.
+ * passing database failure is logged and ignored so the record does not
+ * change the plan's outcome, while integrity constraint violations (SQLSTATE
+ * class 23) are rethrown because they signal a bug such as a missing kitchen.
  */
 export async function logCookPlanRejections(
+  kitchenId: string,
   sessionId: string,
   derivation: string,
   rejections: readonly CookPlanRejection[],
@@ -585,6 +634,7 @@ export async function logCookPlanRejections(
   try {
     await db.insert(conversationLogs).values(
       rejections.map(({ call, raw, rule, detail }) => ({
+        kitchenId,
         sessionId,
         role: "assistant",
         content: typeof raw === "string" ? raw : JSON.stringify(raw),
@@ -592,6 +642,7 @@ export async function logCookPlanRejections(
       })),
     );
   } catch (err) {
+    if (isIntegrityError(err)) throw err;
     console.error(`Could not log a rejected cook plan for ${sessionId}:`, err);
   }
 }
@@ -650,8 +701,12 @@ export type IntakeAsk = "background" | "opening" | "started";
  *
  * @throws Error if the item does not exist, or the outcome could not be stored
  */
-export async function ensureIntake(queueId: string, ask: IntakeAsk = "background"): Promise<QueueIntake> {
-  return (await ensureIntakeForCook(queueId, ask)).intake;
+export async function ensureIntake(
+  kitchenId: string,
+  queueId: string,
+  ask: IntakeAsk = "background",
+): Promise<QueueIntake> {
+  return (await ensureIntakeForCook(kitchenId, queueId, ask)).intake;
 }
 
 /**
@@ -659,22 +714,22 @@ export async function ensureIntake(queueId: string, ask: IntakeAsk = "background
  * write left it, or, when there is nothing to run, the row as read. Each
  * outcome is one statement that writes only where its guard holds and
  * returns the row either way (`update … set col = case when <guard> then
- * <new> else col end where id = … returning`), so no read ever follows a
- * write: a run that loses to another run's outcome answers with that
- * outcome, and a failed statement wrote nothing (round-4 review, H1;
- * round-5, Codex #6). The guard sits in the SET rather than the WHERE so
- * that, under read committed, a row another run changed meanwhile is
- * re-checked and returned as it now stands; a CTE's separate SELECT of the
- * row would read the statement's older snapshot. The cook page's ask
- * answers with this row.
+ * <new> else col end where kitchen_id = … and id = … returning`), so no read
+ * ever follows a write: a run that loses to another run's outcome answers
+ * with that outcome, and a failed statement wrote nothing. The guard sits in
+ * the SET clause rather than the WHERE clause so that, under read committed,
+ * a row another run changed meanwhile is re-checked and returned as it now
+ * stands; a CTE's separate SELECT of the row would read the statement's older
+ * snapshot. The cook page's ask answers with this row.
  *
  * @throws as `ensureIntake`
  */
 export async function ensureIntakeForCook(
+  kitchenId: string,
   queueId: string,
   ask: IntakeAsk,
 ): Promise<{ intake: QueueIntake; item: KitchenQueueItem }> {
-  const item = await getQueueItemOrThrow(queueId);
+  const item = await getQueueItemOrThrow(kitchenId, queueId);
   const before = queueIntake(item);
   if (before.state !== "pending" || item.recipeData === null) return { intake: before, item };
   if (ask === "background" && item.status !== "pending") return { intake: before, item };
@@ -713,7 +768,7 @@ export async function ensureIntakeForCook(
             kitchenQueue.intakeAttempts,
           ),
         })
-        .where(eq(kitchenQueue.id, queueId))
+        .where(and(eq(kitchenQueue.kitchenId, kitchenId), eq(kitchenQueue.id, queueId)))
         .returning(),
     );
   };
@@ -752,7 +807,7 @@ export async function ensureIntakeForCook(
       `${usage.calls} call(s), ${usage.input} input + ${usage.output} output tokens, ` +
       `${formatUsd(callCostUsd(usage.input, usage.output))}`,
   );
-  await logIntakeRejections(queueId, outcome.rejections);
+  await logIntakeRejections(kitchenId, queueId, outcome.rejections);
 
   if (error !== null) return settle(error);
   const write = when(open);
@@ -766,7 +821,7 @@ export async function ensureIntakeForCook(
         intakeNudges: write(sql`${JSON.stringify(nudges)}::jsonb`, kitchenQueue.intakeNudges),
         intakeAttempts: write(sql`coalesce(${kitchenQueue.intakeAttempts}, 0) + 1`, kitchenQueue.intakeAttempts),
       })
-      .where(eq(kitchenQueue.id, queueId))
+      .where(and(eq(kitchenQueue.kitchenId, kitchenId), eq(kitchenQueue.id, queueId)))
       .returning(),
   );
 }
@@ -774,15 +829,20 @@ export async function ensureIntakeForCook(
 /**
  * Keeps each cut intake's check turned down in `conversation_logs`, under
  * `intake:<queueId>`, so a failed intake can be read back (the stored error
- * keeps only one rule). A failed write is logged and ignored: the record is
- * for diagnosis and must not change the outcome.
+ * keeps only one rule). A passing database failure is logged and ignored,
+ * while integrity constraint violations (SQLSTATE class 23) are rethrown.
  */
-async function logIntakeRejections(queueId: string, rejections: readonly IntakeRejection[]): Promise<void> {
+async function logIntakeRejections(
+  kitchenId: string,
+  queueId: string,
+  rejections: readonly IntakeRejection[],
+): Promise<void> {
   if (rejections.length === 0) return;
   const run = randomUUID();
   try {
     await db.insert(conversationLogs).values(
       rejections.map(({ attempt, recipe, violations }) => ({
+        kitchenId,
         sessionId: `intake:${queueId}`,
         role: "assistant",
         content: JSON.stringify(recipe),
@@ -790,6 +850,7 @@ async function logIntakeRejections(queueId: string, rejections: readonly IntakeR
       })),
     );
   } catch (err) {
+    if (isIntegrityError(err)) throw err;
     console.error(`Could not log a rejected intake for ${queueId}:`, err);
   }
 }
@@ -798,13 +859,15 @@ async function logIntakeRejections(queueId: string, rejections: readonly IntakeR
  * The plan the cook page asks for (`ensureCookPlan`): the stored one, or one
  * derived now (`deriveAndStoreCookPlan`). A row still waiting for intake
  * gets none and nothing is stored, so intake can still cut it: a plan of the
- * recipe as sent would settle it as sent. Only a tablet on an older bundle,
- * which never asks for intake, asks for a plan then (round-3 review, S2).
+ * recipe as sent would settle it as sent.
  */
-export async function cookPlanForCook(queueId: string): Promise<CookPlanOutcome> {
-  const item = await getQueueItemOrThrow(queueId);
+export async function cookPlanForCook(
+  kitchenId: string,
+  queueId: string,
+): Promise<CookPlanOutcome> {
+  const item = await getQueueItemOrThrow(kitchenId, queueId);
   if (queueIntake(item).state === "pending") return { plan: null, error: INTAKE_STATE_ERRORS.waiting };
-  return deriveAndStoreCookPlan(queueId);
+  return deriveAndStoreCookPlan(kitchenId, queueId);
 }
 
 /**
@@ -817,11 +880,12 @@ export async function cookPlanForCook(queueId: string): Promise<CookPlanOutcome>
  * @throws as `ensureIntake` and `deriveAndStoreCookPlan`
  */
 export async function prepareQueueItem(
+  kitchenId: string,
   queueId: string,
 ): Promise<{ intake: QueueIntake; plan: CookPlanOutcome | null }> {
-  const intake = await ensureIntake(queueId);
+  const intake = await ensureIntake(kitchenId, queueId);
   if (intake.state === "pending") return { intake, plan: null };
-  const plan = await deriveAndStoreCookPlan(queueId);
+  const plan = await deriveAndStoreCookPlan(kitchenId, queueId);
   return { intake, plan };
 }
 
@@ -832,9 +896,12 @@ export async function prepareQueueItem(
  * (the item removed, the database down) has no caller left to tell, so each
  * is logged here.
  */
-export async function prepareQueueItemInBackground(queueId: string): Promise<void> {
+export async function prepareQueueItemInBackground(
+  kitchenId: string,
+  queueId: string,
+): Promise<void> {
   try {
-    const { intake, plan } = await prepareQueueItem(queueId);
+    const { intake, plan } = await prepareQueueItem(kitchenId, queueId);
     if (intake.state === "as-sent") console.warn(`Queue item ${queueId} shown as sent: ${intake.error}`);
     if (plan === null) console.warn(`Queue item ${queueId} not cut yet, tries again on open: ${intake.error}`);
     else if (plan.error) console.warn(`No cook plan for queue item ${queueId}: ${plan.error}`);

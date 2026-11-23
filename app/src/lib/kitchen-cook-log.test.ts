@@ -10,6 +10,7 @@ import {
   describe,
   it,
   expect,
+  beforeAll,
   beforeEach,
   afterEach,
   vi,
@@ -46,30 +47,64 @@ vi.mock("./kitchen-queue", async (importOriginal) => {
 
 import * as dbModule from "./db";
 import { db, kitchenQueue } from "./db";
+import { callerFor, homeKitchen, seedKitchen } from "./__tests__/kitchens";
 import {
   CookLogConflict,
   CookLogItemNotFound,
   cookLogStatus,
-  dismissCookAsk,
+  dismissCookAsk as dismissCookAskForKitchen,
   LOST_WRITE_MS,
-  logCook,
-  logCookInBackground,
-  openCookAsk,
-  rateCook,
-  retryCookLog,
+  logCook as logCookForKitchen,
+  logCookInBackground as logCookInBackgroundForKitchen,
+  openCookAsk as openCookAskForKitchen,
+  rateCook as rateCookForKitchen,
+  retryCookLog as retryCookLogForKitchen,
 } from "./kitchen-cook-log";
-import { getQueueItem, updateQueueStatus } from "./kitchen-queue";
-import { appRouter } from "../server/routers/_app";
+import {
+  getQueueItem,
+  updateQueueStatus as updateQueueStatusForKitchen,
+  type QueueFinish,
+  type QueueStatus,
+} from "./kitchen-queue";
 
 const client = (dbModule as unknown as { client: PGlite }).client;
+let kitchenId: string;
+let router: ReturnType<typeof callerFor>;
 
 /** The Cook Log's transport: every request the grid makes goes through it. */
 const mockFetch = vi.fn();
 
+beforeAll(async () => {
+  const home = await homeKitchen(db);
+  kitchenId = home.id;
+  router = callerFor(home);
+});
+
 beforeEach(async () => {
   mockFetch.mockReset();
   await client.exec("delete from kitchen_queue");
+  await client.exec("delete from kitchens where slug <> 'home'");
 });
+
+const updateQueueStatus = (
+  queueId: string,
+  status: QueueStatus,
+  finish?: QueueFinish,
+) => updateQueueStatusForKitchen(kitchenId, queueId, status, finish);
+const logCook = (queueId: string, now?: Date) =>
+  logCookForKitchen(kitchenId, queueId, now);
+const logCookInBackground = (queueId: string) =>
+  logCookInBackgroundForKitchen(kitchenId, queueId);
+const retryCookLog = (queueId: string, now?: Date) =>
+  retryCookLogForKitchen(kitchenId, queueId, now);
+const rateCook = (
+  input: { queueId: string; rating: number; notes?: string },
+  now?: Date,
+) => rateCookForKitchen(kitchenId, input, now);
+const openCookAsk = (_ignoredUser: string, now?: Date) =>
+  openCookAskForKitchen(kitchenId, now);
+const dismissCookAsk = (queueId: string) =>
+  dismissCookAskForKitchen(kitchenId, queueId);
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -112,8 +147,8 @@ async function completedItem(
   const [row] = await db
     .insert(kitchenQueue)
     .values({
+      kitchenId,
       recipeData: { name: "Dal" },
-      targetUser: "cook",
       status: "completed",
       completedAt: DONE,
       ...values,
@@ -123,7 +158,7 @@ async function completedItem(
 }
 
 async function item(id: string) {
-  const found = await getQueueItem(id);
+  const found = await getQueueItem(kitchenId, id);
   if (!found) throw new Error(`missing ${id}`);
   return found;
 }
@@ -138,11 +173,19 @@ const MISSING = "00000000-0000-4000-8000-000000000000";
  * caller acts on what it read: the window between a write's (or a rating's)
  * read and its claim.
  */
-async function afterNextRead(change: (id: string) => Promise<unknown>) {
+async function afterNextRead(
+  change: (id: string) => Promise<unknown>,
+  skip = 0,
+) {
   const actual =
     await vi.importActual<typeof import("./kitchen-queue")>("./kitchen-queue");
-  vi.mocked(getQueueItem).mockImplementationOnce(async (id: string) => {
-    const read = await actual.getQueueItem(id);
+  for (let i = 0; i < skip; i++) {
+    vi.mocked(getQueueItem).mockImplementationOnce((kId: string, id: string) =>
+      actual.getQueueItem(kId, id),
+    );
+  }
+  vi.mocked(getQueueItem).mockImplementationOnce(async (kId: string, id: string) => {
+    const read = await actual.getQueueItem(kId, id);
     await change(id);
     return read;
   });
@@ -156,8 +199,6 @@ async function reopenAndFinish(id: string) {
   await updateQueueStatus(id, "cooking");
   expect((await updateQueueStatus(id, "completed")).completed).toBe(true);
 }
-
-const router = appRouter.createCaller({ db: {} as never });
 
 /**
  * A Cook Log with state: an append lands in it, and a later read sees it. A
@@ -477,7 +518,8 @@ describe("the item changes between the write's read and its claim", () => {
 
   it("a rating from failed, for a cook finished again since it read, is CONFLICT not-completed", async () => {
     const id = await completedItem({ cookLogError: "Cook Log API 503" });
-    await afterNextRead(reopenAndFinish);
+    // Skip the router's ownership check read so the race lands between rateCook's read and its claim.
+    await afterNextRead(reopenAndFinish, 1);
 
     const error = await router
       .rateCook({ queueId: id, rating: 2 })
@@ -489,6 +531,37 @@ describe("the item changes between the write's read and its claim", () => {
     const after = await item(id);
     expect(after.cookLog).toBeNull();
     expect(after.ratingClosedAt).toBeNull();
+  });
+
+  it("a move's claim does not land on a row moved to another kitchen after the follow read", async () => {
+    const { kitchen: other } = await seedKitchen(db, {
+      slug: "other-kitchen",
+      name: "Other",
+    });
+    // A cook log stamped at a time other than the finish time, so logging has to move the row.
+    const id = await completedItem({
+      cookLog: { ...LOG, timestamp: "2026-10-04 18:00" },
+    });
+    let afterMove: unknown = null;
+    // Skip logCook's own read; move the row to the other kitchen right after the next one,
+    // which is the read the move makes before it claims the row.
+    await afterNextRead(async (queueId) => {
+      await db
+        .update(kitchenQueue)
+        .set({ kitchenId: other.id })
+        .where(eq(kitchenQueue.id, queueId));
+      afterMove = (
+        await db.select().from(kitchenQueue).where(eq(kitchenQueue.id, queueId))
+      )[0];
+    }, 1);
+
+    await expect(logCook(id, minutesAfterDone(1))).rejects.toThrow();
+
+    expect(afterMove).not.toBeNull();
+    expect(
+      (await db.select().from(kitchenQueue).where(eq(kitchenQueue.id, id)))[0],
+    ).toEqual(afterMove);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });
 
@@ -1064,8 +1137,12 @@ describe("openCookAsk", () => {
     expect((await openCookAsk("cook", EVENING))?.queueId).toBe(earlier);
   });
 
-  it("leaves out another profile's cooks, and cooks not finished", async () => {
-    await completedItem({ targetUser: "cook-2", cookLogError: "x" });
+  it("leaves out another kitchen's cooks, and cooks not finished", async () => {
+    const { kitchen: other } = await seedKitchen(db, {
+      slug: "other-kitchen",
+      name: "Other Kitchen",
+    });
+    await completedItem({ kitchenId: other.id, cookLogError: "x" });
     await completedItem({ status: "cooking", completedAt: null });
     await completedItem({ status: "pending", completedAt: null });
 
@@ -1267,11 +1344,16 @@ describe("dismissCookAsk", () => {
 });
 
 describe("getCookAsk", () => {
-  it("answers the open ask through the router, for the profile asked", async () => {
+  it("answers the open ask through the router for the session kitchen and ignores userId", async () => {
     // Finished just now: the router asks with the real clock.
     const id = await completedItem({ completedAt: new Date(), cookLogError: "x" });
+    const { kitchen: other } = await seedKitchen(db, {
+      slug: "other-ask",
+      name: "Other Ask",
+    });
 
     expect(await router.getCookAsk({ userId: "cook" })).toEqual({ queueId: id, name: "Dal", state: "failed" });
-    expect(await router.getCookAsk({ userId: "cook-2" })).toBeNull();
+    expect(await router.getCookAsk({ userId: "cook-2" })).toEqual({ queueId: id, name: "Dal", state: "failed" });
+    expect(await callerFor(other).getCookAsk({ userId: "cook" })).toBeNull();
   });
 });

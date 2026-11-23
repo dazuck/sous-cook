@@ -12,6 +12,9 @@ import {
   kitchens,
   kitchenWebhookTokens,
 } from "../../../drizzle/schema";
+import { db as defaultDb } from "../db";
+import { appRouter } from "../../server/routers/_app";
+import type { KitchenContext, MemberContext } from "../../server/trpc";
 
 export type KitchenRow = typeof kitchens.$inferSelect;
 export type KitchenQueueRow = typeof kitchenQueue.$inferSelect;
@@ -66,6 +69,22 @@ export async function homeKitchen(db: TestDb): Promise<KitchenRow> {
 }
 
 /**
+ * Builds an `appRouter` caller scoped to the given kitchen and optional member,
+ * matching the context `kitchenProcedure` provides.
+ */
+export function callerFor(
+  kitchen: Pick<KitchenContext, "id" | "slug">,
+  member: MemberContext | null = null,
+) {
+  return appRouter.createCaller({
+    db: defaultDb,
+    headers: new Headers(),
+    kitchen: { id: kitchen.id, slug: kitchen.slug },
+    member,
+  });
+}
+
+/**
  * Inserts a queue row owned by the given kitchen.
  */
 export async function seedQueueRow(
@@ -78,7 +97,6 @@ export async function seedQueueRow(
     .values({
       kitchenId,
       recipeData: { name: "Test Recipe" },
-      targetUser: "cook",
       status: "pending",
       ...overrides,
     })

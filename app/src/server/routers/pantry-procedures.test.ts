@@ -32,9 +32,10 @@ import {
   parseGroceryInput,
   reconcileRecipeIngredients,
 } from "../../lib/pantry-reconciliation";
-import { appRouter } from "./_app";
+import { callerFor } from "../../lib/__tests__/kitchens";
 
-const caller = appRouter.createCaller({ db: {} as never });
+const HOME = { id: "00000000-0000-4000-8000-000000000001", slug: "home" };
+const caller = callerFor(HOME);
 const { readSections, addItems: addPantryItems, applyUpdates: updatePantryItems } = stores.pantry;
 const {
   list: getShoppingList,

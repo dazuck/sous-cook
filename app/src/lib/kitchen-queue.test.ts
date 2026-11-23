@@ -13,11 +13,12 @@ import {
   getQueueItem,
   updateQueueStatus,
   isValidQueueStatus,
-  isValidUserId,
-  DEFAULT_COOK,
   type QueueStatus,
   type KitchenQueueInput,
 } from "./kitchen-queue";
+import { DEFAULT_COOK, isValidUserId } from "./cook-id";
+
+const KITCHEN_ID = "00000000-0000-4000-8000-000000000001";
 
 // =============================================================================
 // Mock Setup
@@ -39,7 +40,7 @@ vi.mock("./db", () => ({
   },
   kitchenQueue: {
     id: "id",
-    targetUser: "target_user",
+    kitchenId: "kitchen_id",
     status: "status",
     createdAt: "created_at",
   },
@@ -110,17 +111,16 @@ describe("addToKitchenQueue", () => {
   it("adds a recipe with Notion ID to the queue", async () => {
     const mockInsert = vi.fn().mockReturnValue({
       values: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([{ id: "queue-123", targetUser: "cook" }]),
+        returning: vi.fn().mockResolvedValue([{ id: "queue-123" }]),
       }),
     });
     (db.insert as Mock).mockImplementation(mockInsert);
 
     const input: KitchenQueueInput = {
       recipeNotionId: "notion-456",
-      targetUser: "cook",
     };
 
-    const result = await addToKitchenQueue(input);
+    const result = await addToKitchenQueue(KITCHEN_ID, input);
 
     expect(result).toEqual({ id: "queue-123" });
     expect(db.insert).toHaveBeenCalled();
@@ -129,7 +129,7 @@ describe("addToKitchenQueue", () => {
   it("adds a recipe with full data (no Notion ID) to the queue", async () => {
     const mockInsert = vi.fn().mockReturnValue({
       values: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([{ id: "queue-789", targetUser: "cook-2" }]),
+        returning: vi.fn().mockResolvedValue([{ id: "queue-789" }]),
       }),
     });
     (db.insert as Mock).mockImplementation(mockInsert);
@@ -140,10 +140,9 @@ describe("addToKitchenQueue", () => {
         ingredients: [{ item: "flour", amount: "2", unit: "cups" }],
         steps: ["Mix ingredients", "Bake"],
       },
-      targetUser: "cook-2",
     };
 
-    const result = await addToKitchenQueue(input);
+    const result = await addToKitchenQueue(KITCHEN_ID, input);
 
     expect(result).toEqual({ id: "queue-789" });
     expect(db.insert).toHaveBeenCalled();
@@ -151,49 +150,41 @@ describe("addToKitchenQueue", () => {
 
   it("stores Sous's serving estimate in its own columns, beside the recipe, never in it (B4b)", async () => {
     const values = vi.fn().mockReturnValue({
-      returning: vi.fn().mockResolvedValue([{ id: "queue-est", targetUser: "cook" }]),
+      returning: vi.fn().mockResolvedValue([{ id: "queue-est" }]),
     });
     (db.insert as Mock).mockReturnValue({ values });
     const recipeData = { name: "Stew", steps: ["Simmer."] };
 
-    await addToKitchenQueue({
+    await addToKitchenQueue(KITCHEN_ID, {
       recipeData,
-      targetUser: "cook",
       servesEstimate: { count: 3, basis: "about 3 bowls" },
     });
-    expect(values).toHaveBeenLastCalledWith([
+    expect(values).toHaveBeenLastCalledWith(
       expect.objectContaining({
+        kitchenId: KITCHEN_ID,
         recipeData,
         servesEstimate: 3,
         servesEstimateBasis: "about 3 bowls",
         servesEstimateSourceHash: sourceHash("kitchen_queue", recipeData),
       }),
-    ]);
-    expect(values.mock.lastCall![0][0].recipeData).not.toHaveProperty("serves");
+    );
+    expect(values.mock.lastCall![0].recipeData).not.toHaveProperty("serves");
 
-    await addToKitchenQueue({ recipeData, targetUser: "cook" });
-    expect(values).toHaveBeenLastCalledWith([
-      expect.objectContaining({ servesEstimate: null, servesEstimateBasis: null, servesEstimateSourceHash: null }),
-    ]);
-  });
-
-  it("throws error for invalid target user", async () => {
-    const input: KitchenQueueInput = {
-      recipeNotionId: "notion-456",
-      targetUser: "Not A Slug",
-    };
-
-    await expect(addToKitchenQueue(input)).rejects.toThrow(
-      "Invalid target user: Not A Slug",
+    await addToKitchenQueue(KITCHEN_ID, { recipeData });
+    expect(values).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        kitchenId: KITCHEN_ID,
+        servesEstimate: null,
+        servesEstimateBasis: null,
+        servesEstimateSourceHash: null,
+      }),
     );
   });
 
   it("throws error when neither recipeNotionId nor recipeData provided", async () => {
-    const input: KitchenQueueInput = {
-      targetUser: "cook",
-    };
+    const input: KitchenQueueInput = {};
 
-    await expect(addToKitchenQueue(input)).rejects.toThrow(
+    await expect(addToKitchenQueue(KITCHEN_ID, input)).rejects.toThrow(
       "Either recipeNotionId or recipeData must be provided",
     );
   });
@@ -208,21 +199,21 @@ describe("getKitchenQueue", () => {
     resetMocks();
   });
 
-  it("returns pending recipes for a user", async () => {
+  it("returns pending recipes for a kitchen", async () => {
     const mockRecipes = [
       {
         id: "q1",
+        kitchenId: KITCHEN_ID,
         recipeNotionId: "notion-1",
         recipeData: null,
-        targetUser: "cook",
         status: "pending",
         createdAt: new Date("2025-12-27T10:00:00Z"),
       },
       {
         id: "q2",
+        kitchenId: KITCHEN_ID,
         recipeNotionId: null,
         recipeData: { name: "Quick Pasta" },
-        targetUser: "cook",
         status: "pending",
         createdAt: new Date("2025-12-27T09:00:00Z"),
       },
@@ -230,7 +221,7 @@ describe("getKitchenQueue", () => {
 
     (db.query.kitchenQueue.findMany as Mock).mockResolvedValue(mockRecipes);
 
-    const result = await getKitchenQueue("cook");
+    const result = await getKitchenQueue(KITCHEN_ID);
 
     expect(result).toEqual(mockRecipes);
     expect(db.query.kitchenQueue.findMany).toHaveBeenCalled();
@@ -239,7 +230,7 @@ describe("getKitchenQueue", () => {
   it("returns empty array when no pending recipes", async () => {
     (db.query.kitchenQueue.findMany as Mock).mockResolvedValue([]);
 
-    const result = await getKitchenQueue("cook-2");
+    const result = await getKitchenQueue(KITCHEN_ID);
 
     expect(result).toEqual([]);
   });
@@ -248,15 +239,15 @@ describe("getKitchenQueue", () => {
     const mockRecipes = [
       {
         id: "q1",
+        kitchenId: KITCHEN_ID,
         recipeNotionId: "notion-1",
         status: "cooking",
-        targetUser: "cook",
       },
     ];
 
     (db.query.kitchenQueue.findMany as Mock).mockResolvedValue(mockRecipes);
 
-    const result = await getKitchenQueue("cook", "cooking");
+    const result = await getKitchenQueue(KITCHEN_ID, "cooking");
 
     expect(result).toEqual(mockRecipes);
   });
@@ -274,16 +265,16 @@ describe("getQueueItem", () => {
   it("returns a queue item by ID", async () => {
     const mockItem = {
       id: "q1",
+      kitchenId: KITCHEN_ID,
       recipeNotionId: "notion-1",
       recipeData: null,
-      targetUser: "cook",
       status: "pending",
       createdAt: new Date(),
     };
 
     (db.query.kitchenQueue.findFirst as Mock).mockResolvedValue(mockItem);
 
-    const result = await getQueueItem("q1");
+    const result = await getQueueItem(KITCHEN_ID, "q1");
 
     expect(result).toEqual(mockItem);
   });
@@ -291,7 +282,7 @@ describe("getQueueItem", () => {
   it("returns null for non-existent item", async () => {
     (db.query.kitchenQueue.findFirst as Mock).mockResolvedValue(null);
 
-    const result = await getQueueItem("non-existent");
+    const result = await getQueueItem(KITCHEN_ID, "non-existent");
 
     expect(result).toBeNull();
   });
@@ -316,7 +307,7 @@ describe("updateQueueStatus", () => {
     });
     (db.update as Mock).mockImplementation(mockUpdate);
 
-    expect(await updateQueueStatus("q1", "cooking")).toEqual({
+    expect(await updateQueueStatus(KITCHEN_ID, "q1", "cooking")).toEqual({
       completed: false,
       started: true,
     });
@@ -336,7 +327,7 @@ describe("updateQueueStatus", () => {
     });
     (db.update as Mock).mockImplementation(mockUpdate);
 
-    expect(await updateQueueStatus("q1", "completed")).toEqual({
+    expect(await updateQueueStatus(KITCHEN_ID, "q1", "completed")).toEqual({
       completed: true,
       started: false,
     });
@@ -352,7 +343,7 @@ describe("updateQueueStatus", () => {
     });
     (db.update as Mock).mockImplementation(mockUpdate);
 
-    expect(await updateQueueStatus("q1", "completed")).toEqual({
+    expect(await updateQueueStatus(KITCHEN_ID, "q1", "completed")).toEqual({
       completed: false,
       started: false,
     });
@@ -360,7 +351,7 @@ describe("updateQueueStatus", () => {
 
   it("throws error for invalid status", async () => {
     await expect(
-      updateQueueStatus("q1", "invalid" as QueueStatus),
+      updateQueueStatus(KITCHEN_ID, "q1", "invalid" as QueueStatus),
     ).rejects.toThrow("Invalid queue status: invalid");
   });
 });
@@ -380,7 +371,7 @@ describe("removeFromQueue", () => {
     });
     (db.delete as Mock).mockImplementation(mockDelete);
 
-    await removeFromQueue("q1");
+    await removeFromQueue(KITCHEN_ID, "q1");
 
     expect(db.delete).toHaveBeenCalled();
   });

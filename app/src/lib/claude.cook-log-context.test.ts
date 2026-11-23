@@ -41,7 +41,7 @@ vi.mock("./hooks/registry", () => ({
 
 // Never reached here (no queueId); mocked as claude.test.ts does, so the
 // database modules behind them aren't loaded.
-vi.mock("./kitchen-queue", () => ({ getQueueItem: vi.fn() }));
+vi.mock("./kitchen-queue", () => ({ getQueueItemForKitchen: vi.fn() }));
 vi.mock("./shelf/load", () => ({ loadAppPackFiles: vi.fn() }));
 
 import { chatCookingAssistant } from "./claude";
@@ -53,6 +53,7 @@ function cookLog(rows: string[][]): string[][] {
 
 async function askSousSystemPrompt(): Promise<string> {
   await chatCookingAssistant(
+    "00000000-0000-4000-8000-000000000001",
     "cook-session-notes",
     [{ role: "user", content: "How much lemon should I use?" }],
     "Braised White Beans with Kale",

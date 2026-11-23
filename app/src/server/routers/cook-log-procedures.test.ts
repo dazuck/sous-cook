@@ -50,9 +50,10 @@ import {
   retryCookLog,
 } from "../../lib/kitchen-cook-log";
 import { connected } from "../../lib/hooks/connected";
-import { appRouter } from "./_app";
+import { callerFor } from "../../lib/__tests__/kitchens";
 
-const caller = appRouter.createCaller({ db: {} as never });
+const HOME = { id: "00000000-0000-4000-8000-000000000001", slug: "home" };
+const caller = callerFor(HOME);
 const QUEUE_ID = "3f1c2a9e-5b7d-4e8f-9a0b-1c2d3e4f5a6b";
 const LOG = {
   row: 4,
@@ -88,7 +89,7 @@ describe("updateKitchenQueueStatus", () => {
     expect(after).toHaveBeenCalledTimes(1);
     expect(logCookInBackground).not.toHaveBeenCalled();
     runScheduled();
-    expect(logCookInBackground).toHaveBeenCalledExactlyOnceWith(QUEUE_ID);
+    expect(logCookInBackground).toHaveBeenCalledExactlyOnceWith(HOME.id, QUEUE_ID);
   });
 
   it("schedules nothing for a repeat Done, and still answers success", async () => {
@@ -106,8 +107,8 @@ describe("updateKitchenQueueStatus", () => {
 
     await caller.updateKitchenQueueStatus({ queueId: QUEUE_ID, status: "cooking" });
 
-    expect(updateQueueStatus).toHaveBeenCalledWith(QUEUE_ID, "cooking");
-    expect(finishLeftCooks).toHaveBeenCalledWith("cook", QUEUE_ID);
+    expect(updateQueueStatus).toHaveBeenCalledWith(HOME.id, QUEUE_ID, "cooking");
+    expect(finishLeftCooks).toHaveBeenCalledWith(HOME.id, QUEUE_ID);
     expect(after).not.toHaveBeenCalled();
   });
 
@@ -137,7 +138,7 @@ describe("retryCookLog", () => {
       status: "logged",
       log: LOG,
     });
-    expect(retryCookLog).toHaveBeenCalledWith(QUEUE_ID);
+    expect(retryCookLog).toHaveBeenCalledWith(HOME.id, QUEUE_ID);
   });
 
   it("answers CONFLICT with the reason for an unfinished cook", async () => {
@@ -172,7 +173,7 @@ describe("rateCook", () => {
     await expect(
       caller.rateCook({ queueId: QUEUE_ID, rating: 5, notes: "x".repeat(500) }),
     ).resolves.toEqual({ rated: true, log: LOG });
-    expect(rateCook).toHaveBeenCalledWith({
+    expect(rateCook).toHaveBeenCalledWith(HOME.id, {
       queueId: QUEUE_ID,
       rating: 5,
       notes: "x".repeat(500),
@@ -184,7 +185,7 @@ describe("rateCook", () => {
 
     // 500 emoji are 1000 UTF-16 units, and 500 characters.
     await caller.rateCook({ queueId: QUEUE_ID, rating: 4, notes: "🍲".repeat(500) });
-    expect(rateCook).toHaveBeenLastCalledWith({
+    expect(rateCook).toHaveBeenLastCalledWith(HOME.id, {
       queueId: QUEUE_ID,
       rating: 4,
       notes: "🍲".repeat(500),
@@ -195,7 +196,7 @@ describe("rateCook", () => {
       rating: 4,
       notes: `  ${"x".repeat(498)}     `,
     });
-    expect(rateCook).toHaveBeenLastCalledWith({
+    expect(rateCook).toHaveBeenLastCalledWith(HOME.id, {
       queueId: QUEUE_ID,
       rating: 4,
       notes: "x".repeat(498),
@@ -259,7 +260,7 @@ describe("with no Cook Log connected", () => {
     vi.mocked(finishLeftCooks).mockResolvedValue(["left-on-its-last-screen"]);
     await caller.updateKitchenQueueStatus({ queueId: QUEUE_ID, status: "cooking" });
 
-    expect(finishLeftCooks).toHaveBeenCalledWith("cook", QUEUE_ID);
+    expect(finishLeftCooks).toHaveBeenCalledWith(HOME.id, QUEUE_ID);
     expect(after).not.toHaveBeenCalled();
     expect(logCookInBackground).not.toHaveBeenCalled();
   });

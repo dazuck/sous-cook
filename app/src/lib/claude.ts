@@ -11,7 +11,7 @@ import { connected } from "./hooks/connected";
 import { fetchRecentCookLog, type CookLogEntry } from "./hooks/cook-log";
 import { pantryInventory } from "./hooks/pantry";
 import { hook } from "./hooks/registry";
-import { getQueueItem } from "./kitchen-queue";
+import { getQueueItemForKitchen } from "./kitchen-queue";
 import { AnswerCutOff } from "./kitchen/ask-failure";
 import { isCurrentCookPlan, type CookPlan } from "./kitchen/cook-plan";
 import { ingredientText, storedIngredientLines } from "./kitchen/ingredient-display";
@@ -62,6 +62,8 @@ export type ChatOptions = {
   /** Gemini thinking-token budget, 0 for none (see lib/ai ChatOptions). */
   thinkingBudget?: number;
   turnContext?: string;
+  /** Signed-in member who asked; null in single-kitchen mode or background writes. */
+  memberId?: string | null;
 };
 
 export type CookingTimerSnapshot = {
@@ -78,6 +80,8 @@ export type CookingAssistantOptions = {
   currentStepIndex?: number;
   timers?: CookingTimerSnapshot[];
   includeRecipeContext?: boolean;
+  /** Signed-in member who asked; null in single-kitchen mode. */
+  memberId?: string | null;
 };
 
 export type ChatAction =
@@ -377,12 +381,17 @@ export function parseActions(content: string): {
 // =============================================================================
 
 async function logMessage(
+  kitchenId: string,
+  memberId: string | null,
   sessionId: string,
   role: "user" | "assistant" | "system",
   content: string,
   context?: NotionContext,
 ): Promise<void> {
+  // FIXME(WP4): store memberId once migration 0004 adds conversation_logs.member_id.
+  void memberId;
   await db.insert(conversationLogs).values({
+    kitchenId,
     sessionId,
     role,
     content,
@@ -395,10 +404,12 @@ async function logMessage(
 // =============================================================================
 
 export async function chat(
+  kitchenId: string,
   sessionId: string,
   messages: Message[],
   options: ChatOptions = {},
 ): Promise<ChatResponse> {
+  const memberId = options.memberId ?? null;
   // Get Notion context for system prompt injection
   const notionContext = await getNotionContext();
   const contextBlock = buildContextBlock(notionContext);
@@ -419,6 +430,8 @@ export async function chat(
   }
   if (lastUserIdx >= 0) {
     await logMessage(
+      kitchenId,
+      memberId,
       sessionId,
       "user",
       messages[lastUserIdx].content,
@@ -466,7 +479,7 @@ export async function chat(
   const { cleanContent, actions } = parseActions(answerContent(response));
 
   // Log assistant response (clean content without action markers)
-  await logMessage(sessionId, "assistant", cleanContent);
+  await logMessage(kitchenId, memberId, sessionId, "assistant", cleanContent);
 
   return {
     content: cleanContent,
@@ -684,6 +697,7 @@ function buildCookingTurnContext(
 }
 
 export async function chatCookingAssistant(
+  kitchenId: string,
   sessionId: string,
   messages: Message[],
   currentRecipe?: string,
@@ -697,7 +711,7 @@ export async function chatCookingAssistant(
 
     if (options?.queueId) {
       // The recipe the cook meets: intake's cut when it made one.
-      const found = await getQueueItem(options.queueId);
+      const found = await getQueueItemForKitchen(kitchenId, options.queueId);
       const item = found ? withCookRecipe(found) : null;
       if (!item) {
         console.warn(
@@ -741,7 +755,7 @@ export async function chatCookingAssistant(
     }
   }
 
-  return chat(sessionId, messages, {
+  return chat(kitchenId, sessionId, messages, {
     systemPrompt: prompt,
     model: getConfig().cookChatModel,
     maxTokens: COOKING_MAX_TOKENS,
@@ -749,6 +763,7 @@ export async function chatCookingAssistant(
     temperature: 0.5, // Lower temp for more precise cooking advice
     googleSearch: true,
     turnContext,
+    memberId: options?.memberId ?? null,
   });
 }
 

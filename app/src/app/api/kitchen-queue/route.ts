@@ -1,9 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { z } from "zod";
-import { DEFAULT_COOK, isValidUserId } from "@/lib/cook-id";
 import {
   addToKitchenQueue,
-  addToKitchenQueueFor,
   prepareQueueItemInBackground,
 } from "@/lib/kitchen-queue";
 import {
@@ -27,7 +25,7 @@ import { PACK_PLANS_DIR, loadAppPackFiles } from "@/lib/shelf/load";
 import { packPlanFor, readPackPlanFile } from "@/lib/pack-cook-plans";
 import { storedPlanToCopy, type StoredPlan } from "@/lib/kitchen/cook-plan-stamp";
 import { canonicalJson } from "@/lib/serves-estimate-plan";
-import { webhookAuthRefusal } from "@/lib/webhook-auth";
+import { authenticateWebhookRequest } from "@/lib/kitchens/webhook-tokens";
 
 /**
  * The pack recipe's id for the queue-time check. The queue row's id, the one
@@ -37,16 +35,10 @@ import { webhookAuthRefusal } from "@/lib/webhook-auth";
 const WEBHOOK_RECIPE_ID = "webhook";
 
 /**
- * After the response, the add runs intake (up to 90 s, cook-fidelity plan)
- * and then the cook plan, inside this function's time: the tRPC route's
- * limit (Hobby with fluid compute; KNOWN-ISSUES).
+ * After the response, the add runs intake (up to 90 s) and then the cook plan,
+ * inside this function's time.
  */
 export const maxDuration = 300;
-
-/** A cook's slug; left out, the recipe goes to `DEFAULT_COOK`. */
-const UserIdSchema = z.string().refine(isValidUserId, {
-  message: "targetUser must be a slug: lowercase letters, digits and hyphens",
-});
 
 const RecipeIngredientSchema = z.object({
   item: z.string(),
@@ -82,7 +74,6 @@ const KitchenQueueRecipeDataSchema = z.object({
 
 const KitchenQueueWebhookSchema = z
   .object({
-    targetUser: UserIdSchema.optional(),
     recipeData: KitchenQueueRecipeDataSchema.optional(),
     recipeNotionId: z.string().optional(),
     packId: z.string().min(1).optional(),
@@ -121,15 +112,15 @@ function parsePackShorthand(
 /**
  * POST /api/kitchen-queue
  *
- * Webhook endpoint for pushing recipes into the kitchen queue.
+ * Webhook endpoint for pushing recipes into a kitchen's queue.
  * Used by external apps (an assistant, a script) to send recipes to the tablet.
  *
- * Auth: Bearer token via KITCHEN_QUEUE_API_TOKEN env var.
- * Skips auth in development.
+ * Auth: Per-kitchen Bearer token (required in every environment).
  */
 export async function POST(request: Request): Promise<Response> {
-  const refusal = webhookAuthRefusal(request);
-  if (refusal) return refusal;
+  const auth = await authenticateWebhookRequest(request);
+  if (!auth.ok) return auth.response;
+  const { kitchen } = auth;
 
   // Parse and validate body
   let body: unknown;
@@ -137,6 +128,19 @@ export async function POST(request: Request): Promise<Response> {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  // Refuse the retired targetUser field loudly before Zod strips unknown keys.
+  if (
+    body !== null &&
+    typeof body === "object" &&
+    !Array.isArray(body) &&
+    "targetUser" in body
+  ) {
+    return NextResponse.json(
+      { error: "targetUser is no longer accepted: the token names the kitchen" },
+      { status: 400 },
+    );
   }
 
   const parsed = KitchenQueueWebhookSchema.safeParse(body);
@@ -148,7 +152,6 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const {
-    targetUser = DEFAULT_COOK,
     recipeData: rawRecipeData,
     recipeNotionId,
     packId: rawPackId,
@@ -156,7 +159,7 @@ export async function POST(request: Request): Promise<Response> {
     pack: rawPack,
   } = parsed.data;
 
-  // Shape 1 — Direct pack recipe queue ({ packId, recipeId, targetUser } or { pack: "<packId>/<recipeId>", targetUser })
+  // Shape 1 — Direct pack recipe queue ({ packId, recipeId } or { pack: "<packId>/<recipeId>" })
   const directPack = parsePackShorthand(rawPack, rawPackId, rawRecipeId);
   if (directPack !== null) {
     if (!directPack.packId || !directPack.recipeId) {
@@ -207,16 +210,15 @@ export async function POST(request: Request): Promise<Response> {
     const plan = checked?.ok ? checked.copy : undefined;
 
     try {
-      const inserted = await addToKitchenQueue({
+      const inserted = await addToKitchenQueue(kitchen.id, {
         recipeData: packRecipeData,
-        targetUser,
         ...(packServesEstimate !== undefined && {
           servesEstimate: packServesEstimate,
         }),
         ...(plan !== undefined && { plan }),
       });
       if (plan === undefined) {
-        after(() => prepareQueueItemInBackground(inserted.id));
+        after(() => prepareQueueItemInBackground(kitchen.id, inserted.id));
       }
       return NextResponse.json(
         {
@@ -224,7 +226,6 @@ export async function POST(request: Request): Promise<Response> {
           id: inserted.id,
           queueIds: [inserted.id],
           name: recipe.title,
-          targetUser,
           source: packSource(pack.id, recipe.id),
           mode: "native",
         },
@@ -343,14 +344,17 @@ export async function POST(request: Request): Promise<Response> {
   const intake = recipeData !== undefined && parsePackSource(recipeData.source) === null;
 
   try {
-    const results = await addToKitchenQueueFor([targetUser], { recipeData, recipeNotionId, servesEstimate, intake });
-    for (const { id } of results) {
-      after(() => prepareQueueItemInBackground(id));
-    }
+    const inserted = await addToKitchenQueue(kitchen.id, {
+      recipeData,
+      recipeNotionId,
+      servesEstimate,
+      intake,
+    });
+    after(() => prepareQueueItemInBackground(kitchen.id, inserted.id));
 
     return NextResponse.json({
       success: true,
-      queueIds: results.map((r) => r.id),
+      queueIds: [inserted.id],
       ...(conversion && { conversion }),
     });
   } catch (error) {

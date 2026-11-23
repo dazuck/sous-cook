@@ -1,0 +1,957 @@
+{
+  "id": "7510ddde-6596-458b-963e-eeae2c3137ff",
+  "prevId": "a66c6cbc-a15f-406e-b874-d88ad5bad9a6",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.conversation_logs": {
+      "name": "conversation_logs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "kitchen_id": {
+          "name": "kitchen_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "context": {
+          "name": "context",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "conversation_logs_kitchen_session_idx": {
+          "name": "conversation_logs_kitchen_session_idx",
+          "columns": [
+            {
+              "expression": "kitchen_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "conversation_logs_kitchen_id_kitchens_id_fk": {
+          "name": "conversation_logs_kitchen_id_kitchens_id_fk",
+          "tableFrom": "conversation_logs",
+          "tableTo": "kitchens",
+          "columnsFrom": [
+            "kitchen_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.cook_reports": {
+      "name": "cook_reports",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "kitchen_id": {
+          "name": "kitchen_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "captured_at": {
+          "name": "captured_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "build": {
+          "name": "build",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "screen": {
+          "name": "screen",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "queue_id": {
+          "name": "queue_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recipe_name": {
+          "name": "recipe_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "step_key": {
+          "name": "step_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chapter_id": {
+          "name": "chapter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plan_version": {
+          "name": "plan_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plan": {
+          "name": "plan",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "state": {
+          "name": "state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "context": {
+          "name": "context",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "events": {
+          "name": "events",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dom": {
+          "name": "dom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dom_truncated": {
+          "name": "dom_truncated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "note_at": {
+          "name": "note_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "cook_reports_created_at_idx": {
+          "name": "cook_reports_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "cook_reports_kitchen_created_idx": {
+          "name": "cook_reports_kitchen_created_idx",
+          "columns": [
+            {
+              "expression": "kitchen_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "cook_reports_kitchen_id_kitchens_id_fk": {
+          "name": "cook_reports_kitchen_id_kitchens_id_fk",
+          "tableFrom": "cook_reports",
+          "tableTo": "kitchens",
+          "columnsFrom": [
+            "kitchen_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.doc_recipes": {
+      "name": "doc_recipes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "kitchen_id": {
+          "name": "kitchen_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "doc_slug": {
+          "name": "doc_slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ingredients": {
+          "name": "ingredients",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "steps": {
+          "name": "steps",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "estimated_time": {
+          "name": "estimated_time",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "serves": {
+          "name": "serves",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tags": {
+          "name": "tags",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "step_ingredients": {
+          "name": "step_ingredients",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw_doc_text": {
+          "name": "raw_doc_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "extraction_error": {
+          "name": "extraction_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "synced_at": {
+          "name": "synced_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "serves_estimate": {
+          "name": "serves_estimate",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "serves_estimate_basis": {
+          "name": "serves_estimate_basis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "doc_position": {
+          "name": "doc_position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "category_title": {
+          "name": "category_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "serves_estimate_source_hash": {
+          "name": "serves_estimate_source_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cook_plan": {
+          "name": "cook_plan",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cook_plan_error": {
+          "name": "cook_plan_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cook_plan_source_hash": {
+          "name": "cook_plan_source_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cook_plan_stamp": {
+          "name": "cook_plan_stamp",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "doc_recipes_kitchen_id_kitchens_id_fk": {
+          "name": "doc_recipes_kitchen_id_kitchens_id_fk",
+          "tableFrom": "doc_recipes",
+          "tableTo": "kitchens",
+          "columnsFrom": [
+            "kitchen_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "doc_recipes_doc_slug_unique": {
+          "name": "doc_recipes_doc_slug_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "doc_slug"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "doc_recipes_serves_estimate_positive": {
+          "name": "doc_recipes_serves_estimate_positive",
+          "value": "\"doc_recipes\".\"serves_estimate\" > 0"
+        },
+        "doc_recipes_serves_estimate_basis_paired": {
+          "name": "doc_recipes_serves_estimate_basis_paired",
+          "value": "(\"doc_recipes\".\"serves_estimate\" is null) = (\"doc_recipes\".\"serves_estimate_basis\" is null)"
+        },
+        "doc_recipes_serves_estimate_hash_paired": {
+          "name": "doc_recipes_serves_estimate_hash_paired",
+          "value": "(\"doc_recipes\".\"serves_estimate\" is null) = (\"doc_recipes\".\"serves_estimate_source_hash\" is null)"
+        },
+        "doc_recipes_cook_plan_or_error": {
+          "name": "doc_recipes_cook_plan_or_error",
+          "value": "\"doc_recipes\".\"cook_plan\" is null or \"doc_recipes\".\"cook_plan_error\" is null"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.kitchen_queue": {
+      "name": "kitchen_queue",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "kitchen_id": {
+          "name": "kitchen_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recipe_notion_id": {
+          "name": "recipe_notion_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recipe_data": {
+          "name": "recipe_data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_user": {
+          "name": "target_user",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "cook_plan": {
+          "name": "cook_plan",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cook_plan_error": {
+          "name": "cook_plan_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cook_log": {
+          "name": "cook_log",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cook_log_error": {
+          "name": "cook_log_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cook_log_claimed_at": {
+          "name": "cook_log_claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rating_closed_at": {
+          "name": "rating_closed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "serves_estimate": {
+          "name": "serves_estimate",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "serves_estimate_basis": {
+          "name": "serves_estimate_basis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "serves_estimate_source_hash": {
+          "name": "serves_estimate_source_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "intake_recipe": {
+          "name": "intake_recipe",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "intake_error": {
+          "name": "intake_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "intake_source_hash": {
+          "name": "intake_source_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "intake_stamp": {
+          "name": "intake_stamp",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "intake_attempts": {
+          "name": "intake_attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "intake_nudges": {
+          "name": "intake_nudges",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "finished_by": {
+          "name": "finished_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_screen_active_at": {
+          "name": "last_screen_active_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_interaction_at": {
+          "name": "last_interaction_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "kitchen_queue_kitchen_status_idx": {
+          "name": "kitchen_queue_kitchen_status_idx",
+          "columns": [
+            {
+              "expression": "kitchen_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "kitchen_queue_kitchen_id_kitchens_id_fk": {
+          "name": "kitchen_queue_kitchen_id_kitchens_id_fk",
+          "tableFrom": "kitchen_queue",
+          "tableTo": "kitchens",
+          "columnsFrom": [
+            "kitchen_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "kitchen_queue_serves_estimate_positive": {
+          "name": "kitchen_queue_serves_estimate_positive",
+          "value": "\"kitchen_queue\".\"serves_estimate\" > 0"
+        },
+        "kitchen_queue_serves_estimate_basis_paired": {
+          "name": "kitchen_queue_serves_estimate_basis_paired",
+          "value": "(\"kitchen_queue\".\"serves_estimate\" is null) = (\"kitchen_queue\".\"serves_estimate_basis\" is null)"
+        },
+        "kitchen_queue_serves_estimate_hash_paired": {
+          "name": "kitchen_queue_serves_estimate_hash_paired",
+          "value": "(\"kitchen_queue\".\"serves_estimate\" is null) = (\"kitchen_queue\".\"serves_estimate_source_hash\" is null)"
+        },
+        "kitchen_queue_intake_recipe_or_error": {
+          "name": "kitchen_queue_intake_recipe_or_error",
+          "value": "\"kitchen_queue\".\"intake_recipe\" is null or \"kitchen_queue\".\"intake_error\" is null"
+        },
+        "kitchen_queue_finished_by_known": {
+          "name": "kitchen_queue_finished_by_known",
+          "value": "\"kitchen_queue\".\"finished_by\" in ('pressed', 'auto')"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.kitchen_webhook_tokens": {
+      "name": "kitchen_webhook_tokens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "kitchen_id": {
+          "name": "kitchen_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_sha256": {
+          "name": "token_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "kitchen_webhook_tokens_kitchen_idx": {
+          "name": "kitchen_webhook_tokens_kitchen_idx",
+          "columns": [
+            {
+              "expression": "kitchen_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "kitchen_webhook_tokens_kitchen_id_kitchens_id_fk": {
+          "name": "kitchen_webhook_tokens_kitchen_id_kitchens_id_fk",
+          "tableFrom": "kitchen_webhook_tokens",
+          "tableTo": "kitchens",
+          "columnsFrom": [
+            "kitchen_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "kitchen_webhook_tokens_token_sha256_unique": {
+          "name": "kitchen_webhook_tokens_token_sha256_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token_sha256"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "kitchen_webhook_tokens_sha256_shape": {
+          "name": "kitchen_webhook_tokens_sha256_shape",
+          "value": "\"kitchen_webhook_tokens\".\"token_sha256\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.kitchens": {
+      "name": "kitchens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ai_monthly_cap_micros": {
+          "name": "ai_monthly_cap_micros",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "kitchens_slug_unique": {
+          "name": "kitchens_slug_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "slug"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "kitchens_slug_shape": {
+          "name": "kitchens_slug_shape",
+          "value": "\"kitchens\".\"slug\" ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and length(\"kitchens\".\"slug\") <= 40"
+        },
+        "kitchens_name_length": {
+          "name": "kitchens_name_length",
+          "value": "length(\"kitchens\".\"name\") between 1 and 80"
+        },
+        "kitchens_cap_nonnegative": {
+          "name": "kitchens_cap_nonnegative",
+          "value": "\"kitchens\".\"ai_monthly_cap_micros\" is null or \"kitchens\".\"ai_monthly_cap_micros\" >= 0"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.recipe_ideas_cache": {
+      "name": "recipe_ideas_cache",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "kitchen_id": {
+          "name": "kitchen_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "synced_at": {
+          "name": "synced_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "recipe_ideas_cache_kitchen_id_kitchens_id_fk": {
+          "name": "recipe_ideas_cache_kitchen_id_kitchens_id_fk",
+          "tableFrom": "recipe_ideas_cache",
+          "tableTo": "kitchens",
+          "columnsFrom": [
+            "kitchen_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

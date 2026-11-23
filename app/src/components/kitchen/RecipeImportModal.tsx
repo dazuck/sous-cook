@@ -30,7 +30,6 @@ export interface SerializedKitchenQueueItem {
   id: string;
   recipeNotionId: string | null;
   recipeData: KitchenQueueRecipeData | null;
-  targetUser: string;
   status: KitchenQueueStatus;
   createdAt: string | Date;
   /** The derived cook plan as stored; checked with `isCurrentCookPlan` before use. */

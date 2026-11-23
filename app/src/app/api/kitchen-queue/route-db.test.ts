@@ -7,7 +7,7 @@
  * branches with the queue mocked.
  */
 
-import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import type { KitchenQueueRecipeData } from "../../../../drizzle/schema";
 import { ZUCCHINI_PLAN, ZUCCHINI_RECIPE, zucchiniRaw } from "@/lib/kitchen/__tests__/zucchini-wraps";
@@ -26,13 +26,19 @@ vi.mock("@/lib/db", async () =>
 );
 
 import * as dbModule from "@/lib/db";
+import { db } from "@/lib/db";
 import { chat } from "@/lib/ai";
-import { appRouter } from "@/server/routers/_app";
+import {
+  callerFor,
+  homeKitchen,
+  mintToken,
+} from "@/lib/__tests__/kitchens";
 import { POST } from "./route";
 
 const client = (dbModule as unknown as { client: PGlite }).client;
 const mockChat = chat as Mock;
-const caller = appRouter.createCaller({ db: {} as never });
+let caller: ReturnType<typeof callerFor>;
+let token: string;
 
 /** A sending agent's recipe: a line naming two ingredients. */
 const SENT: KitchenQueueRecipeData = { name: "Zucchini wraps", serves: 4, ...ZUCCHINI_RECIPE };
@@ -47,10 +53,15 @@ interface ChatCall {
   systemPrompt?: string;
 }
 
+beforeAll(async () => {
+  const home = await homeKitchen(db);
+  caller = callerFor(home);
+  token = await mintToken(db, home.id, "route-db-test");
+});
+
 beforeEach(async () => {
   mockChat.mockReset();
   scheduled.length = 0;
-  vi.stubEnv("NODE_ENV", "development");
   vi.spyOn(console, "info").mockImplementation(() => {});
   await client.exec("delete from kitchen_queue; delete from conversation_logs");
 });
@@ -59,7 +70,10 @@ function post(body: unknown): Promise<Response> {
   return POST(
     new Request("http://localhost:3000/api/kitchen-queue", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(body),
     }),
   );
@@ -116,7 +130,7 @@ describe("POST /api/kitchen-queue, through the database", () => {
   it("a model down at queue time: the rows wait for intake with no plan, and the cook page's ask cuts it", async () => {
     mockChat.mockRejectedValue(Object.assign(new Error("503 overloaded"), { status: 503 }));
 
-    const res = await post({ recipeData: SENT, targetUser: "cook" });
+    const res = await post({ recipeData: SENT });
     const [id] = ((await res.json()) as { queueIds: string[] }).queueIds;
     await runScheduled();
 

@@ -6,7 +6,7 @@
  * kitchen's sweep, and a cook's next start.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 
 const scheduled: (() => unknown)[] = [];
@@ -35,29 +35,48 @@ vi.mock("@/lib/db", async () =>
 
 import * as dbModule from "./db";
 import { db, kitchenQueue } from "./db";
+import {
+  callerFor,
+  homeKitchen,
+  mintToken,
+  seedKitchen,
+} from "./__tests__/kitchens";
 import { AUTO_FINISH_IDLE_MS, REOPEN_WINDOW_MS } from "./kitchen/auto-finish";
 import {
-  finishLeftCooks,
-  reopenAutoFinished,
-  reportLastScreen,
-  sweepIdleCooks,
+  finishLeftCooks as finishLeftCooksForKitchen,
+  reopenAutoFinished as reopenAutoFinishedForKitchen,
+  reportLastScreen as reportLastScreenForKitchen,
+  sweepIdleCooks as sweepIdleCooksForKitchen,
 } from "./kitchen-auto-finish";
 import { getQueueItem } from "./kitchen-queue";
-import { openCookAsk } from "./kitchen-cook-log";
+import { openCookAsk as openCookAskForKitchen } from "./kitchen-cook-log";
 import { cookLogTimestamp } from "./hooks/cook-log";
 import { connected } from "./hooks/connected";
-import { appRouter } from "../server/routers/_app";
 import { POST as sweepPost } from "../app/api/kitchen-queue/sweep/route";
 
 const client = (dbModule as unknown as { client: PGlite }).client;
 /** The Cook Log's transport: every request the grid makes goes through it. */
 const mockFetch = vi.fn();
+let kitchenId: string;
+let homeToken: string;
+let router: ReturnType<typeof callerFor>;
+
+beforeAll(async () => {
+  const home = await homeKitchen(db);
+  kitchenId = home.id;
+  router = callerFor(home);
+  homeToken = await mintToken(db, home.id, "auto-finish-test");
+});
 
 beforeEach(async () => {
   mockFetch.mockReset();
   connected["cook-log"] = true;
   scheduled.length = 0;
   await client.exec("delete from kitchen_queue");
+  await client.exec(
+    "delete from kitchen_webhook_tokens where kitchen_id <> (select id from kitchens where slug = 'home')",
+  );
+  await client.exec("delete from kitchens where slug <> 'home'");
 });
 
 afterEach(() => {
@@ -66,7 +85,20 @@ afterEach(() => {
 });
 
 const MIN = 60_000;
-const router = appRouter.createCaller({ db: {} as never });
+
+const reportLastScreen = (
+  queueId: string,
+  activeAt: Date | null,
+  interactedAt: Date,
+) => reportLastScreenForKitchen(kitchenId, queueId, activeAt, interactedAt);
+const reopenAutoFinished = (queueId: string, now?: Date) =>
+  reopenAutoFinishedForKitchen(kitchenId, queueId, now);
+const finishLeftCooks = (_ignoredUser: string, starting: string, now?: Date) =>
+  finishLeftCooksForKitchen(kitchenId, starting, now);
+const sweepIdleCooks = (_ignoredUser: string, now?: Date, idleMs?: number) =>
+  sweepIdleCooksForKitchen(kitchenId, now, idleMs);
+const openCookAsk = (_ignoredUser: string, now?: Date) =>
+  openCookAskForKitchen(kitchenId, now);
 
 /** Runs what the router left for after the response: the Cook Log writes. */
 async function runAfter() {
@@ -106,8 +138,8 @@ async function cooking(values: Partial<typeof kitchenQueue.$inferInsert> = {}): 
   const [row] = await db
     .insert(kitchenQueue)
     .values({
+      kitchenId,
       recipeData: { name: "Farro risotto" },
-      targetUser: "cook",
       status: "cooking",
       startedAt: new Date(Date.now() - 90 * MIN),
       ...values,
@@ -116,20 +148,16 @@ async function cooking(values: Partial<typeof kitchenQueue.$inferInsert> = {}): 
   return row.id;
 }
 
-async function item(id: string) {
-  const found = await getQueueItem(id);
+async function item(id: string, ownerKitchenId: string = kitchenId) {
+  const found = await getQueueItem(ownerKitchenId, id);
   if (!found) throw new Error(`missing ${id}`);
   return found;
 }
 
 const ago = (minutes: number) => new Date(Date.now() - minutes * MIN);
 
-const TOKEN = "sweep-test";
-
-/** A nightly job's call, as it would be made: production, the webhook's token. */
-async function sweep(body: unknown = {}, auth: string | null = `Bearer ${TOKEN}`) {
-  vi.stubEnv("NODE_ENV", "production");
-  vi.stubEnv("KITCHEN_QUEUE_API_TOKEN", TOKEN);
+/** A nightly job's call, using a per-kitchen webhook bearer token. */
+async function sweep(body: unknown = {}, auth: string | null = `Bearer ${homeToken}`) {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (auth !== null) headers.authorization = auth;
   const res = await sweepPost(
@@ -218,11 +246,15 @@ describe("sweepIdleCooks: the 45 minutes", () => {
     expect((await item(id)).status).toBe("cooking");
   });
 
-  it("finishes only that cook's own cooks", async () => {
-    const theirs = await cooking({ targetUser: "cook-2", lastScreenActiveAt: ago(50) });
+  it("finishes only that kitchen's own cooks", async () => {
+    const { kitchen: other } = await seedKitchen(db, {
+      slug: "other-sweep",
+      name: "Other Sweep",
+    });
+    const theirs = await cooking({ kitchenId: other.id, lastScreenActiveAt: ago(50) });
 
     expect(await sweepIdleCooks("cook")).toEqual([]);
-    expect((await item(theirs)).status).toBe("cooking");
+    expect((await item(theirs, other.id)).status).toBe("cooking");
   });
 });
 
@@ -467,12 +499,21 @@ describe("through the router: the same path as Done", () => {
     expect((await sweep()).json).toEqual({ finished: [], relogged: [] });
   });
 
-  it("the sweep takes the cook named, the default cook when none is", async () => {
+  it("the sweep finishes only the token's kitchen", async () => {
     liveSheet();
+    const { kitchen: other } = await seedKitchen(db, {
+      slug: "other-sweep-route",
+      name: "Other Sweep Route",
+    });
+    const otherToken = await mintToken(db, other.id, "other-sweep-token");
     const first = await cooking({ lastScreenActiveAt: ago(50) });
-    const second = await cooking({ targetUser: "cook-2", lastScreenActiveAt: ago(50) });
+    const second = await cooking({ kitchenId: other.id, lastScreenActiveAt: ago(50) });
 
-    expect((await sweep({ targetUser: "cook-2" })).json.finished.map((f: { queueId: string }) => f.queueId)).toEqual([second]);
+    expect(
+      (await sweep({}, `Bearer ${otherToken}`)).json.finished.map(
+        (f: { queueId: string }) => f.queueId,
+      ),
+    ).toEqual([second]);
     expect((await item(first)).status).toBe("cooking");
     expect((await sweep()).json.finished.map((f: { queueId: string }) => f.queueId)).toEqual([first]);
   });

@@ -38,7 +38,7 @@ import {
   retimeCookLog,
 } from "./hooks/cook-log";
 import { hook } from "./hooks/registry";
-import { getQueueItem, type KitchenQueueItem, type UserId } from "./kitchen-queue";
+import { getQueueItem, type KitchenQueueItem } from "./kitchen-queue";
 
 /**
  * A write that has stored neither a row nor an error this long after Done,
@@ -106,15 +106,19 @@ export function cookLogStatus(
   return withinWritingWindow(item.completedAt, now) ? "writing" : "failed";
 }
 
-async function itemOrThrow(queueId: string): Promise<KitchenQueueItem> {
-  const item = await getQueueItem(queueId);
+async function itemOrThrow(
+  kitchenId: string,
+  queueId: string,
+): Promise<KitchenQueueItem> {
+  const item = await getQueueItem(kitchenId, queueId);
   if (!item) throw new CookLogItemNotFound(queueId);
   return item;
 }
 
 /** Rows a write may land on: a completed cook with no row stored yet. */
-function awaitingRow(queueId: string) {
+function awaitingRow(kitchenId: string, queueId: string) {
   return and(
+    eq(kitchenQueue.kitchenId, kitchenId),
     eq(kitchenQueue.id, queueId),
     eq(kitchenQueue.status, "completed"),
     isNull(kitchenQueue.cookLog),
@@ -129,6 +133,7 @@ function awaitingRow(queueId: string) {
  * once, exactly one gets `true`.
  */
 async function claim(
+  kitchenId: string,
   queueId: string,
   completedAt: Date,
   claimedAt: Date,
@@ -141,8 +146,12 @@ async function claim(
     .where(
       and(
         write === "append"
-          ? awaitingRow(queueId)
-          : and(eq(kitchenQueue.id, queueId), eq(kitchenQueue.status, "completed")),
+          ? awaitingRow(kitchenId, queueId)
+          : and(
+              eq(kitchenQueue.kitchenId, kitchenId),
+              eq(kitchenQueue.id, queueId),
+              eq(kitchenQueue.status, "completed"),
+            ),
         // The database clock stamps completed_at in microseconds; the item
         // was read in milliseconds.
         sql`date_trunc('milliseconds', ${kitchenQueue.completedAt}) = ${completedAt.toISOString()}::timestamptz`,
@@ -161,6 +170,7 @@ async function claim(
  * still this write's: once a later write has taken over, its claim stands.
  */
 async function storeError(
+  kitchenId: string,
   queueId: string,
   claimedAt: Date,
   error: string,
@@ -169,7 +179,10 @@ async function storeError(
     .update(kitchenQueue)
     .set({ cookLogError: error.slice(0, ERROR_LIMIT), cookLogClaimedAt: null })
     .where(
-      and(awaitingRow(queueId), eq(kitchenQueue.cookLogClaimedAt, claimedAt)),
+      and(
+        awaitingRow(kitchenId, queueId),
+        eq(kitchenQueue.cookLogClaimedAt, claimedAt),
+      ),
     );
 }
 
@@ -214,14 +227,15 @@ function messageOf(err: unknown): string {
  * @throws Error if the database refuses the write
  */
 export async function logCook(
+  kitchenId: string,
   queueId: string,
   now?: Date,
 ): Promise<CookLogOutcome> {
-  const item = await itemOrThrow(queueId);
+  const item = await itemOrThrow(kitchenId, queueId);
   // A cook reopened after an auto-finish and finished again keeps its row
   // (`updateQueueStatus`): the row moves to the new finish, never a second.
   if (item.cookLog && item.status === "completed" && !rowOnFinish(item)) {
-    const moved = await followFinish(queueId, now);
+    const moved = await followFinish(kitchenId, queueId, now);
     if (moved === "held") {
       throw new CookLogConflict(
         "writing",
@@ -231,7 +245,7 @@ export async function logCook(
     if (moved === "gone") throw reopened(queueId, "and finished as a new cook before its row was moved");
     return { status: "logged", log: moved };
   }
-  return writeCook(item, now);
+  return writeCook(kitchenId, item, now);
 }
 
 /**
@@ -259,12 +273,16 @@ const FOLLOW_ROUNDS = 5;
  * @throws Error if the log refuses the write (the row keeps its old time), or
  *   the cook was finished again in every one of `FOLLOW_ROUNDS` rounds
  */
-async function followFinish(queueId: string, now?: Date): Promise<CookLogRef | "held" | "gone"> {
+async function followFinish(
+  kitchenId: string,
+  queueId: string,
+  now?: Date,
+): Promise<CookLogRef | "held" | "gone"> {
   for (let round = 0; round < FOLLOW_ROUNDS; round++) {
-    const item = await itemOrThrow(queueId);
+    const item = await itemOrThrow(kitchenId, queueId);
     if (!item.cookLog) return "gone";
     if (item.status !== "completed" || rowOnFinish(item)) return item.cookLog;
-    const moved = await moveRow(item, now);
+    const moved = await moveRow(kitchenId, item, now);
     if (moved === "held") return "held";
   }
   throw new Error(
@@ -280,12 +298,16 @@ async function followFinish(queueId: string, now?: Date): Promise<CookLogRef | "
  * again during the move keeps the claim (`updateQueueStatus`), so it stores,
  * and `followFinish` moves the row once more.
  */
-async function moveRow(item: KitchenQueueItem, now?: Date): Promise<"moved" | "held"> {
+async function moveRow(
+  kitchenId: string,
+  item: KitchenQueueItem,
+  now?: Date,
+): Promise<"moved" | "held"> {
   if (!item.completedAt) throw notCompleted(item.id);
   const claimedAt = now ?? new Date();
-  if (!(await claim(item.id, new Date(item.completedAt), claimedAt, "move"))) return "held";
+  if (!(await claim(kitchenId, item.id, new Date(item.completedAt), claimedAt, "move"))) return "held";
   try {
-    const held = await itemOrThrow(item.id);
+    const held = await itemOrThrow(kitchenId, item.id);
     if (!held.cookLog || !held.completedAt || rowOnFinish(held)) return "moved";
     const moved = await retimeCookLog(hook("cook-log"), held.cookLog, new Date(held.completedAt));
     await db
@@ -293,6 +315,7 @@ async function moveRow(item: KitchenQueueItem, now?: Date): Promise<"moved" | "h
       .set({ cookLog: moved })
       .where(
         and(
+          eq(kitchenQueue.kitchenId, kitchenId),
           eq(kitchenQueue.id, item.id),
           eq(kitchenQueue.cookLogClaimedAt, claimedAt),
           sql`${kitchenQueue.cookLog} = ${JSON.stringify(held.cookLog)}::jsonb`,
@@ -307,12 +330,19 @@ async function moveRow(item: KitchenQueueItem, now?: Date): Promise<"moved" | "h
     await db
       .update(kitchenQueue)
       .set({ cookLogClaimedAt: null })
-      .where(and(eq(kitchenQueue.id, item.id), eq(kitchenQueue.cookLogClaimedAt, claimedAt)));
+      .where(
+        and(
+          eq(kitchenQueue.kitchenId, kitchenId),
+          eq(kitchenQueue.id, item.id),
+          eq(kitchenQueue.cookLogClaimedAt, claimedAt),
+        ),
+      );
   }
 }
 
 /** `logCook` for an item already read: the cook it writes is that one. */
 async function writeCook(
+  kitchenId: string,
   item: KitchenQueueItem,
   now?: Date,
 ): Promise<CookLogOutcome> {
@@ -323,8 +353,8 @@ async function writeCook(
   }
 
   const claimedAt = now ?? new Date();
-  if (!(await claim(queueId, new Date(item.completedAt), claimedAt))) {
-    const current = await itemOrThrow(queueId);
+  if (!(await claim(kitchenId, queueId, new Date(item.completedAt), claimedAt))) {
+    const current = await itemOrThrow(kitchenId, queueId);
     if (!sameCook(item, current)) {
       throw reopened(
         queueId,
@@ -341,7 +371,7 @@ async function writeCook(
   const name = item.recipeData?.name?.trim();
   if (!name) {
     const error = "no recipe name";
-    await storeError(queueId, claimedAt, error);
+    await storeError(kitchenId, queueId, claimedAt, error);
     return { status: "failed", error };
   }
 
@@ -350,7 +380,7 @@ async function writeCook(
     log = await appendCookLog(hook("cook-log"), { name, at: new Date(item.completedAt) });
   } catch (err) {
     const error = messageOf(err).slice(0, ERROR_LIMIT);
-    await storeError(queueId, claimedAt, error);
+    await storeError(kitchenId, queueId, claimedAt, error);
     return { status: "failed", error };
   }
 
@@ -359,6 +389,7 @@ async function writeCook(
     .set({ cookLog: log, cookLogError: null, cookLogClaimedAt: null })
     .where(
       and(
+        eq(kitchenQueue.kitchenId, kitchenId),
         eq(kitchenQueue.id, queueId),
         isNull(kitchenQueue.cookLog),
         eq(kitchenQueue.cookLogClaimedAt, claimedAt),
@@ -375,12 +406,12 @@ async function writeCook(
   if (stored.length > 0) {
     // A refinish while the row was appended kept the claim and waited on
     // this write (its own write found the claim held): move the row to it.
-    const followed = await followFinish(queueId, now);
+    const followed = await followFinish(kitchenId, queueId, now);
     return { status: "logged", log: typeof followed === "string" ? log : followed };
   }
 
   // The claim was lost mid-write, so nothing was stored.
-  const current = await itemOrThrow(queueId);
+  const current = await itemOrThrow(kitchenId, queueId);
   if (!sameCook(item, current)) {
     // Reopened (and maybe Done again): the item is no longer this cook, and
     // the new cook writes its own row.
@@ -419,9 +450,12 @@ function sameCook(
  * `LOST_WRITE_MS`. Both are logged here as errors. A write that found
  * another one holding the claim (nothing to do) is logged as info.
  */
-export async function logCookInBackground(queueId: string): Promise<void> {
+export async function logCookInBackground(
+  kitchenId: string,
+  queueId: string,
+): Promise<void> {
   try {
-    const outcome = await logCook(queueId);
+    const outcome = await logCook(kitchenId, queueId);
     if (outcome.status === "failed") {
       console.error(
         `Cook Log write failed for queue item ${queueId}: ${outcome.error}`,
@@ -439,8 +473,8 @@ export async function logCookInBackground(queueId: string): Promise<void> {
 }
 
 /** The item's status, refusing the states where no write may start. */
-async function writableItem(queueId: string, now: Date) {
-  const item = await itemOrThrow(queueId);
+async function writableItem(kitchenId: string, queueId: string, now: Date) {
+  const item = await itemOrThrow(kitchenId, queueId);
   const status = cookLogStatus(item, now);
   if (status === "none") throw notCompleted(queueId);
   return { item, status };
@@ -458,16 +492,17 @@ export type RetryOutcome = CookLogOutcome | { status: "writing" };
  *   cook, or was reopened before or while the write ran
  */
 export async function retryCookLog(
+  kitchenId: string,
   queueId: string,
   now?: Date,
 ): Promise<RetryOutcome> {
-  const { item, status } = await writableItem(queueId, now ?? new Date());
+  const { item, status } = await writableItem(kitchenId, queueId, now ?? new Date());
   if (status === "logged" && item.cookLog) {
     return { status: "logged", log: item.cookLog };
   }
   if (status === "writing") return { status: "writing" };
   try {
-    return await writeCook(item, now);
+    return await writeCook(kitchenId, item, now);
   } catch (err) {
     if (err instanceof CookLogConflict && err.reason === "writing") {
       return { status: "writing" };
@@ -498,6 +533,7 @@ export type RateOutcome =
  *   any more (nothing was written)
  */
 export async function rateCook(
+  kitchenId: string,
   {
     queueId,
     rating,
@@ -505,7 +541,7 @@ export async function rateCook(
   }: { queueId: string; rating: number; notes?: string },
   now?: Date,
 ): Promise<RateOutcome> {
-  const { item, status } = await writableItem(queueId, now ?? new Date());
+  const { item, status } = await writableItem(kitchenId, queueId, now ?? new Date());
   if (status === "writing") {
     throw new CookLogConflict(
       "writing",
@@ -519,7 +555,7 @@ export async function rateCook(
   } else {
     // The write is for the cook read here: one reopened and Done since is
     // refused at the claim, not written and rated in its place.
-    const written = await writeCook(item, now);
+    const written = await writeCook(kitchenId, item, now);
     if (written.status === "failed") return { rated: false, error: written.error };
     log = written.log;
   }
@@ -542,6 +578,7 @@ export async function rateCook(
     .set({ cookLog: rated, ratingClosedAt: sql`now()` })
     .where(
       and(
+        eq(kitchenQueue.kitchenId, kitchenId),
         eq(kitchenQueue.id, queueId),
         eq(kitchenQueue.status, "completed"),
         sql`${kitchenQueue.cookLog} = ${JSON.stringify(log)}::jsonb`,
@@ -584,6 +621,7 @@ function askDay(at: Date | string): string {
  * reopened or rated since is left as it is.
  */
 async function closeRatedAsk(
+  kitchenId: string,
   item: KitchenQueueItem,
   read: CookLogRef,
 ): Promise<void> {
@@ -592,6 +630,7 @@ async function closeRatedAsk(
     .set({ cookLog: read, ratingClosedAt: sql`now()` })
     .where(
       and(
+        eq(kitchenQueue.kitchenId, kitchenId),
         eq(kitchenQueue.id, item.id),
         eq(kitchenQueue.status, "completed"),
         isNull(kitchenQueue.ratingClosedAt),
@@ -607,12 +646,17 @@ async function closeRatedAsk(
  * stored meanwhile (a rating, a retry), a cook reopened or an ask closed
  * meanwhile is left as it is.
  */
-async function keepFoundRow(item: KitchenQueueItem, read: CookLogRef): Promise<void> {
+async function keepFoundRow(
+  kitchenId: string,
+  item: KitchenQueueItem,
+  read: CookLogRef,
+): Promise<void> {
   await db
     .update(kitchenQueue)
     .set({ cookLog: read })
     .where(
       and(
+        eq(kitchenQueue.kitchenId, kitchenId),
         eq(kitchenQueue.id, item.id),
         eq(kitchenQueue.status, "completed"),
         isNull(kitchenQueue.ratingClosedAt),
@@ -622,7 +666,7 @@ async function keepFoundRow(item: KitchenQueueItem, read: CookLogRef): Promise<v
 }
 
 /**
- * The cook the kitchen asks "How was it?" of: the latest one `userId`
+ * The cook the kitchen asks "How was it?" of: the latest one `kitchenId`
  * finished today (the kitchen's day, the Cook Log's) whose ask is still open
  * (`rating_closed_at` null). At midnight the day's asks lapse unanswered.
  *
@@ -635,13 +679,13 @@ async function keepFoundRow(item: KitchenQueueItem, read: CookLogRef): Promise<v
  * nothing to ask reads none.
  */
 export async function openCookAsk(
-  userId: UserId,
+  kitchenId: string,
   now: Date = new Date(),
 ): Promise<CookAsk | null> {
   const today = askDay(now);
   const finished = await db.query.kitchenQueue.findMany({
     where: and(
-      eq(kitchenQueue.targetUser, userId),
+      eq(kitchenQueue.kitchenId, kitchenId),
       eq(kitchenQueue.status, "completed"),
       isNull(kitchenQueue.ratingClosedAt),
       gte(kitchenQueue.completedAt, new Date(now.getTime() - ASK_LOOKBACK_MS)),
@@ -676,10 +720,10 @@ export async function openCookAsk(
       return ask("unread");
     }
     if (found.rating === null) {
-      if (found.log.row !== item.cookLog.row) await keepFoundRow(item, found.log);
+      if (found.log.row !== item.cookLog.row) await keepFoundRow(kitchenId, item, found.log);
       return ask("logged");
     }
-    await closeRatedAsk(item, found.log);
+    await closeRatedAsk(kitchenId, item, found.log);
   }
   return null;
 }
@@ -691,12 +735,16 @@ export async function openCookAsk(
  * @throws CookLogItemNotFound if no item has the id
  * @throws CookLogConflict "not-completed" if it isn't a finished cook
  */
-export async function dismissCookAsk(queueId: string): Promise<void> {
+export async function dismissCookAsk(
+  kitchenId: string,
+  queueId: string,
+): Promise<void> {
   const closed = await db
     .update(kitchenQueue)
     .set({ ratingClosedAt: sql`now()` })
     .where(
       and(
+        eq(kitchenQueue.kitchenId, kitchenId),
         eq(kitchenQueue.id, queueId),
         eq(kitchenQueue.status, "completed"),
         isNull(kitchenQueue.ratingClosedAt),
@@ -704,6 +752,6 @@ export async function dismissCookAsk(queueId: string): Promise<void> {
     )
     .returning({ id: kitchenQueue.id });
   if (closed.length > 0) return;
-  const item = await itemOrThrow(queueId);
+  const item = await itemOrThrow(kitchenId, queueId);
   if (item.status !== "completed") throw notCompleted(queueId);
 }

@@ -27,7 +27,7 @@
 
 import { randomUUID } from "node:crypto";
 import { eq, isNull, and, sql } from "drizzle-orm";
-import { db, docRecipes } from "./db";
+import { db, docRecipes, kitchens } from "./db";
 import { hasStepsToPlan, parseCookPlan, type CookPlan, type RecipeForPlan } from "./kitchen/cook-plan";
 import { COOK_PLAN_GATES } from "./kitchen/cook-plan-scorer";
 import { CookPlanCapReached, deriveCookPlanOutcome, type DeriveMeter, type DerivedCookPlan } from "./kitchen/cook-plan-derive";
@@ -142,6 +142,19 @@ export async function readSavedPlan(docSlug: string): Promise<SavedPlan | undefi
   return row;
 }
 
+async function resolveHomeKitchenIdForLog(): Promise<string> {
+  // FIXME(WP3b): pass kitchenId into deriveLibraryPlan directly once library tables are scoped.
+  const [home] = await db
+    .select({ id: kitchens.id })
+    .from(kitchens)
+    .where(eq(kitchens.slug, "home"))
+    .limit(1);
+  if (!home) {
+    throw new Error('Default "home" kitchen not found; run `pnpm --dir app db:migrate`.');
+  }
+  return home.id;
+}
+
 /**
  * One derivation of a library recipe's plan, as the columns to store. Each
  * rejected reply is logged under `cook-plan:doc:<slug>`, so a recipe that
@@ -160,11 +173,17 @@ export async function deriveLibraryPlan(
   try {
     derived = await deriveCookPlanOutcome(recipe, { beforeCall: meter.beforeCall, onUsage: meter.onUsage });
   } catch (err) {
-    if (err instanceof CookPlanCapReached) await logCookPlanRejections(sessionId, derivation, err.rejections);
+    if (err instanceof CookPlanCapReached && err.rejections.length > 0) {
+      const kitchenId = await resolveHomeKitchenIdForLog();
+      await logCookPlanRejections(kitchenId, sessionId, derivation, err.rejections);
+    }
     throw err;
   }
   const { plan, error, rejections } = derived;
-  await logCookPlanRejections(sessionId, derivation, rejections);
+  if (rejections.length > 0) {
+    const kitchenId = await resolveHomeKitchenIdForLog();
+    await logCookPlanRejections(kitchenId, sessionId, derivation, rejections);
+  }
   return {
     cookPlan: plan,
     cookPlanError: error,

@@ -28,9 +28,10 @@ import { getQueueItem } from "../../lib/kitchen-queue";
 import { packRecipeToQueueData } from "../../lib/pack-convert/to-queue";
 import { readFamilyLibrary } from "../../lib/recipe-sync";
 import { loadAppPackFiles, PACKS_DIR } from "../../lib/shelf/load";
-import { appRouter } from "./_app";
+import { callerFor } from "../../lib/__tests__/kitchens";
 
-const caller = appRouter.createCaller({ db: {} as never });
+const HOME = { id: "00000000-0000-4000-8000-000000000001", slug: "home" };
+const caller = callerFor(HOME);
 const QUEUE_ID = "4a1c2a9e-5b7d-4e8f-9a0b-1c2d3e4f5a6b";
 
 function fannieRow(recipeId: string) {

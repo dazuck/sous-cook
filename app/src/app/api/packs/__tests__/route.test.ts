@@ -1,9 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextResponse } from "next/server";
+
+vi.mock("@/lib/kitchens/webhook-tokens", () => ({
+  authenticateWebhookRequest: vi.fn(),
+}));
+
+import { authenticateWebhookRequest } from "@/lib/kitchens/webhook-tokens";
 import { GET } from "../route";
+
+const HOME_AUTH = {
+  ok: true as const,
+  kitchen: { id: "00000000-0000-4000-8000-000000000001", slug: "home" },
+  tokenId: "00000000-0000-4000-8000-000000000099",
+};
 
 function makeRequest(
   path = "/api/packs",
-  headers: Record<string, string> = {},
+  headers: Record<string, string> = { Authorization: "Bearer test-pack-token" },
 ): Request {
   return new Request(`http://localhost:3000${path}`, {
     method: "GET",
@@ -14,25 +27,18 @@ function makeRequest(
 describe("GET /api/packs", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubEnv("NODE_ENV", "development");
+    vi.mocked(authenticateWebhookRequest).mockResolvedValue(HOME_AUTH);
   });
 
-  it("rejects missing or invalid Bearer token in production", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("KITCHEN_QUEUE_API_TOKEN", "secret-pack-token");
-
-    const noTokenRes = await GET(makeRequest("/api/packs"));
-    expect(noTokenRes.status).toBe(401);
-
-    const wrongTokenRes = await GET(
-      makeRequest("/api/packs", { Authorization: "Bearer wrong-token" }),
-    );
-    expect(wrongTokenRes.status).toBe(401);
-
-    const okRes = await GET(
-      makeRequest("/api/packs", { Authorization: "Bearer secret-pack-token" }),
-    );
-    expect(okRes.status).toBe(200);
+  it("returns the token check's refusal response unchanged", async () => {
+    const refusal = NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    vi.mocked(authenticateWebhookRequest).mockResolvedValueOnce({
+      ok: false,
+      response: refusal,
+    });
+    const res = await GET(makeRequest("/api/packs", {}));
+    expect(res).toBe(refusal);
+    expect(res.status).toBe(401);
   });
 
   it("returns the creator pack digest for installed shelf packs", async () => {

@@ -7,7 +7,7 @@
  * are real.
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import type { Mock } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
@@ -27,21 +27,37 @@ vi.mock("@/lib/db", async () =>
 
 import * as dbModule from "./db";
 import { conversationLogs, db, kitchenQueue } from "./db";
+import { homeKitchen } from "./__tests__/kitchens";
 import {
-  addToKitchenQueue,
-  deriveAndStoreCookPlan,
-  prepareQueueItemInBackground,
-  getQueueItem,
-  selectCookPlanBackfill,
+  addToKitchenQueue as addToKitchenQueueForKitchen,
+  deriveAndStoreCookPlan as deriveAndStoreCookPlanForKitchen,
+  prepareQueueItemInBackground as prepareQueueItemInBackgroundForKitchen,
+  getQueueItem as getQueueItemForKitchen,
+  selectCookPlanBackfill as selectCookPlanBackfillForKitchen,
+  type KitchenQueueInput,
 } from "./kitchen-queue";
 
 const client = (dbModule as unknown as { client: PGlite }).client;
 const mockChat = chat as Mock;
+let kitchenId: string;
+
+beforeAll(async () => {
+  kitchenId = (await homeKitchen(db)).id;
+});
 
 beforeEach(async () => {
   mockChat.mockReset();
   await client.exec("delete from kitchen_queue; delete from conversation_logs");
 });
+
+const addToKitchenQueue = (input: KitchenQueueInput) =>
+  addToKitchenQueueForKitchen(kitchenId, input);
+const deriveAndStoreCookPlan = (id: string) =>
+  deriveAndStoreCookPlanForKitchen(kitchenId, id);
+const prepareQueueItemInBackground = (id: string) =>
+  prepareQueueItemInBackgroundForKitchen(kitchenId, id);
+const getQueueItem = (id: string) => getQueueItemForKitchen(kitchenId, id);
+const selectCookPlanBackfill = () => selectCookPlanBackfillForKitchen(kitchenId);
 
 /** The rejected replies logged for the item, in call order. */
 async function logged(id: string) {
@@ -74,7 +90,6 @@ function reply(raw: unknown) {
 async function queueZucchini(): Promise<string> {
   const { id } = await addToKitchenQueue({
     recipeData: { name: "Sweet Zucchini Wraps", ...ZUCCHINI_RECIPE },
-    targetUser: "cook",
   });
   return id;
 }
@@ -108,7 +123,6 @@ describe("addToKitchenQueue with a plan worked out ahead (slice P)", () => {
   it("writes a copied plan in the insert, so an open needs no call", async () => {
     const { id } = await addToKitchenQueue({
       recipeData: { name: "Sweet Zucchini Wraps", ...ZUCCHINI_RECIPE },
-      targetUser: "cook",
       plan: { cookPlan: ZUCCHINI_PLAN, cookPlanError: null },
     });
 
@@ -121,7 +135,6 @@ describe("addToKitchenQueue with a plan worked out ahead (slice P)", () => {
     const settled = "The model declined to plan this recipe (blocked)";
     const { id } = await addToKitchenQueue({
       recipeData: { name: "Sweet Zucchini Wraps", ...ZUCCHINI_RECIPE },
-      targetUser: "cook",
       plan: { cookPlan: null, cookPlanError: settled },
     });
 
@@ -350,7 +363,6 @@ describe("deriveAndStoreCookPlan", () => {
   it("records a recipe with no steps without calling the model", async () => {
     const { id } = await addToKitchenQueue({
       recipeNotionId: "notion-123",
-      targetUser: "cook",
     });
 
     const outcome = await deriveAndStoreCookPlan(id);

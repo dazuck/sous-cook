@@ -1,0 +1,1 @@
+ALTER TABLE "kitchen_queue" ALTER COLUMN "target_user" DROP NOT NULL;

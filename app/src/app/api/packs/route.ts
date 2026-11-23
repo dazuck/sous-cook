@@ -4,7 +4,7 @@ import { librarySubset } from "@/lib/pack-convert/native-read";
 import { EMPTY_LIBRARY } from "@/lib/pack-convert/recipe-library";
 import { packRecipeToQueueData } from "@/lib/pack-convert/to-queue";
 import { loadAppPackFiles } from "@/lib/shelf/load";
-import { webhookAuthRefusal } from "@/lib/webhook-auth";
+import { authenticateWebhookRequest } from "@/lib/kitchens/webhook-tokens";
 
 const STAPLE_NAMES = new Set([
   "water",
@@ -85,11 +85,11 @@ function hookOf(recipe: Recipe): string | null {
  * - `GET /api/packs?pack=<packId>&recipe=<recipeId>`: full validated Recipe +
  *   pack header + resolved commons/states subset + queue projection.
  *
- * Auth: Bearer token via KITCHEN_QUEUE_API_TOKEN env var in production.
+ * Auth: Per-kitchen Bearer token (required in every environment).
  */
 export async function GET(request: Request): Promise<Response> {
-  const refusal = webhookAuthRefusal(request);
-  if (refusal) return refusal;
+  const auth = await authenticateWebhookRequest(request);
+  if (!auth.ok) return auth.response;
 
   const files = await loadAppPackFiles();
   if (files.loadError !== undefined) {

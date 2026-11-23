@@ -29,13 +29,13 @@
 import { and, eq, gt, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import { db, kitchenQueue } from "./db";
 import { AUTO_FINISH_IDLE_MS, REOPEN_WINDOW_MS } from "./kitchen/auto-finish";
-import { getQueueItem, updateQueueStatus, type UserId } from "./kitchen-queue";
+import { getQueueItem, updateQueueStatus } from "./kitchen-queue";
 import { cookLogStatus, logCookInBackground, type CookLogStatus } from "./kitchen-cook-log";
 import { connected } from "./hooks/connected";
 
 /** Whether the item is a cook the app finished (and not reopened since). */
-async function isAutoFinished(queueId: string): Promise<boolean> {
-  const item = await getQueueItem(queueId);
+async function isAutoFinished(kitchenId: string, queueId: string): Promise<boolean> {
+  const item = await getQueueItem(kitchenId, queueId);
   return item?.status === "completed" && item.finishedBy === "auto";
 }
 
@@ -62,6 +62,7 @@ async function isAutoFinished(queueId: string): Promise<boolean> {
  * learns of a sweep.
  */
 export async function reportLastScreen(
+  kitchenId: string,
   queueId: string,
   activeAt: Date | null,
   interactedAt: Date,
@@ -79,6 +80,7 @@ export async function reportLastScreen(
     })
     .where(
       and(
+        eq(kitchenQueue.kitchenId, kitchenId),
         eq(kitchenQueue.id, queueId),
         eq(kitchenQueue.status, "cooking"),
         sql`(${kitchenQueue.lastInteractionAt} is null or ${kitchenQueue.lastInteractionAt} <= ${touched}::timestamptz)`,
@@ -86,7 +88,7 @@ export async function reportLastScreen(
     )
     .returning({ id: kitchenQueue.id });
   if (kept.length > 0) return { cooking: true, autoFinished: false };
-  const item = await getQueueItem(queueId);
+  const item = await getQueueItem(kitchenId, queueId);
   if (item?.status === "cooking") return { cooking: true, autoFinished: false };
   return { cooking: false, autoFinished: item?.status === "completed" && item.finishedBy === "auto" };
 }
@@ -99,23 +101,24 @@ export async function reportLastScreen(
  * `autoFinished` says where it stands.
  */
 export async function autoFinishCook(
+  kitchenId: string,
   queueId: string,
   at: Date,
   interactedAt: Date,
 ): Promise<{ finished: boolean; autoFinished: boolean }> {
-  const { completed } = await updateQueueStatus(queueId, "completed", { by: "auto", at, interactedAt });
-  return { finished: completed, autoFinished: completed || (await isAutoFinished(queueId)) };
+  const { completed } = await updateQueueStatus(kitchenId, queueId, "completed", { by: "auto", at, interactedAt });
+  return { finished: completed, autoFinished: completed || (await isAutoFinished(kitchenId, queueId)) };
 }
 
 /**
- * Finishes each cooking cook of `userId` whose last-screen activity is at or
+ * Finishes each cooking cook of `kitchenId` whose last-screen activity is at or
  * before `cutoff`, except `except`, running `then` on each before the next.
  * The select only finds them: each finish reads the row again as it writes
  * (`idleBefore`), so a step back or a timer reported since keeps that cook
  * cooking.
  */
 async function finishSittingCooks(
-  userId: UserId,
+  kitchenId: string,
   cutoff: Date,
   except?: string,
   then: (id: string) => Promise<void> = async () => {},
@@ -125,7 +128,7 @@ async function finishSittingCooks(
     .from(kitchenQueue)
     .where(
       and(
-        eq(kitchenQueue.targetUser, userId),
+        eq(kitchenQueue.kitchenId, kitchenId),
         eq(kitchenQueue.status, "cooking"),
         isNotNull(kitchenQueue.lastScreenActiveAt),
         lte(kitchenQueue.lastScreenActiveAt, cutoff),
@@ -134,7 +137,7 @@ async function finishSittingCooks(
     );
   const finished: string[] = [];
   for (const { id } of sitting) {
-    const { completed } = await updateQueueStatus(id, "completed", { by: "auto", idleBefore: cutoff });
+    const { completed } = await updateQueueStatus(kitchenId, id, "completed", { by: "auto", idleBefore: cutoff });
     if (!completed) continue;
     finished.push(id);
     await then(id);
@@ -143,17 +146,17 @@ async function finishSittingCooks(
 }
 
 /**
- * The server's sweep: finishes `userId`'s cooks that sat on their last screen
+ * The server's sweep: finishes `kitchenId`'s cooks that sat on their last screen
  * `idleMs` past their last activity (a running timer's end counts as
  * activity, so a timer still running never qualifies). Returns those it
  * finished, for the caller to log.
  */
 export function sweepIdleCooks(
-  userId: UserId,
+  kitchenId: string,
   now: Date = new Date(),
   idleMs: number = AUTO_FINISH_IDLE_MS,
 ): Promise<string[]> {
-  return finishSittingCooks(userId, new Date(now.getTime() - idleMs));
+  return finishSittingCooks(kitchenId, new Date(now.getTime() - idleMs));
 }
 
 /**
@@ -185,10 +188,10 @@ export const RELOG_LOOKBACK_MS = 3 * 24 * 60 * 60 * 1000;
  * Writes the cook's row (never rejects) and says where it stands. With no
  * Cook Log connected there is no row to write, and it stands at "none".
  */
-async function logAndRead(id: string): Promise<SweptCook> {
+async function logAndRead(kitchenId: string, id: string): Promise<SweptCook> {
   // Never rejects: an outcome it can't store is logged, and reads "failed".
-  if (connected["cook-log"]) await logCookInBackground(id);
-  const item = await getQueueItem(id);
+  if (connected["cook-log"]) await logCookInBackground(kitchenId, id);
+  const item = await getQueueItem(kitchenId, id);
   if (!item) throw new Error(`queue item ${id} vanished as the sweep logged it`);
   return {
     queueId: id,
@@ -199,7 +202,7 @@ async function logAndRead(id: string): Promise<SweptCook> {
 
 /**
  * The sweep (`POST /api/kitchen-queue/sweep`, for a nightly job to call
- * before it asks for ratings), for each named cook:
+ * before it asks for ratings), for one kitchen:
  *   - `finished`: finishes each cook idle on its last screen past the wait
  *     and writes its Cook Log row before it finishes the next, so a sweep cut
  *     off part way leaves no cook it finished unlogged but the one in hand;
@@ -213,19 +216,23 @@ async function logAndRead(id: string): Promise<SweptCook> {
  * and one logged has its row, so a second call writes nothing new.
  */
 export async function sweepAndLogIdleCooks(
-  userIds: readonly UserId[],
+  kitchenId: string,
   now: Date = new Date(),
 ): Promise<{ finished: SweptCook[]; relogged: SweptCook[] }> {
   const finished: SweptCook[] = [];
   const relogged: SweptCook[] = [];
-  for (const userId of userIds) {
-    await finishSittingCooks(userId, new Date(now.getTime() - AUTO_FINISH_IDLE_MS), undefined, async (id) => {
-      finished.push(await logAndRead(id));
-    });
-    if (!connected["cook-log"]) continue;
+  await finishSittingCooks(
+    kitchenId,
+    new Date(now.getTime() - AUTO_FINISH_IDLE_MS),
+    undefined,
+    async (id) => {
+      finished.push(await logAndRead(kitchenId, id));
+    },
+  );
+  if (connected["cook-log"]) {
     const unlogged = await db.query.kitchenQueue.findMany({
       where: and(
-        eq(kitchenQueue.targetUser, userId),
+        eq(kitchenQueue.kitchenId, kitchenId),
         eq(kitchenQueue.status, "completed"),
         eq(kitchenQueue.finishedBy, "auto"),
         isNull(kitchenQueue.cookLog),
@@ -235,24 +242,24 @@ export async function sweepAndLogIdleCooks(
     for (const item of unlogged) {
       if (finished.some((f) => f.queueId === item.id)) continue;
       if (cookLogStatus(item, now) !== "failed") continue;
-      relogged.push(await logAndRead(item.id));
+      relogged.push(await logAndRead(kitchenId, item.id));
     }
   }
   return { finished, relogged };
 }
 
 /**
- * A cook's next start: finishes `userId`'s other cooks left on their last
+ * A cook's next start: finishes `kitchenId`'s other cooks left on their last
  * screen with no timer running, at once. A cook mid-recipe stays cooking: two
  * dishes can be under way together. Returns those it finished, for the
  * caller to log.
  */
 export function finishLeftCooks(
-  userId: UserId,
+  kitchenId: string,
   starting: string,
   now: Date = new Date(),
 ): Promise<string[]> {
-  return finishSittingCooks(userId, now, starting);
+  return finishSittingCooks(kitchenId, now, starting);
 }
 
 /**
@@ -265,6 +272,7 @@ export function finishLeftCooks(
  * last activity doesn't reopen), and never a cook the cook finished.
  */
 export async function reopenAutoFinished(
+  kitchenId: string,
   queueId: string,
   now: Date = new Date(),
 ): Promise<{ reopened: boolean }> {
@@ -276,6 +284,7 @@ export async function reopenAutoFinished(
     .set({ status: "cooking", lastScreenActiveAt: null })
     .where(
       and(
+        eq(kitchenQueue.kitchenId, kitchenId),
         eq(kitchenQueue.id, queueId),
         eq(kitchenQueue.status, "completed"),
         eq(kitchenQueue.finishedBy, "auto"),
