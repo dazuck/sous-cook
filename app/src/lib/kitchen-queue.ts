@@ -571,10 +571,11 @@ export async function selectCookPlanBackfill(
  * would describe the storage, not the recipe.
  *
  * It plans the recipe the cook meets (`queueIntake`) and never runs intake
- * itself (`prepareQueueItem` runs both, in order). A row still waiting for
- * intake is planned as sent, which settles it as sent (an old tablet asking
- * before it asked for intake). An intake cut landing mid-derive keeps the
- * plan of the recipe as sent out: the derive runs once more, on the cut.
+ * itself (`prepareQueueItemInBackground` runs both at queue time, in order).
+ * A row still waiting for intake is planned as sent, which settles it as sent
+ * (an old tablet asking before it asked for intake). An intake cut landing
+ * mid-derive keeps the plan of the recipe as sent out: the derive runs once
+ * more, on the cut.
  *
  * @throws Error if the item does not exist, was removed mid-derivation, or
  *   the plan or its error could not be stored
@@ -919,28 +920,14 @@ export async function cookPlanForCook(
 }
 
 /**
- * Everything a queued row needs before the cook opens it, in order: intake
- * (when asked for), then the cook plan of the recipe the cook meets. A row
- * whose intake failed for now (still `pending`) gets no plan here: a plan of
- * the recipe as sent would settle it as sent, and the next open tries intake
- * again, then plans (`plan` null).
- *
- * @throws as `ensureIntake` and `deriveAndStoreCookPlan`
- */
-export async function prepareQueueItem(
-  kitchenId: string,
-  queueId: string,
-): Promise<{ intake: QueueIntake; plan: CookPlanOutcome | null }> {
-  const intake = await ensureIntake(kitchenId, queueId);
-  if (intake.state === "pending") return { intake, plan: null };
-  const plan = await deriveAndStoreCookPlan(kitchenId, queueId);
-  return { intake, plan };
-}
-
-/**
- * `prepareQueueItem` for queue time, run from `after()` once the add has
- * responded. Never rejects: a failed intake or derivation is already stored
- * (settled or for the next open to retry), and a throw
+ * Runs everything a queued row needs before the cook opens it, from `after()`
+ * once the add has responded: intake in `"background"` mode (when asked for),
+ * then the cook plan of the recipe the cook meets (`deriveAndStoreCookPlan`).
+ * A row whose intake is skipped for an AI cap or failed for now (still
+ * `pending`) gets no plan here: a plan of the recipe as sent would settle it
+ * as sent, and the next open tries intake again, then plans. Never rejects:
+ * a failed intake or derivation is already stored (settled or for the next
+ * open to retry), an AI cap stops quietly after logging, and any other throw
  * (the item removed, the database down) has no caller left to tell, so each
  * is logged here.
  */

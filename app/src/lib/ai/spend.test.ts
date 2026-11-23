@@ -124,13 +124,21 @@ describe("AI prices and error classes", () => {
       });
     }
 
+    expect(parseUsdToMicrosResult("9007199254.74")).toEqual({
+      ok: true,
+      micros: 9007199254740000,
+    });
+    expect(parseUsdToMicrosResult("9007199254.75")).toEqual({
+      ok: false,
+      reason: "too-large",
+    });
     expect(parseUsdToMicros("99999999999999")).toBeNull();
     expect(parseUsdToMicrosResult("99999999999999")).toEqual({
       ok: false,
       reason: "too-large",
     });
 
-    // readCapEnv treats unset as null and refuses empty strings.
+    // readCapEnv treats unset as null and refuses empty strings and too-large amounts.
     expect(readCapEnv({})).toEqual({
       kitchenCapMicros: null,
       totalCapMicros: null,
@@ -141,6 +149,9 @@ describe("AI prices and error classes", () => {
     expect(() => readCapEnv({ SOUS_AI_TOTAL_CAP_USD: "" })).toThrow(
       /SOUS_AI_TOTAL_CAP_USD/,
     );
+    expect(() =>
+      readCapEnv({ SOUS_AI_TOTAL_CAP_USD: "9007199254.75" }),
+    ).toThrow(/too large/i);
   });
 
   it("formats micro-dollar amounts with exact integer arithmetic without rounding sub-cent values", () => {

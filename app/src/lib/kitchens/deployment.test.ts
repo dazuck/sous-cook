@@ -205,6 +205,7 @@ describe("Deployment modes and start-up checks", () => {
     }
     expect(caught).toBeInstanceOf(DeploymentConfigError);
     const configErr = caught as DeploymentConfigError;
+    expect(configErr.message).toContain("Sign-in mode");
     expect(configErr.message).toContain(customModel);
     expect(configErr.logMessage).toContain("AI_TEXT_MODEL");
     expect(configErr.logMessage).toContain("app/src/lib/ai/prices.ts");
@@ -272,6 +273,7 @@ describe("Deployment modes and start-up checks", () => {
       }
       expect(caught).toBeInstanceOf(DeploymentConfigError);
       const configErr = caught as DeploymentConfigError;
+      expect(configErr.message).toContain("Single-kitchen mode");
       expect(configErr.message).toContain(customModel);
       expect(configErr.message).not.toContain("app/src/lib/ai/prices.ts");
       expect(configErr.logMessage).toContain(customModel);
@@ -367,6 +369,34 @@ describe("Deployment modes and start-up checks", () => {
           DeploymentConfigError,
         );
         expect((singleErr as DeploymentConfigError).message).toContain(varName);
+      }
+    }
+
+    // Amounts above the safe micro-dollar limit report "too large" without mentioning decimals.
+    for (const varName of [
+      "SOUS_AI_KITCHEN_CAP_USD",
+      "SOUS_AI_TOTAL_CAP_USD",
+    ] as const) {
+      for (const [label, env] of [
+        ["sign-in", { ...TEST_AUTH_ENV, [varName]: "9007199254.75" }],
+        ["single-kitchen", { SOUS_SIGN_IN: "off", [varName]: "9007199254.75" }],
+      ] as const) {
+        let tooLargeErr: unknown;
+        try {
+          checkDeploymentEnv(env);
+        } catch (err) {
+          tooLargeErr = err;
+        }
+        expect(tooLargeErr, `${label} too-large ${varName}`).toBeInstanceOf(
+          DeploymentConfigError,
+        );
+        const err = tooLargeErr as DeploymentConfigError;
+        expect(err.message).toContain(varName);
+        expect(err.message).toMatch(/too large/i);
+        expect(err.message).not.toMatch(/decimal/i);
+        expect(err.message).not.toContain("9007199254.75");
+        expect(err.logMessage).toMatch(/too large/i);
+        expect(err.logMessage).toContain("9007199254.75");
       }
     }
   });

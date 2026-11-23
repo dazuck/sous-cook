@@ -67,14 +67,22 @@ const ONE_COST = computeCostMicros(
 ); // 10,000 micros ($0.01)
 
 function assertTestDatabaseUrl(rawUrl: string): void {
+  let parsed: URL;
   let dbName: string;
   try {
-    const parsed = new URL(rawUrl);
+    parsed = new URL(rawUrl);
     dbName = decodeURIComponent(parsed.pathname.replace(/^\/+|\/+$/g, ""));
   } catch {
     throw new Error(
       'Refusing to run PostgreSQL concurrency tests: SOUS_TEST_POSTGRES_URL must be a valid PostgreSQL URL whose database name contains "test" (for example, sous_test).',
     );
+  }
+  for (const key of parsed.searchParams.keys()) {
+    if (key.toLowerCase() === "database") {
+      throw new Error(
+        'Refusing to run PostgreSQL concurrency tests: SOUS_TEST_POSTGRES_URL must not set a "database" query parameter; name the database in the URL path instead (for example, sous_test).',
+      );
+    }
   }
   if (!dbName || !dbName.toLowerCase().includes("test")) {
     throw new Error(
@@ -144,6 +152,20 @@ function tallyReserves<T>(
   };
 }
 
+describe.skipIf(!pgUrl)("test database URL guard", () => {
+  it("refuses a database query parameter regardless of key case", () => {
+    for (const badUrl of [
+      "postgres://localhost:5432/sous_test?database=other",
+      "postgres://localhost:5432/sous_test?DATABASE=other",
+      "postgres://localhost:5432/sous_test?Database=sous_test",
+    ]) {
+      expect(() => assertTestDatabaseUrl(badUrl), badUrl).toThrow(
+        /query parameter.*URL path/i,
+      );
+    }
+  });
+});
+
 describe.skipIf(!pgUrl)("PostgreSQL concurrency", () => {
   let client: Sql | undefined;
   let capHolder: Sql | undefined;
@@ -157,6 +179,18 @@ describe.skipIf(!pgUrl)("PostgreSQL concurrency", () => {
       import("drizzle-orm/postgres-js"),
     ]);
     client = postgres(pgUrl!, { max: 24, prepare: false, onnotice: () => {} });
+    // Every later client uses the same URL, so one current_database() check is enough.
+    const [currentDb] = await client<Array<{ name: string }>>`
+      select current_database() as name
+    `;
+    const connectedName = currentDb?.name ?? "";
+    if (!connectedName.toLowerCase().includes("test")) {
+      await client.end();
+      client = undefined;
+      throw new Error(
+        `Refusing to run PostgreSQL concurrency tests: connected database "${connectedName}" must contain "test" (for example, sous_test).`,
+      );
+    }
     capHolder = postgres(pgUrl!, {
       max: 1,
       prepare: false,
@@ -440,7 +474,10 @@ describe.skipIf(!pgUrl)("PostgreSQL concurrency", () => {
         const deadline = Date.now() + 20_000;
         for (;;) {
           const [row] = await watcher!<Array<{ n: number }>>`
-            select count(*)::int as n from pg_locks where not granted
+            select count(*)::int as n
+            from pg_locks
+            where not granted
+              and database = (select oid from pg_database where datname = current_database())
           `;
           if ((row?.n ?? 0) >= calls.length) break;
           if (Date.now() > deadline) {
