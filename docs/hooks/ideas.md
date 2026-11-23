@@ -34,7 +34,7 @@ Both bound their own time.
 
 ## The cache table
 
-The app keeps the last text it read in the `recipe_ideas_cache` table (`app/drizzle/schema.ts`: `id`, `text`, `synced_at`), a single row replaced on every successful `readText()` (`getRecipeIdeas` in `app/src/lib/recipe-ideas.ts`). It is used for two things:
+The app keeps the last text it read in the `recipe_ideas_cache` table (`app/drizzle/schema.ts`: `id`, `kitchen_id`, `text`, `synced_at`), one row per kitchen upserted on `kitchen_id` on every successful `readText()` (`getRecipeIdeas` in `app/src/lib/recipe-ideas.ts`). It is used for two things:
 
 - **A rejected read.** The app answers with the cached text, marked stale, and the screen says it is showing a cached copy. With no cached row yet, the rejection passes through and the screen says it couldn't reach the list and has no copy saved.
 - **The count on the shelf.** The number beside "Saved for later" is the count of lines in the cached text (`cachedIdeasCount`). It is read from the cache alone, so drawing the shelf never calls the hook. Before the list has been opened once, and while the cached list is empty, there is no count.

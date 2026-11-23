@@ -72,7 +72,7 @@ These leaf tabs are reported as skipped, each with a sentence saying why, and ar
 
 **Identity.** A recipe's identity is the slug of its title (`slugify`): trailing `*` removed (a household's "needs work" marker), accents folded, lowercased, apostrophes dropped, and every other run of characters that aren't letters or digits turned into one hyphen. "Crème brûlée *" and "creme brulee" are the same recipe. Renaming a tab therefore makes a new recipe and leaves the old row behind, named as stale in the Refresh result. The Refresh never deletes.
 
-**What is extracted.** For each recipe tab the app builds the text `title + "\n" + lines.join("\n")` and sends it to the configured model to extract a structured recipe (`extractRecipeFromText`). The result is upserted into the `doc_recipes` table (`app/drizzle/schema.ts`) on `doc_slug`:
+**What is extracted.** For each recipe tab the app builds the text `title + "\n" + lines.join("\n")` and sends it to the configured model to extract a structured recipe (`extractRecipeFromText`). The result is upserted into the `doc_recipes` table (`app/drizzle/schema.ts`) on `(kitchen_id, doc_slug)`:
 
 - `name`, `category` (lowercased key), `category_title` (as written), `doc_position` (order in the walk);
 - `ingredients`, `steps`, `step_ingredients`, `estimated_time`, `serves`, `tags`, `notes`;

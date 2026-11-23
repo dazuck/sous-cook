@@ -36,7 +36,7 @@ This is the part to read before connecting it.
 - **It is sent to your model provider.** The text goes, as written, to whichever provider is configured (`docs/environment.md`) on every message the cook sends to Ask. The provider's data-handling terms apply to it.
 - **It is stored.** Each message the cook sends to Ask is logged to the `conversation_logs` table with the context it was sent with, this text included.
 - **It is not cleaned.** Unlike a cook's note from the cook log, this text is inserted without escaping or a length limit. Whoever can edit the store can put instructions in front of the model. Keep the store somewhere only the household can write.
-- **Anyone who can reach the app can ask about it.** The app has no login. A person on the same network can open Ask and ask what it knows about the household.
+- **Anyone who can reach the app can ask about it.** Hooks work only in single-kitchen mode (`SOUS_SIGN_IN=off`), which has no login. A person on the same network can open Ask and ask what it knows about the household.
 
 So write the minimum that makes answers better: "Four of us, one vegetarian. Nobody here eats cilantro. We like food hot." Leave out names, medical details and anything else you would not put in an email to the provider. A plain preference ("no shellfish") does the same work in the prompt as the reason behind it.
 
