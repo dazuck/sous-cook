@@ -138,7 +138,10 @@ test.describe("Deployed copy smoke check", () => {
   if (expectedSignIn === "off") {
     test("SMOKE-2: /kitchen loads cleanly in single-kitchen mode without redirecting, 5xx responses, console errors, or write requests", async ({
       page,
+      baseURL,
     }) => {
+      expect(baseURL, "SMOKE_BASE_URL must be configured").toBeTruthy();
+      const expectedOrigin = new URL(baseURL!).origin;
       const guards = attachSmokeGuards(page);
       try {
         const response = await page.goto("/kitchen");
@@ -147,11 +150,19 @@ test.describe("Deployed copy smoke check", () => {
           "Expected a navigation response for /kitchen",
         ).not.toBeNull();
         expect(response!.status()).toBeLessThan(400);
-
-        const finalPath = new URL(page.url()).pathname;
         expect(
-          finalPath,
-          `Expected /kitchen not to redirect in single-kitchen mode (SMOKE_EXPECT_SIGN_IN="off"), but landed on ${finalPath}`,
+          response!.request().redirectedFrom(),
+          'Expected /kitchen not to redirect in single-kitchen mode (SMOKE_EXPECT_SIGN_IN="off")',
+        ).toBeNull();
+
+        const finalUrl = new URL(page.url());
+        expect(
+          finalUrl.origin,
+          `Expected /kitchen to stay on origin ${expectedOrigin}, but landed on ${finalUrl.origin}`,
+        ).toBe(expectedOrigin);
+        expect(
+          finalUrl.pathname,
+          `Expected /kitchen not to redirect in single-kitchen mode (SMOKE_EXPECT_SIGN_IN="off"), but landed on ${finalUrl.pathname}`,
         ).toBe("/kitchen");
 
         // KitchenHome renders a level-1 landmark heading ("Kitchen") and, once
@@ -210,9 +221,13 @@ test.describe("Deployed copy smoke check", () => {
       }
     });
   } else {
-    test("SMOKE-2: /kitchen redirects to /sign-in cleanly without 5xx responses, console errors, or write requests", async ({
+    test("SMOKE-2: /kitchen redirects to /sign-in cleanly and GET /api/auth/get-session answers 200 null without 5xx responses, console errors, or write requests", async ({
       page,
+      request,
+      baseURL,
     }) => {
+      expect(baseURL, "SMOKE_BASE_URL must be configured").toBeTruthy();
+      const expectedOrigin = new URL(baseURL!).origin;
       const guards = attachSmokeGuards(page);
       try {
         const response = await page.goto("/kitchen");
@@ -222,10 +237,14 @@ test.describe("Deployed copy smoke check", () => {
         ).not.toBeNull();
         expect(response!.status()).toBeLessThan(400);
 
-        const finalPath = new URL(page.url()).pathname;
+        const finalUrl = new URL(page.url());
         expect(
-          finalPath,
-          `Expected /kitchen to redirect to /sign-in in sign-in mode (SMOKE_EXPECT_SIGN_IN="on"), but landed on ${finalPath}`,
+          finalUrl.origin,
+          `Expected /kitchen to stay on origin ${expectedOrigin}, but landed on ${finalUrl.origin}`,
+        ).toBe(expectedOrigin);
+        expect(
+          finalUrl.pathname,
+          `Expected /kitchen to redirect to /sign-in in sign-in mode (SMOKE_EXPECT_SIGN_IN="on"), but landed on ${finalUrl.pathname}`,
         ).toBe("/sign-in");
 
         await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -234,6 +253,14 @@ test.describe("Deployed copy smoke check", () => {
         });
         await expect(signInButton).toBeVisible();
         await expect(signInButton).toBeEnabled();
+
+        const sessionResponse = await request.get("/api/auth/get-session");
+        expect(
+          sessionResponse.status(),
+          `Expected GET /api/auth/get-session to answer 200 in sign-in mode, got ${sessionResponse.status()}`,
+        ).toBe(200);
+        const sessionBody: unknown = await sessionResponse.json();
+        expect(sessionBody).toBeNull();
 
         guards.assertClean();
       } finally {
