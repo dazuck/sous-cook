@@ -242,7 +242,7 @@ describe("Sounds and voice where the clips are missing", () => {
     vi.unstubAllEnvs();
   });
 
-  it("in a build without them (as this repository ships), a stored Sounds and voice acts as Sounds: nothing fetched, nothing said", () => {
+  it("in a build without them, a stored Sounds and voice acts as Sounds: nothing fetched, nothing said", () => {
     const { result, rec } = onDevice("voice");
     talk(result);
     say(rec, "flag");

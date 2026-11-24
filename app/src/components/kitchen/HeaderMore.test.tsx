@@ -607,7 +607,7 @@ describe("Sue's replies", () => {
     expect(row("sounds")?.textContent).toBe("Sue's replies: Sounds");
   });
 
-  describe("in a build without the clips (as this repository ships)", () => {
+  describe("in a build without the clips", () => {
     it("never offers Sounds and voice: a press goes Sounds, Off, Sounds", () => {
       render(<More />);
       fireEvent.click(button());

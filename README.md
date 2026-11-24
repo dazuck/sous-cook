@@ -14,6 +14,8 @@ This is a snapshot of the app I cook from, shared as-is and updated now and then
 
 With nothing but a database and `SOUS_SIGN_IN=off`, you get the queue and cook mode with timers and voice (spoken steps and voice commands, in a browser that supports speech). The app installs to a tablet's home screen as a PWA.
 
+A spoken command gets a soft sound back, and, if the cook picks "Sounds and voice" in the cook page's More menu, now and then a short recorded reply such as "Yes, chef." Those 17 clips ship in `app/public/sounds/sue/`. They were made with Google's speech model by `app/scripts/generate-sue-clips.ts`, which can make them again. See [docs/voice-replies.md](docs/voice-replies.md).
+
 One pack is bundled. A pack is a set of recipes in the app's own format, and this one is five recipes from the public-domain 1896 *Boston Cooking-School Cook Book*. Each comes with a stored cook plan: the recipe broken into the tasks cook mode schedules, such as what to prep first and what can wait on a timer.
 
 Three things need a model key: importing a recipe from pasted text, a photo or a URL; Ask, the assistant you can question mid-cook; and working out a cook plan for a recipe that doesn't ship with one. A web page that carries its recipe as structured data imports without a key. Gemini is the default (`GOOGLE_AI_API_KEY`). Anthropic is optional. See [docs/environment.md](docs/environment.md).

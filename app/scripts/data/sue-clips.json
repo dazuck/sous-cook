@@ -1,0 +1,173 @@
+{
+  "note": "Written by scripts/generate-sue-clips.ts. Generated speech; measured, not yet heard by a person.",
+  "model": "gemini-3.8-flash-lite-tts",
+  "voice": "Schedar",
+  "style": "calm, low and brief, unbothered, a sous-chef acknowledging the chef; no exclamation, no smile",
+  "generatedAt": "2026-11-23T04:26:03.721Z",
+  "limits": {
+    "minSeconds": 0.3,
+    "maxSeconds": 3,
+    "peakMinDb": -12,
+    "peakMaxDb": -0.5,
+    "targetRmsDb": -21,
+    "rmsToleranceDb": 1.5
+  },
+  "clips": [
+    {
+      "name": "flagged",
+      "text": "Flagged.",
+      "seconds": 0.76725,
+      "peakDb": -3.944071,
+      "rmsDb": -21.673629,
+      "bytes": 5133,
+      "sha256": "072485c18fbe6e99a081b7b232b4062fa7591380beccb94b2a1e66067f26e1d7"
+    },
+    {
+      "name": "on-it",
+      "text": "On it.",
+      "seconds": 0.33,
+      "peakDb": -6.714255,
+      "rmsDb": -21.999262,
+      "bytes": 2541,
+      "sha256": "a4f5391fc85dc7c408fa0f3e05a96f44df514aa887000caaa6b353c9b7f94e37"
+    },
+    {
+      "name": "read-1-hour",
+      "text": "One hour.",
+      "seconds": 0.533667,
+      "peakDb": -8.619309,
+      "rmsDb": -21.806697,
+      "bytes": 3837,
+      "sha256": "d10caf77f9eac46b034ba0c4bc93960132c946b75b71d7f9cd01a68e323f14e1"
+    },
+    {
+      "name": "read-1-minute",
+      "text": "One minute.",
+      "seconds": 0.473458,
+      "peakDb": -8.82603,
+      "rmsDb": -21.834899,
+      "bytes": 3405,
+      "sha256": "cb9e1bd2484779e2589e92f7e29e9731ff8c12fc73b8bdb98b9acd4f9962f80c"
+    },
+    {
+      "name": "read-10-minutes",
+      "text": "Ten minutes.",
+      "seconds": 0.693042,
+      "peakDb": -4.901358,
+      "rmsDb": -21.616165,
+      "bytes": 4701,
+      "sha256": "4a7128ae43744ea99eca906762856d1ab2233640a7342c03cd6f0fb8c3aa291e"
+    },
+    {
+      "name": "read-15-minutes",
+      "text": "Fifteen minutes.",
+      "seconds": 0.880375,
+      "peakDb": -3.121467,
+      "rmsDb": -21.240612,
+      "bytes": 5853,
+      "sha256": "7c761311c952b8e3600111ff86a048c77be68cd0450d52d88b212a88985820e6"
+    },
+    {
+      "name": "read-2-minutes",
+      "text": "Two minutes.",
+      "seconds": 0.534958,
+      "peakDb": -6.396593,
+      "rmsDb": -21.79199,
+      "bytes": 3837,
+      "sha256": "c012864396ffa6e16f23bfc44b631a151adb53af4769839d92289498a6ffb6d3"
+    },
+    {
+      "name": "read-20-minutes",
+      "text": "Twenty minutes.",
+      "seconds": 0.745958,
+      "peakDb": -5.51402,
+      "rmsDb": -21.640457,
+      "bytes": 5133,
+      "sha256": "038fd24684d8f89693ffa534875c696195765d13c2a720f8f95baca994a6f133"
+    },
+    {
+      "name": "read-25-minutes",
+      "text": "Twenty five minutes.",
+      "seconds": 0.860042,
+      "peakDb": -3.165641,
+      "rmsDb": -21.664065,
+      "bytes": 5709,
+      "sha256": "1cb587f1aaf76e7a4434344b391a66f8fd240fa654443c99fe03f99abd693da0"
+    },
+    {
+      "name": "read-3-minutes",
+      "text": "Three minutes.",
+      "seconds": 0.656833,
+      "peakDb": -4.183063,
+      "rmsDb": -21.623234,
+      "bytes": 4557,
+      "sha256": "4fb908c5aca321f519be3d86a2701cba5170f3090b9d4b58d94b616d59caa276"
+    },
+    {
+      "name": "read-30-minutes",
+      "text": "Thirty minutes.",
+      "seconds": 1.211917,
+      "peakDb": -4.172962,
+      "rmsDb": -21.57542,
+      "bytes": 7869,
+      "sha256": "a5fc2c9045b5416525fe282c88ab24f4a4a60e8b458280d7aed6c645ca35aa07"
+    },
+    {
+      "name": "read-45-minutes",
+      "text": "Forty five minutes.",
+      "seconds": 0.931792,
+      "peakDb": -3.809995,
+      "rmsDb": -21.627694,
+      "bytes": 6141,
+      "sha256": "dcd60d883429e8593edbd281c1e3f407a8076d2db86e78b73dfd91ee791340cb"
+    },
+    {
+      "name": "read-5-minutes",
+      "text": "Five minutes.",
+      "seconds": 0.629,
+      "peakDb": -2.435145,
+      "rmsDb": -21.698335,
+      "bytes": 4413,
+      "sha256": "41a6a993ef08d8997e1e3ea5a2e9f2c5200005dc8a3e27df8eec458a903f28bc"
+    },
+    {
+      "name": "timer-on",
+      "text": "Timer's on.",
+      "seconds": 0.693,
+      "peakDb": -6.31159,
+      "rmsDb": -21.737424,
+      "bytes": 4701,
+      "sha256": "3739f5884ede549d0adac8815f35a7947193bc2db069093f91c1b6fafdaa3f30"
+    },
+    {
+      "name": "yes-chef-1",
+      "text": "Yes, chef.",
+      "take": 5,
+      "seconds": 0.511083,
+      "peakDb": -4.09266,
+      "rmsDb": -21.628638,
+      "bytes": 3693,
+      "sha256": "8acd76caff18edb384e85a3225c3e1574dec459207e851ef212220b7e812b83e"
+    },
+    {
+      "name": "yes-chef-2",
+      "text": "Yes, chef.",
+      "take": 2,
+      "seconds": 0.585083,
+      "peakDb": -3.221985,
+      "rmsDb": -21.529185,
+      "bytes": 4125,
+      "sha256": "e8542d5adfdef8105c87113fffc2cdf136b2143b478e1de8a76b2de898b5aa59"
+    },
+    {
+      "name": "yes-chef-3",
+      "text": "Yes, chef.",
+      "take": 1,
+      "seconds": 0.700792,
+      "peakDb": -6.607268,
+      "rmsDb": -21.612013,
+      "bytes": 4845,
+      "sha256": "91778eaea88b66e9ba2c71a7b94deacfda2f020a5bbe44120962810732676cc5"
+    }
+  ]
+}

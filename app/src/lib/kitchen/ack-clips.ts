@@ -1,13 +1,13 @@
 /**
  * Sue's recorded confirmations: the fixed set of short clips a spoken
- * confirmation is chosen from (DESIGN_SYSTEM §4, "Sue acknowledges"). The
- * words, the file names and the timer lengths that have a read-back all live
- * here, so the generator (`scripts/generate-sue-clips.ts`), the player and
- * the tests read one list.
+ * confirmation is chosen from. The words, the file names and the timer
+ * lengths that have a read-back all live here, so the generator
+ * (`scripts/generate-sue-clips.ts`), the player and the tests read one list.
  *
  * The files are generated speech, one voice and one style for all of them
- * (the generator records which), served from `public/sounds/sue/`. This
- * repository ships without them (`docs/voice-replies.md`).
+ * (the generator records which, in `scripts/data/sue-clips.json`), served
+ * from `public/sounds/sue/`. The repository ships them
+ * (`docs/voice-replies.md`).
  */
 
 export const SUE_CLIP_DIR = "/sounds/sue";

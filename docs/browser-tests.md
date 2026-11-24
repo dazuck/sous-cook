@@ -96,7 +96,7 @@ pnpm --dir app exec playwright show-report <report-dir>
 - **Single-kitchen mode:** `SOUS_SIGN_IN=off` selects the one `home` kitchen created by migrations, with no sign-in pages and all six household hooks (`app/src/lib/hooks/connected.ts`) unconnected.
 - **Outbound network blocked on the server:** The server runs with `NODE_USE_ENV_PROXY=1`, `HTTP_PROXY=http://127.0.0.1:9`, `HTTPS_PROXY=http://127.0.0.1:9`, and `NO_PROXY=127.0.0.1,localhost`, so outbound internet requests fail immediately while requests to local test servers on `127.0.0.1` (such as the local JSON-LD recipe page used by URL import) succeed.
 - **Fixed seed and per-test reset:** Global setup runs `app/e2e/seed-cli.ts`, which seeds the `home` kitchen through the application's own library functions and copies the seven data tables (`kitchen_queue`, `doc_recipes`, `recipe_ideas_cache`, `conversation_logs`, `cook_reports`, `ai_usage`, `kitchen_webhook_tokens`) into schema `e2e_seed`. Before every test, the fixture truncates those seven tables together and restores them from `e2e_seed`. The `kitchens`, `members`, `invites`, `auth_*`, and migration tables are never modified.
-- **Fixed clock and browser guards:** Before every test navigates, `app/e2e/fixtures.ts` fixes the browser clock (`Date.now()` and `new Date()`) to `SEED_NOW` (`2026-03-10T11:00:00Z`) in timezone `Europe/London` and locale `en-US`. Playwright blocks service workers (`serviceWorkers: "block"`) so cached pages cannot mask the build under test. An init script replaces `SpeechRecognition` and `webkitSpeechRecognition` with an inert stand-in so cook mode never requests microphone access. A network guard aborts and fails the test on any browser request outside `127.0.0.1` or `localhost`. A console and page error guard fails the test on any unexpected `console.error` or uncaught page error unless explicitly allowed by the test.
+- **Fixed clock and browser guards:** Before every test navigates, `app/e2e/fixtures.ts` fixes the browser clock (`Date.now()` and `new Date()`) to `SEED_NOW` (`2026-03-10T11:00:00Z`) in timezone `Europe/London` and locale `en-US`. Playwright blocks service workers (`serviceWorkers: "block"`) so cached pages cannot mask the build under test. An init script replaces `SpeechRecognition` and `webkitSpeechRecognition` with an inert stand-in so cook mode never requests microphone access; a spec that needs commands heard installs `app/e2e/fake-speech.ts` over it, a recognizer it speaks to (`voice-replies.spec.ts`). A network guard aborts and fails the test on any browser request outside `127.0.0.1` or `localhost`. A console and page error guard fails the test on any unexpected `console.error` or uncaught page error unless explicitly allowed by the test.
 
 ### Seed rows
 
@@ -133,7 +133,9 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | Cook mode: the whole meal drawn as lines on the opening and at the whole cook, the step in hand marked now, Esc back to the step | `app/e2e/cook.spec.ts` (COOK-6) |
 | Cook mode: starting a step timer and persistence across reload | `app/e2e/cook.spec.ts` (COOK-2) |
 | Cook mode: walking to end, armed Done cooking finish, home and Made recently update | `app/e2e/cook.spec.ts` (COOK-3) |
-| Cook mode: Sue's replies as the repository ships, with no clip files: Sounds and voice not offered, a stored choice of it read as Sounds, no clip requested | `app/e2e/voice-replies.spec.ts` (VOICE-1) |
+| Cook mode: Sue's replies in More (Sounds until chosen, Sounds and voice offered and fetching every clip, the choice kept across a reload) | `app/e2e/voice-replies.spec.ts` (VOICE-1) |
+| Cook mode: every recorded clip answered as audio and decoded in Chromium at its measured length | `app/e2e/voice-replies.spec.ts` (VOICE-2) |
+| Cook mode: voice commands heard through a recognizer the spec talks to: the understood and not-understood sounds, none for touch or for talk not meant for Sue, Off silent, a flag confirmed by its clip (three at most), a timer read back from its clip, and a tap starting each listen on Android | `app/e2e/voice-replies.spec.ts` (VOICE-3 to VOICE-8) |
 | No model key: as-written cook with pending then failed prep plan note | `app/e2e/no-key.spec.ts` (NOKEY-1) |
 | No model key: settled plan error keeps as-written view and error unchanged | `app/e2e/no-key.spec.ts` (NOKEY-2) |
 | No model key: paste import surfaces missing-key error without adding a row | `app/e2e/no-key.spec.ts` (NOKEY-3) |
@@ -143,7 +145,7 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | Version endpoint: `/api/version` answers 200 with only `commit` and matches `SOUS_RELEASE_COMMIT` when set | `app/e2e/version.spec.ts` (VERSION-2) |
 | Deployed copy smoke check: `/api/version`, `/kitchen`, `/kitchen/cookpacks`, and a book page (read-only) | `app/e2e/smoke.spec.ts` (SMOKE-1, SMOKE-2, SMOKE-3) |
 | Flagging a screen and the reports panel | not covered yet |
-| Voice commands | not covered yet |
+| What a voice command does beyond the reply (the step moved, the timer set, the screen flagged, Ask by voice) | not covered yet |
 | The whole cook's reading of a stop, and its scrolling lines | not covered yet |
 | The whole recipe view | not covered yet |
 | Scaling servings | not covered yet |

@@ -4,8 +4,9 @@
  * and offline. The words, names and the timer lengths with a read-back are
  * `src/lib/kitchen/ack-clips.ts`; the voice, the style line and the checks
  * are `scripts/sue-clips.ts`; what a run made is recorded in
- * `scripts/data/sue-clips.json` (voice, style, model, the calls and spend, and
- * each clip's length, peak and level).
+ * `scripts/data/sue-clips.json` (voice, style, model, and each clip's length,
+ * peak, level, size and SHA-256). A run's calls and spend are printed, not
+ * recorded.
  *
  * One voice and one style line for every clip, so they sound like one person
  * in one register. "Yes, chef." is generated in several takes and three that
@@ -15,10 +16,10 @@
  * ends non-zero and says which clip. Nobody has *heard* a clip by running
  * this; the checks are measurements, and a person's ear is still owed.
  *
- * The repository ships without the clips (and without the record). A build
- * offers "Sounds and voice" only once every clip is here, so build the app
- * again after a run (`src/lib/kitchen/ack-clips-build.ts`, read by
- * `next.config.ts`; `docs/voice-replies.md`).
+ * The repository ships the clips and their record. A build offers "Sounds and
+ * voice" only when every clip is here, so build the app again after a run
+ * (`src/lib/kitchen/ack-clips-build.ts`, read by `next.config.ts`;
+ * `docs/voice-replies.md`).
  *
  *   From app/ (needs ffmpeg and ffprobe on the PATH, and GOOGLE_AI_API_KEY in the environment):
  *     npx tsx scripts/generate-sue-clips.ts [flags]
@@ -31,6 +32,7 @@
  */
 
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -66,6 +68,12 @@ interface ClipRecord {
   peakDb: number;
   rmsDb: number;
   bytes: number;
+  sha256: string;
+}
+
+/** What the record keeps of a finished clip file: its size and its SHA-256. */
+function fileFacts(path: string): { bytes: number; sha256: string } {
+  return { bytes: statSync(path).size, sha256: createHash("sha256").update(readFileSync(path)).digest("hex") };
 }
 
 const flag = (name: string) => process.argv.includes(name);
@@ -224,7 +232,7 @@ async function main() {
           const out = join(OUT_DIR, `${clip}.mp3`);
           const m = finish(made.find((t) => t.take === k.take)?.trimmed ?? "", out);
           problems.push(...problemsWith(clip, m));
-          records.push({ name: clip, text, take: k.take, ...m, bytes: statSync(out).size });
+          records.push({ name: clip, text, take: k.take, ...m, ...fileFacts(out) });
         });
         continue;
       }
@@ -236,7 +244,7 @@ async function main() {
       const out = join(OUT_DIR, `${name}.mp3`);
       const m = finish(trimmed, out);
       problems.push(...problemsWith(name, m));
-      records.push({ name, text, ...m, bytes: statSync(out).size });
+      records.push({ name, text, ...m, ...fileFacts(out) });
       console.log(`  ${name}: ${m.seconds.toFixed(2)} s, peak ${m.peakDb.toFixed(1)} dB, level ${m.rmsDb.toFixed(1)} dB`);
     }
   } finally {
@@ -244,7 +252,7 @@ async function main() {
   }
 
   // The record keeps every clip from earlier runs that this one didn't redo.
-  const earlier: { clips?: ClipRecord[]; calls?: number; spendUsd?: number } = existsSync(RECORD) ? JSON.parse(readFileSync(RECORD, "utf8")) : {};
+  const earlier: { clips?: ClipRecord[] } = existsSync(RECORD) ? JSON.parse(readFileSync(RECORD, "utf8")) : {};
   const byName = new Map((earlier.clips ?? []).map((c) => [c.name, c]));
   for (const r of records) byName.set(r.name, r);
   mkdirSync(dirname(RECORD), { recursive: true });
@@ -258,8 +266,6 @@ async function main() {
         style: SUE_VOICE.style,
         generatedAt: new Date().toISOString(),
         limits: LIMITS,
-        calls: (earlier.calls ?? 0) + calls,
-        spendUsd: Number(((earlier.spendUsd ?? 0) + spend).toFixed(5)),
         clips: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)),
       },
       null,

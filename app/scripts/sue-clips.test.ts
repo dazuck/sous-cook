@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { LIMITS, callCostUsd, gainToTarget, pickTakesByPace, problemsWith } from "./sue-clips";
+import { LIMITS, SUE_VOICE, callCostUsd, gainToTarget, pickTakesByPace, problemsWith } from "./sue-clips";
 
 describe("pickTakesByPace", () => {
   const takes = [1.1, 0.9, 1.4, 1.0, 1.25, 1.31].map((seconds, i) => ({ take: i + 1, seconds }));
@@ -52,5 +54,24 @@ describe("the checks a finished clip passes", () => {
     expect(gainToTarget({ peakDb: -10, rmsDb: -26 })).toBe(5);
     expect(gainToTarget({ peakDb: -3, rmsDb: -26 })).toBe(2);
     expect(LIMITS.peakMaxDb).toBeLessThan(0);
+  });
+});
+
+describe("the clips the repository ships", () => {
+  const record = JSON.parse(readFileSync(join(__dirname, "data", "sue-clips.json"), "utf8")) as {
+    model: string;
+    voice: string;
+    style: string;
+    limits: unknown;
+    clips: { name: string; seconds: number; peakDb: number; rmsDb: number }[];
+  };
+
+  it("were made with this voice, this style and these limits", () => {
+    expect({ model: record.model, voice: record.voice, style: record.style }).toEqual(SUE_VOICE);
+    expect(record.limits).toEqual(LIMITS);
+  });
+
+  it("each passed the checks a finished clip passes, as measured when it was made", () => {
+    for (const clip of record.clips) expect(problemsWith(clip.name, clip)).toEqual([]);
   });
 });

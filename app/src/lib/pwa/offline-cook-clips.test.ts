@@ -29,7 +29,7 @@ async function keptPaths(): Promise<string[]> {
 }
 
 describe("keeping a cook page offline", () => {
-  it("in a build without the clips (as this repository ships), asks for none of them", async () => {
+  it("in a build without the clips, asks for none of them", async () => {
     const kept = await keptPaths();
     expect(kept.filter((p) => p.startsWith("/sounds/"))).toEqual([]);
     // The page itself is still kept.

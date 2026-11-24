@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,15 +9,11 @@ import { sueClipsInBuild } from "./ack-clips-build";
 const DIR = join(__dirname, "../../../public/sounds/sue");
 const RECORD = join(__dirname, "../../../scripts/data/sue-clips.json");
 
-// The repository ships without the clips and without the generator's record
-// (docs/voice-replies.md), so as shipped there is nothing on disk to check and
-// the two checks of the files themselves don't run. Once clips are made, by
-// the generator or by hand, they hold for every one there.
-const clipsHere = existsSync(DIR)
-  ? readdirSync(DIR)
-      .filter((f) => f.endsWith(".mp3"))
-      .map((f) => f.replace(/\.mp3$/, ""))
-  : [];
+// The repository ships every clip and the generator's record of them
+// (docs/voice-replies.md); these checks hold for the files as shipped.
+const clipsHere = readdirSync(DIR)
+  .filter((f) => f.endsWith(".mp3"))
+  .map((f) => f.replace(/\.mp3$/, ""));
 
 describe("Sue's clips on disk", () => {
   it("every clip the player asks for has its words and one path of its own", () => {
@@ -29,9 +26,10 @@ describe("Sue's clips on disk", () => {
     expect(new Set(CLIP_NAMES.map(clipUrl)).size).toBe(CLIP_NAMES.length);
   });
 
-  it.runIf(clipsHere.length > 0)(
-    "every clip there is one the player asks for, a real MP3 of a size a short clip has",
+  it(
+    "every clip the player asks for is there, and every clip there is one it asks for: a real MP3 of a size a short clip has",
     () => {
+      expect([...clipsHere].sort()).toEqual([...CLIP_NAMES].sort());
       for (const name of clipsHere) {
         expect(CLIP_NAMES, name).toContain(name);
         const path = join(DIR, `${name}.mp3`);
@@ -45,21 +43,26 @@ describe("Sue's clips on disk", () => {
     },
   );
 
-  it.runIf(existsSync(RECORD))(
-    "the generator's record says the same: one voice, one style, each clip it made there and measured",
+  it(
+    "the generator's record says the same: one voice, one style, each clip it made there, measured, its size and its hash",
     () => {
       const record = JSON.parse(readFileSync(RECORD, "utf8")) as {
         voice: string;
         style: string;
-        clips: { name: string; text: string; seconds: number; bytes: number }[];
+        clips: { name: string; text: string; seconds: number; bytes: number; sha256: string }[];
       };
       expect(record.voice).toBeTruthy();
       expect(record.style).toBeTruthy();
+      expect(record.clips.map((c) => c.name).sort()).toEqual([...CLIP_NAMES].sort());
       for (const clip of record.clips) {
         expect(CLIP_NAMES, clip.name).toContain(clip.name);
         expect(clip.text).toBe(CLIP_TEXT[clip.name]);
-        expect(statSync(join(DIR, `${clip.name}.mp3`)).size).toBe(clip.bytes);
+        const bytes = readFileSync(join(DIR, `${clip.name}.mp3`));
+        expect(bytes.length, clip.name).toBe(clip.bytes);
+        expect(createHash("sha256").update(bytes).digest("hex"), clip.name).toBe(clip.sha256);
       }
+      // What a run spent is printed, never kept in the record (generate-sue-clips.ts).
+      expect(Object.keys(record).sort()).toEqual(["clips", "generatedAt", "limits", "model", "note", "style", "voice"]);
     },
   );
 });
@@ -96,8 +99,9 @@ describe("whether a build has the clips", () => {
 
   it("is what next.config.ts bakes in, from this app's own public folder", async () => {
     const { default: config } = await import("../../../next.config");
-    const expected = sueClipsInBuild(join(__dirname, "../../../public")) ? "1" : "0";
-    expect(config.env?.SOUS_SUE_CLIPS).toBe(expected);
+    // The repository ships every clip, so its own build offers Sounds and voice.
+    expect(sueClipsInBuild(join(__dirname, "../../../public"))).toBe(true);
+    expect(config.env?.SOUS_SUE_CLIPS).toBe("1");
   });
 });
 

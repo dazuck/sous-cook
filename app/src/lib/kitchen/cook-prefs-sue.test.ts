@@ -86,7 +86,7 @@ describe("Sue's replies preference", () => {
   });
 });
 
-describe("Sue's replies in a build without the clips (as this repository ships)", () => {
+describe("Sue's replies in a build without the clips", () => {
   it("never offers voice: a press goes sounds, off, sounds", () => {
     expect(nextSueReplies("sounds")).toBe("off");
     expect(nextSueReplies("off")).toBe("sounds");
