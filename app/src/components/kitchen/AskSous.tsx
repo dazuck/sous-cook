@@ -7,6 +7,7 @@ import {
   useEffect,
   useId,
   useImperativeHandle,
+  useLayoutEffect,
   type ReactNode,
   type Ref,
 } from "react";
@@ -19,6 +20,7 @@ import {
   ChatLoadingIndicator,
   ChatQuickReplies,
 } from "@/components/ui";
+import { allowanceSentence } from "@/lib/kitchen/allowance";
 import { isAnswerCutOff } from "@/lib/kitchen/ask-failure";
 import { recordAsk } from "@/lib/kitchen/report-events";
 import { speak } from "@/lib/kitchen/speak";
@@ -285,6 +287,21 @@ export function AskSous({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const micRef = useRef<HTMLButtonElement>(null);
+  /**
+   * Beside a draft the mic stands only while it listens or is refused, so a listen stopped from it
+   * takes the button away under the finger: the focus it held goes to the box, not the page
+   * (review round 2). Noted as the button goes, while it still holds the focus.
+   */
+  const micLeftFocus = useRef(false);
+  const micAt = useCallback((el: HTMLButtonElement | null) => {
+    if (el === null && micRef.current !== null && document.activeElement === micRef.current) micLeftFocus.current = true;
+    micRef.current = el;
+  }, []);
+  useLayoutEffect(() => {
+    if (!micLeftFocus.current) return;
+    micLeftFocus.current = false;
+    if (micRef.current === null) inputRef.current?.focus();
+  });
   const collapseRef = useRef<HTMLButtonElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const focusInputOnOpen = useRef(false);
@@ -522,17 +539,24 @@ export function AskSous({
         }
       }
     } catch (error) {
-      // A reply cut at the token cap says so, in the line and in a flag's
-      // lead-up; anything else is the connection line (feedback review
-      // 2026-10-27).
-      const cutOff = isAnswerCutOff(error);
-      recordAsk(cutOff ? "error: cut at the token cap" : "error");
+      // An AI allowance refusal shows the server's sentence; a reply cut at
+      // the token cap says so, in the line and in a flag's lead-up; anything
+      // else is the connection line.
+      const allowance = allowanceSentence(error);
+      const cutOff = allowance === null && isAnswerCutOff(error);
+      recordAsk(
+        allowance !== null
+          ? "error: allowance used"
+          : cutOff
+            ? "error: cut at the token cap"
+            : "error",
+      );
       // Append error reply only to UI state without mutating history.current (B2a-6)
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: cutOff ? ASK_COPY.cutOff : ASK_COPY.error,
+          content: allowance ?? (cutOff ? ASK_COPY.cutOff : ASK_COPY.error),
         },
       ]);
       console.error("Chat error:", error);
@@ -889,7 +913,7 @@ export function AskSous({
               it, or a refused mic with nothing to tap again. */}
           {speaks && (!hasText || voice.status === "hearing" || voice.status === "blocked") && (
             <button
-              ref={micRef}
+              ref={micAt}
               type="button"
               onClick={voice.onTap}
               aria-label={actionOf(voice.mode, voice.status)}

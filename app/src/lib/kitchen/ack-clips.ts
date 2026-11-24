@@ -7,11 +7,21 @@
  *
  * The files are generated speech, one voice and one style for all of them
  * (the generator records which), served from `public/sounds/sue/`. This
- * repository ships without them: a missing clip is skipped and its command
- * sounds its notes alone (`ack-audio.ts`, `docs/voice-replies.md`).
+ * repository ships without them (`docs/voice-replies.md`).
  */
 
 export const SUE_CLIP_DIR = "/sounds/sue";
+
+/**
+ * Whether this build carries every clip, decided once at build time from the
+ * files themselves (`ack-clips-build.ts`, called by `next.config.ts`). Without
+ * them "Sounds and voice" isn't offered, a stored choice of it reads as
+ * Sounds, and neither the page nor the service worker asks for a clip.
+ */
+export function sueClipsShipped(): boolean {
+  // Written out whole: the build replaces exactly this expression.
+  return process.env.SOUS_SUE_CLIPS === "1";
+}
 
 /** "Yes, chef." in takes that differ in pace, so a cook who hears it twice doesn't hear a loop. */
 export const YES_CHEF_TAKES = ["yes-chef-1", "yes-chef-2", "yes-chef-3"] as const;

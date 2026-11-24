@@ -171,6 +171,8 @@ interface CookScreenProps {
   resumePart?: number;
   resumeWidth?: number;
   onPart?: (part: number, width: number) => void;
+  /** Extra lines shown after the kitchen's own notices on this cook screen only. */
+  extraNotices?: readonly string[];
 }
 
 export function CookScreen({
@@ -192,6 +194,7 @@ export function CookScreen({
   resumePart,
   resumeWidth,
   onPart,
+  extraNotices,
 }: CookScreenProps) {
   const { plan, source, state } = session;
   const view = useMemo(() => cookView(plan, source, state), [plan, source, state]);
@@ -440,6 +443,14 @@ export function CookScreen({
   useEffect(() => {
     if (noticeLines) noticesShown();
   }, [noticeLines, noticesShown]);
+  // Merge page-local notices after the kitchen's own notices without routing
+  // them through the shared timers store. Keyed on the line contents so a
+  // render with the same lines passes the same array reference to CookFlow.
+  const extraNoticesKey = extraNotices && extraNotices.length > 0 ? JSON.stringify(extraNotices) : "";
+  const notices = useMemo<readonly string[]>(() => {
+    if (!extraNoticesKey) return kitchen.notices;
+    return [...kitchen.notices, ...(JSON.parse(extraNoticesKey) as string[])];
+  }, [kitchen.notices, extraNoticesKey]);
   const posWas = useRef(state.pos);
   useEffect(() => {
     if (posWas.current === state.pos) return;
@@ -1316,7 +1327,7 @@ export function CookScreen({
               askOpen={isClaudeExpanded}
               navRef={flowNav}
               timers={timers}
-              notices={kitchen.notices}
+              notices={notices}
               restInert={wholeOpen}
               stepType={stepType}
               answer={answerShown}

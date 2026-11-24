@@ -188,10 +188,16 @@ export function recordListen(ending: ListenEnding, heardWords: boolean, ms: numb
 
 /**
  * That Ask was used and how it went; never the question or the answer. A
- * reply cut at the token cap is its own error, so a flag shows which it was.
+ * reply cut at the token cap or refused at the monthly AI allowance cap is
+ * its own error, so a flag shows which it was.
  */
 export function recordAsk(
-  what: "sent" | "answered" | "error" | "error: cut at the token cap",
+  what:
+    | "sent"
+    | "answered"
+    | "error"
+    | "error: cut at the token cap"
+    | "error: allowance used",
 ): void {
   recordEvent("ask", what);
 }

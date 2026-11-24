@@ -588,23 +588,44 @@ describe("a session saved before Prep became step pages (version 1)", () => {
     expect(consumeCorruptionNotices().map((n) => n.text)).toEqual([SESSION_RESET_COPY, SESSION_RESET_COPY]);
   });
 
-  it("a version-1 session whose plan can't be walked (a needs cycle) is cleared with the notice, never thrown", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const store = memoryStorage();
-    const [first, second] = ZUCCHINI_PLAN.tasks;
-    const cyclic = {
-      ...ZUCCHINI_PLAN,
-      tasks: ZUCCHINI_PLAN.tasks.map((t) =>
-        t.id === first.id ? { ...t, needs: [second.id] } : t.id === second.id ? { ...t, needs: [first.id] } : t,
-      ),
-    };
-    storeV1(store, { mode: "first", pos: 0, ticked: [], passed: [] }, cyclic);
-    expect(() => loadSession("q1", store)).not.toThrow();
-    expect(store.data.has(sessionKey("q1"))).toBe(false);
-    expect(consumeCorruptionNotices().map((n) => n.text)).toEqual([SESSION_RESET_COPY]);
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
-  });
+  const [cycleA, cycleB] = ZUCCHINI_PLAN.tasks;
+  const cyclic = {
+    ...ZUCCHINI_PLAN,
+    tasks: ZUCCHINI_PLAN.tasks.map((t) =>
+      t.id === cycleA.id ? { ...t, needs: [cycleB.id] } : t.id === cycleB.id ? { ...t, needs: [cycleA.id] } : t,
+    ),
+  };
+
+  it.each(["first", "go"] as const)(
+    "a version-1 session whose plan can't be walked (a needs cycle) is cleared with the notice, never thrown: %s",
+    (mode) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const store = memoryStorage();
+      storeV1(store, { mode, pos: 0, ticked: [], passed: [] }, cyclic);
+      expect(() => loadSession("q1", store)).not.toThrow();
+      expect(loadSession("q1", store)).toBeNull();
+      expect(store.data.has(sessionKey("q1"))).toBe(false);
+      expect(consumeCorruptionNotices().map((n) => n.text)).toEqual([SESSION_RESET_COPY]);
+      warn.mockRestore();
+    },
+  );
+
+  it.each(["first", "go"] as const)(
+    "a version-2 session whose plan can't be walked is cleared with the notice, never thrown: %s",
+    (mode) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const store = memoryStorage();
+      saveSession("q1", "a", underWay(), snapshot(), NOW, store);
+      const raw = JSON.parse(store.data.get(sessionKey("q1"))!);
+      raw.state.session.plan = cyclic;
+      raw.state.session.state = { mode, pos: 0, ticked: [], passed: [], kept: [] };
+      store.data.set(sessionKey("q1"), JSON.stringify(raw));
+      expect(() => loadSession("q1", store)).not.toThrow();
+      expect(store.data.has(sessionKey("q1"))).toBe(false);
+      expect(consumeCorruptionNotices().map((n) => n.text)).toEqual([SESSION_RESET_COPY]);
+      warn.mockRestore();
+    },
+  );
 
   it("a session from a version the app doesn't know is cleared with the notice", () => {
     const store = memoryStorage();

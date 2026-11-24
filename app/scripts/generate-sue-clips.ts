@@ -15,9 +15,10 @@
  * ends non-zero and says which clip. Nobody has *heard* a clip by running
  * this; the checks are measurements, and a person's ear is still owed.
  *
- * The repository ships without the clips (and without the record): until they
- * are made, a command sounds its two notes alone and the spoken confirmation
- * is skipped (`src/lib/kitchen/ack-audio.ts`, `docs/voice-replies.md`).
+ * The repository ships without the clips (and without the record). A build
+ * offers "Sounds and voice" only once every clip is here, so build the app
+ * again after a run (`src/lib/kitchen/ack-clips-build.ts`, read by
+ * `next.config.ts`; `docs/voice-replies.md`).
  *
  *   From app/ (needs ffmpeg and ffprobe on the PATH, and GOOGLE_AI_API_KEY in the environment):
  *     npx tsx scripts/generate-sue-clips.ts [flags]

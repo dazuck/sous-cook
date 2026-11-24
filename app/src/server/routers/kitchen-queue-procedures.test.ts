@@ -77,7 +77,6 @@ describe("addToKitchenQueue", () => {
 
     const result = await caller.addToKitchenQueue({
       recipeData: { name: "Dal", steps: ["Simmer the dal."], serves: 4 },
-      targetUser: "cook",
     });
 
     expect(result).toEqual({ id: QUEUE_ID });
@@ -91,7 +90,7 @@ describe("addToKitchenQueue", () => {
     vi.mocked(addToKitchenQueue).mockRejectedValue(new Error("db down"));
 
     await expect(
-      caller.addToKitchenQueue({ recipeNotionId: "n-1", targetUser: "cook" }),
+      caller.addToKitchenQueue({ recipeNotionId: "n-1" }),
     ).rejects.toThrow(/db down/);
     expect(after).not.toHaveBeenCalled();
   });
@@ -109,7 +108,7 @@ describe("queueFromPack: the household pack (the library row, as sendDocRecipeTo
     } as unknown as DocRecipeRow);
     vi.mocked(addToKitchenQueue).mockResolvedValue({ id: QUEUE_ID });
 
-    const result = await caller.queueFromPack({ packId: "household-book", recipeId: "dal", targetUser: "cook-2" });
+    const result = await caller.queueFromPack({ packId: "household-book", recipeId: "dal" });
 
     expect(result).toEqual({ id: QUEUE_ID });
     runScheduled();
@@ -126,7 +125,6 @@ describe("the pack-recipe check on adds", () => {
   it("addToKitchenQueue refuses a recipe the format can't read, queueing nothing", async () => {
     const refused = caller.addToKitchenQueue({
       recipeData: { name: "Dal", steps: ["", "  "], ingredients: [{ item: " " }], serves: 4 },
-      targetUser: "cook",
     });
     await expect(refused).rejects.toMatchObject({
       code: "UNPROCESSABLE_CONTENT",
@@ -140,7 +138,7 @@ describe("the pack-recipe check on adds", () => {
   it("addToKitchenQueue queues a Notion id alone without a check (no recipe to read)", async () => {
     vi.mocked(addToKitchenQueue).mockResolvedValue({ id: QUEUE_ID });
     await expect(
-      caller.addToKitchenQueue({ recipeNotionId: "n-1", targetUser: "cook" }),
+      caller.addToKitchenQueue({ recipeNotionId: "n-1" }),
     ).resolves.toEqual({ id: QUEUE_ID });
   });
 
@@ -155,7 +153,7 @@ describe("the pack-recipe check on adds", () => {
     } as unknown as DocRecipeRow);
 
     await expect(
-      caller.queueFromPack({ packId: "household-book", recipeId: "dal", targetUser: "cook-2" }),
+      caller.queueFromPack({ packId: "household-book", recipeId: "dal" }),
     ).rejects.toMatchObject({
       code: "UNPROCESSABLE_CONTENT",
       message:
@@ -184,7 +182,7 @@ describe("the pack-recipe check on adds", () => {
     vi.mocked(addToKitchenQueue).mockResolvedValue({ id: QUEUE_ID });
 
     await expect(
-      caller.queueFromPack({ packId: "household-book", recipeId: "dal", targetUser: "cook-2" }),
+      caller.queueFromPack({ packId: "household-book", recipeId: "dal" }),
     ).resolves.toEqual({ id: QUEUE_ID });
     // Queued as stored: the blank lines are skipped on read, never rewritten.
     expect(vi.mocked(addToKitchenQueue).mock.calls[0]?.[1]).toMatchObject({
@@ -202,7 +200,6 @@ describe("the pack-recipe check on adds", () => {
           steps: WITH_BLANKS.steps,
           serves: 4,
         },
-        targetUser: "cook",
       }),
     ).resolves.toEqual({ id: QUEUE_ID });
   });
@@ -667,7 +664,7 @@ describe("the serving estimate on adds (slice B4b)", () => {
     });
     vi.mocked(addToKitchenQueue).mockResolvedValue({ id: QUEUE_ID });
 
-    await caller.addToKitchenQueue({ recipeData: STEW, targetUser: "cook" });
+    await caller.addToKitchenQueue({ recipeData: STEW });
 
     expect(chat).toHaveBeenCalledTimes(1);
     expect(vi.mocked(addToKitchenQueue).mock.calls[0]).toEqual([
@@ -683,7 +680,7 @@ describe("the serving estimate on adds (slice B4b)", () => {
   it("addToKitchenQueue: an estimate that can't be made refuses the add, queueing nothing", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(
-      caller.addToKitchenQueue({ recipeData: STEW, targetUser: "cook" }),
+      caller.addToKitchenQueue({ recipeData: STEW }),
     ).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",
       message:
@@ -696,7 +693,7 @@ describe("the serving estimate on adds (slice B4b)", () => {
 
   it("addToKitchenQueue: a stated count, no call", async () => {
     vi.mocked(addToKitchenQueue).mockResolvedValue({ id: QUEUE_ID });
-    await caller.addToKitchenQueue({ recipeData: { ...STEW, serves: 6 }, targetUser: "cook" });
+    await caller.addToKitchenQueue({ recipeData: { ...STEW, serves: 6 } });
     expect(chat).not.toHaveBeenCalled();
     expect(vi.mocked(addToKitchenQueue).mock.calls[0]![1].servesEstimate).toBeUndefined();
   });
@@ -712,7 +709,7 @@ describe("the serving estimate on adds (slice B4b)", () => {
     } as unknown as DocRecipeRow);
     vi.mocked(addToKitchenQueue).mockResolvedValue({ id: QUEUE_ID });
 
-    await caller.queueFromPack({ packId: "household-book", recipeId: "stew", targetUser: "cook-2" });
+    await caller.queueFromPack({ packId: "household-book", recipeId: "stew" });
 
     expect(chat).not.toHaveBeenCalled();
     expect(vi.mocked(addToKitchenQueue).mock.calls[0]![1].servesEstimate).toEqual({
@@ -732,7 +729,7 @@ describe("the serving estimate on adds (slice B4b)", () => {
     } as unknown as DocRecipeRow);
 
     await expect(
-      caller.queueFromPack({ packId: "household-book", recipeId: "stew", targetUser: "cook-2" }),
+      caller.queueFromPack({ packId: "household-book", recipeId: "stew" }),
     ).rejects.toMatchObject({
       code: "UNPROCESSABLE_CONTENT",
       message:

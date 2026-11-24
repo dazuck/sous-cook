@@ -1346,7 +1346,7 @@ describe("dismissCookAsk", () => {
 });
 
 describe("getCookAsk", () => {
-  it("answers the open ask through the router for the session kitchen and ignores userId", async () => {
+  it("answers the open ask through the router for the session kitchen", async () => {
     // Finished just now: the router asks with the real clock.
     const id = await completedItem({ completedAt: new Date(), cookLogError: "x" });
     const { kitchen: other } = await seedKitchen(db, {
@@ -1354,8 +1354,7 @@ describe("getCookAsk", () => {
       name: "Other Ask",
     });
 
-    expect(await router.getCookAsk({ userId: "cook" })).toEqual({ queueId: id, name: "Dal", state: "failed" });
-    expect(await router.getCookAsk({ userId: "cook-2" })).toEqual({ queueId: id, name: "Dal", state: "failed" });
-    expect(await callerFor(other).getCookAsk({ userId: "cook" })).toBeNull();
+    expect(await router.getCookAsk({})).toEqual({ queueId: id, name: "Dal", state: "failed" });
+    expect(await callerFor(other).getCookAsk({})).toBeNull();
   });
 });

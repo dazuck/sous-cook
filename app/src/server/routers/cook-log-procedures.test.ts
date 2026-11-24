@@ -281,7 +281,7 @@ describe("with no Cook Log connected", () => {
   it("the kitchen has nothing to ask: no ask is read, and a dismiss is a no-op", async () => {
     // No database stands behind this test, so an answer means neither
     // procedure went looking for a cook.
-    expect(await caller.getCookAsk({ userId: "cook" })).toBeNull();
+    expect(await caller.getCookAsk({})).toBeNull();
     expect(await caller.dismissCookAsk({ queueId: QUEUE_ID })).toEqual({ success: true });
   });
 });

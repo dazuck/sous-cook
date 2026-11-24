@@ -321,10 +321,9 @@ describe("ISO-2: chatCooking", () => {
 });
 
 describe("ISO-3: addToKitchenQueue", () => {
-  it("ignores extra kitchenId and targetUser fields and assigns the row to caller A's kitchen", async () => {
+  it("ignores an extra kitchenId field and assigns the row to caller A's kitchen", async () => {
     const inputWithExtras = {
       recipeData: SECRET_RECIPE_A,
-      targetUser: "someone-else",
       kitchenId: kitchenB.id,
     } as Parameters<typeof callerA.addToKitchenQueue>[0];
 
@@ -341,7 +340,7 @@ describe("ISO-3: addToKitchenQueue", () => {
 });
 
 describe("ISO-4: getKitchenQueue", () => {
-  it("lists only the caller's own rows across every status and ignores userId", async () => {
+  it("lists only the caller's own rows across every status", async () => {
     const statuses = ["pending", "cooking", "completed", "cancelled"] as const;
     const idsA: Record<string, string> = {};
     const idsB: Record<string, string> = {};
@@ -362,10 +361,7 @@ describe("ISO-4: getKitchenQueue", () => {
     }
 
     for (const status of statuses) {
-      const listA = await callerA.getKitchenQueue({
-        userId: "someone-else",
-        status,
-      });
+      const listA = await callerA.getKitchenQueue({ status });
       const listB = await callerB.getKitchenQueue({ status });
 
       expect(listA.map((r) => r.id)).toEqual([idsA[status]]);
@@ -562,7 +558,7 @@ describe("ISO-13: rateCook", () => {
 });
 
 describe("ISO-14: getCookAsk", () => {
-  it("returns kitchen A's open ask only to A (with or without userId) and returns null to B", async () => {
+  it("returns kitchen A's open ask only to A and returns null to B", async () => {
     setupCookLogSheet();
     const rowA = await seedQueueRow(db, kitchenA.id, {
       status: "completed",
@@ -572,15 +568,13 @@ describe("ISO-14: getCookAsk", () => {
     });
 
     expect(await callerB.getCookAsk({})).toBeNull();
-    expect(await callerB.getCookAsk({ userId: "someone-else" })).toBeNull();
 
-    const askA = await callerA.getCookAsk({ userId: "someone-else" });
+    const askA = await callerA.getCookAsk({});
     expect(askA).toEqual({
       queueId: rowA.id,
       name: SECRET_RECIPE_A.name,
       state: "failed",
     });
-    expect(await callerA.getCookAsk({})).toEqual(askA);
   });
 });
 
@@ -623,7 +617,7 @@ describe("ISO-16: removeFromKitchenQueue", () => {
 });
 
 describe("ISO-17: getRecentCookingItems", () => {
-  it("lists only the caller's own cooking rows and ignores userId", async () => {
+  it("lists only the caller's own cooking rows", async () => {
     const cookingA = await seedQueueRow(db, kitchenA.id, {
       status: "cooking",
       recipeData: { name: "A Cooking", steps: ["Cook."], serves: 2 },
@@ -633,9 +627,7 @@ describe("ISO-17: getRecentCookingItems", () => {
       recipeData: { name: "B Cooking", steps: ["Cook."], serves: 2 },
     });
 
-    const recentA = await callerA.getRecentCookingItems({
-      userId: "someone-else",
-    });
+    const recentA = await callerA.getRecentCookingItems({});
     const recentB = await callerB.getRecentCookingItems({});
 
     expect(recentA.map((r) => r.id)).toEqual([cookingA.id]);
@@ -1269,7 +1261,7 @@ describe("ISO-24: syncRecipes", () => {
 });
 
 describe("ISO-25: queueFromPack", () => {
-  it("refuses another kitchen's household recipe with NOT_FOUND and queues shared pack recipes into the caller's kitchen ignoring targetUser", async () => {
+  it("refuses another kitchen's household recipe with NOT_FOUND and queues shared pack recipes into the caller's kitchen", async () => {
     const rowA = await seedDocRecipe(kitchenA.id, "secret-a", {
       name: "Secret A Dal",
     });
@@ -1284,7 +1276,7 @@ describe("ISO-25: queueFromPack", () => {
     expect(await snapshotRow(db, docRecipes, rowA.id)).toEqual(beforeA);
     expect(await callerB.getKitchenQueue({ status: "pending" })).toEqual([]);
 
-    // Shared pack-file recipe queued by B with targetUser ignored lands in B's queue only.
+    // Shared pack-file recipe queued by B lands in B's queue only.
     const sharedPack = await callerB.getPack({ packId: "fannie-farmer-1896" });
     const firstRecipeId = sharedPack?.chapters[0]?.rows[0]?.id;
     expect(firstRecipeId).toBeDefined();
@@ -1292,7 +1284,6 @@ describe("ISO-25: queueFromPack", () => {
     const queued = await callerB.queueFromPack({
       packId: "fannie-farmer-1896",
       recipeId: firstRecipeId!,
-      targetUser: "someone-else",
     });
     expect("kitchenId" in queued).toBe(false);
     const stored = await snapshotRow(db, kitchenQueue, queued.id);
@@ -1663,15 +1654,9 @@ describe("STRUCT-1: router procedure inventory", () => {
   });
 });
 
-describe("STRUCT-2: router input schemas never accept kitchen or member ownership", () => {
-  const FORBIDDEN_KEYS = new Set(["kitchenId", "kitchen", "memberId"]);
-  const ALLOWED_DEPRECATED_SLUGS: Readonly<Record<string, "userId" | "targetUser">> = {
-    addToKitchenQueue: "targetUser",
-    getKitchenQueue: "userId",
-    getCookAsk: "userId",
-    getRecentCookingItems: "userId",
-    queueFromPack: "targetUser",
-  };
+describe("STRUCT-2 (SLUG-1): router input schemas never accept kitchen, member, or cook slug ownership", () => {
+  // SLUG-1: retired userId and targetUser slug fields are forbidden on every procedure input.
+  const FORBIDDEN_KEYS = new Set(["kitchenId", "kitchen", "memberId", "userId", "targetUser"]);
 
   interface ZodLikeSchema {
     shape?: Record<string, ZodLikeSchema>;
@@ -1700,13 +1685,11 @@ describe("STRUCT-2: router input schemas never accept kitchen or member ownershi
     return null;
   }
 
-  it("forbids kitchenId, kitchen and memberId on all inputs and allows userId/targetUser only as optional on the five legacy procedures", () => {
+  it("forbids kitchenId, kitchen, memberId, userId, and targetUser on all procedure inputs (SLUG-1)", () => {
     const procedures = appRouter._def.procedures as Record<
       string,
       { _def?: { inputs?: unknown[] } }
     >;
-
-    const foundSlugKeys: Record<string, string[]> = {};
 
     for (const [name, procedure] of Object.entries(procedures)) {
       const inputs = procedure._def?.inputs ?? [];
@@ -1715,34 +1698,14 @@ describe("STRUCT-2: router input schemas never accept kitchen or member ownershi
         expect(shape, `Procedure ${name} should have an inspectable object input schema`).not.toBeNull();
         if (!shape) continue;
 
-        for (const [key, fieldSchema] of Object.entries(shape)) {
+        for (const key of Object.keys(shape)) {
           expect(
             FORBIDDEN_KEYS.has(key),
             `Procedure ${name} must not accept "${key}" in its input`,
           ).toBe(false);
-
-          if (key === "userId" || key === "targetUser") {
-            foundSlugKeys[name] = [...(foundSlugKeys[name] ?? []), key];
-            expect(
-              ALLOWED_DEPRECATED_SLUGS[name],
-              `Procedure ${name} must not accept "${key}"`,
-            ).toBe(key);
-            expect(
-              typeof fieldSchema.isOptional === "function" && fieldSchema.isOptional(),
-              `Procedure ${name}.${key} must be optional`,
-            ).toBe(true);
-          }
         }
       }
     }
-
-    expect(foundSlugKeys).toEqual({
-      addToKitchenQueue: ["targetUser"],
-      getKitchenQueue: ["userId"],
-      getCookAsk: ["userId"],
-      getRecentCookingItems: ["userId"],
-      queueFromPack: ["targetUser"],
-    });
   });
 });
 

@@ -1,7 +1,9 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { CLIP_NAMES, CLIP_TEXT, READ_BACKS, YES_CHEF_TAKES, clipUrl, readBackClip } from "./ack-clips";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CLIP_NAMES, CLIP_TEXT, READ_BACKS, YES_CHEF_TAKES, clipUrl, readBackClip, sueClipsShipped } from "./ack-clips";
+import { sueClipsInBuild } from "./ack-clips-build";
 
 const DIR = join(__dirname, "../../../public/sounds/sue");
 const RECORD = join(__dirname, "../../../scripts/data/sue-clips.json");
@@ -60,6 +62,43 @@ describe("Sue's clips on disk", () => {
       }
     },
   );
+});
+
+describe("whether a build has the clips", () => {
+  const dirs: string[] = [];
+  /** A build's public folder holding these clip files (empty files: only their presence counts). */
+  function publicWith(names: readonly string[]): string {
+    const dir = mkdtempSync(join(tmpdir(), "sue-clips-public-"));
+    dirs.push(dir);
+    mkdirSync(join(dir, "sounds", "sue"), { recursive: true });
+    for (const name of names) writeFileSync(join(dir, "sounds", "sue", `${name}.mp3`), "");
+    return dir;
+  }
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllEnvs();
+  });
+
+  it("is yes only with every clip there: none, or all but one, is no", () => {
+    expect(sueClipsInBuild(mkdtempSync(join(tmpdir(), "sue-clips-none-")))).toBe(false);
+    expect(sueClipsInBuild(publicWith([]))).toBe(false);
+    expect(sueClipsInBuild(publicWith(CLIP_NAMES.slice(1)))).toBe(false);
+    expect(sueClipsInBuild(publicWith(CLIP_NAMES))).toBe(true);
+  });
+
+  it("is read in the app from what the build baked in, and is no when nothing was", () => {
+    expect(sueClipsShipped()).toBe(false);
+    vi.stubEnv("SOUS_SUE_CLIPS", "0");
+    expect(sueClipsShipped()).toBe(false);
+    vi.stubEnv("SOUS_SUE_CLIPS", "1");
+    expect(sueClipsShipped()).toBe(true);
+  });
+
+  it("is what next.config.ts bakes in, from this app's own public folder", async () => {
+    const { default: config } = await import("../../../next.config");
+    const expected = sueClipsInBuild(join(__dirname, "../../../public")) ? "1" : "0";
+    expect(config.env?.SOUS_SUE_CLIPS).toBe(expected);
+  });
 });
 
 describe("the read-backs", () => {

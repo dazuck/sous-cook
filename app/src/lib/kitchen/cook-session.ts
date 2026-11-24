@@ -439,8 +439,18 @@ const storedSchema = z
       ctx.addIssue({ code: "custom", message: "the session names a task its plan doesn't have" });
       return z.NEVER;
     }
+    // A plan its steps can't be walked on (a needs cycle) is no session this can read: an issue
+    // like any other, so the read clears it with the notice rather than throwing out of the parse
+    // (a throw inside a transform is not caught by `safeParse`).
+    let screenCount: number;
+    try {
+      screenCount = screensOf(plan, mode, state.ticked).length;
+    } catch (err) {
+      ctx.addIssue({ code: "custom", message: `the session's plan can't be walked: ${err instanceof Error ? err.message : String(err)}` });
+      return z.NEVER;
+    }
     // A place past the plan's screens would draw a step the cook never saw.
-    if (pos >= Math.max(1, screensOf(plan, mode, state.ticked).length)) {
+    if (pos >= Math.max(1, screenCount)) {
       ctx.addIssue({ code: "custom", message: "the session's place is past its plan's screens" });
       return z.NEVER;
     }

@@ -1,4 +1,4 @@
-import { CLIP_NAMES, clipUrl } from "@/lib/kitchen/ack-clips";
+import { CLIP_NAMES, clipUrl, sueClipsShipped } from "@/lib/kitchen/ack-clips";
 
 /**
  * What a cook page asks of the service worker (slice B5b, E4): keep this page
@@ -89,8 +89,9 @@ export function keepCookOffline(): void {
   const timed = performance.getEntriesByType("resource").map((entry) => entry.name);
   // Sue's confirmation clips are fetched only when the setting says voice, so
   // no timing may name them; the worker keeps them anyway, so choosing voice
-  // with no connection still has them.
-  const loaded = [...elements, ...links, ...declaredFonts(), ...timed, ...CLIP_NAMES.map(clipUrl)];
+  // with no connection still has them. A build without them asks for none.
+  const clips = sueClipsShipped() ? CLIP_NAMES.map(clipUrl) : [];
+  const loaded = [...elements, ...links, ...declaredFonts(), ...timed, ...clips];
   const urls = filesToKeep(window.location.href, loaded, window.location.origin);
   navigator.serviceWorker.ready.then(
     (registration) => registration.active?.postMessage({ type: "CACHE_URLS", urls }),

@@ -46,7 +46,6 @@ import {
   prepareQueueItemInBackground,
   type KitchenQueueItem,
 } from "../../lib/kitchen-queue";
-import { isValidUserId } from "../../lib/cook-id";
 import {
   CookLogConflict,
   CookLogItemNotFound,
@@ -131,9 +130,6 @@ const CookingChatInputSchema = ChatInputSchema.extend({
 // ==========================================================================
 // Chat Persistence Schemas (F1)
 // ==========================================================================
-
-/** A cook's slug (`isValidUserId`); the app's own screens send `DEFAULT_COOK`. */
-const UserIdSchema = z.string().refine(isValidUserId, { message: "Not a cook's slug" });
 
 /** Strips the internal kitchen identifier before sending a queue item to the client. */
 function omitKitchenId<T extends { kitchenId?: unknown }>(item: T): Omit<T, "kitchenId"> {
@@ -280,8 +276,6 @@ async function ideasCount(kitchenId: string): Promise<number | null> {
 const AddToKitchenQueueSchema = z.object({
   recipeNotionId: z.string().optional(),
   recipeData: KitchenQueueRecipeDataSchema.optional(),
-  /** @deprecated Ignored: the kitchen comes from the session. FIXME(Part B): remove with cook-id.ts. */
-  targetUser: UserIdSchema.optional(),
 });
 
 const NOTE_LIMIT = 500;
@@ -407,8 +401,6 @@ export const appRouter = router({
   getKitchenQueue: kitchenProcedure
     .input(
       z.object({
-        /** @deprecated Ignored: the kitchen comes from the session. FIXME(Part B): remove with cook-id.ts. */
-        userId: UserIdSchema.optional(),
         status: KitchenQueueStatusSchema.optional(),
       }),
     )
@@ -602,12 +594,7 @@ export const appRouter = router({
   // it. A read: it finishes nothing (the sweep does,
   // `POST /api/kitchen-queue/sweep`).
   getCookAsk: kitchenProcedure
-    .input(
-      z.object({
-        /** @deprecated Ignored: the kitchen comes from the session. FIXME(Part B): remove with cook-id.ts. */
-        userId: UserIdSchema.optional(),
-      }),
-    )
+    .input(z.object({}))
     .query(async ({ ctx }) => {
       if (!connected["cook-log"]) return null;
       return openCookAsk(ctx.kitchen.id);
@@ -636,8 +623,6 @@ export const appRouter = router({
   getRecentCookingItems: kitchenProcedure
     .input(
       z.object({
-        /** @deprecated Ignored: the kitchen comes from the session. FIXME(Part B): remove with cook-id.ts. */
-        userId: UserIdSchema.optional(),
         limit: z.number().min(1).max(10).optional(),
       }),
     )
@@ -774,8 +759,6 @@ export const appRouter = router({
       z.object({
         packId: z.string().min(1),
         recipeId: z.string().min(1),
-        /** @deprecated Ignored: the kitchen comes from the session. FIXME(Part B): remove with cook-id.ts. */
-        targetUser: UserIdSchema.optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {

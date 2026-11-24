@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { allowanceError } from "@/lib/kitchen/__tests__/allowance-error";
 import { ASK_CUT_OFF_CODE } from "@/lib/kitchen/ask-failure";
 import { recentEvents, resetEventLog } from "@/lib/kitchen/report-events";
 import { ASK_COPY, AskSous, DEFAULT_DISH_QUESTION } from "./AskSous";
@@ -1053,6 +1054,19 @@ describe("Ask on the cook screen: the side panel and the sheet", () => {
     expect(row.querySelector("[data-voice]")!.getAttribute("data-voice")).toBe("blocked");
   });
 
+  it("a listen stopped from the mic beside a draft leaves the cook in the box, not on the page", () => {
+    const { rerender, props } = panel({ voice: tapVoice("ready") });
+    const box = screen.getByRole("textbox", { name: ASK_COPY.field });
+    fireEvent.change(box, { target: { value: "How hot" } });
+    rerender(<AskSous {...props} voice={tapVoice("hearing")} />);
+    screen.getByRole("button", { name: "Stop listening" }).focus();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Stop listening");
+    // The listen is over: the mic gives its place back to Send, and the focus it held goes to the box.
+    rerender(<AskSous {...props} voice={tapVoice("ready")} />);
+    expect(screen.queryByRole("button", { name: "Stop listening" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: ASK_COPY.field }));
+  });
+
   it("has no camera where there is none, and no mic where the browser cannot listen", () => {
     const { container } = panel({ voice: tapVoice("unsupported") });
     expect(container.querySelector("[data-ask-input]")!.querySelectorAll("button")).toHaveLength(0);
@@ -1363,6 +1377,78 @@ describe("Ask on the cook screen: the side panel and the sheet", () => {
       expect(tokens(control)).toEqual(
         expect.arrayContaining(["size-[var(--target)]", "focus-visible:outline-3", "focus-visible:outline-ink"]),
       );
+    }
+  });
+});
+
+// The cook page's half of CAPUI-4 (the plan's cap sentence) is in app/src/app/kitchen/queue/[id]/page.test.tsx.
+describe("CAPUI-4: Ask at the monthly AI allowance cap", () => {
+  it("shows the server allowance sentence, logs the error, and omits the refused turn from later history", async () => {
+    const said = vi.spyOn(console, "error").mockImplementation(() => {});
+    const onSpeak = vi.fn();
+    const refusal = allowanceError("kitchen", new Date("2026-12-01T00:00:00.000Z"));
+    try {
+      render(
+        <AskSous
+          recipeContext="Zucchini wraps"
+          sessionId="cook-queue-1"
+          isExpanded
+          onToggle={() => {}}
+          onSpeak={onSpeak}
+        />,
+      );
+
+      reply = () => Promise.reject(refusal);
+      const input = screen.getByRole("textbox");
+      fireEvent.change(input, { target: { value: "Can I use lemon instead of lime?" } });
+      await act(async () => {
+        fireEvent.submit(input.closest("form")!);
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText(refusal.message)).toBeTruthy();
+      expect(screen.queryByText(ASK_COPY.error)).toBeNull();
+      expect(screen.queryByText(ASK_COPY.cutOff)).toBeNull();
+      expect(recentEvents().map((e) => [e.kind, e.detail])).toEqual([
+        ["ask", "sent"],
+        ["ask", "error: allowance used"],
+      ]);
+      expect(onSpeak).not.toHaveBeenCalled();
+      expect(speakMock).not.toHaveBeenCalled();
+
+      // The next question must not send the refused question or the allowance sentence.
+      reply = () => Promise.resolve({ content: ANSWER });
+      fireEvent.change(input, { target: { value: QUESTION } });
+      await act(async () => {
+        fireEvent.submit(input.closest("form")!);
+        await Promise.resolve();
+      });
+
+      expect(mutation.mutateAsync).toHaveBeenCalledTimes(2);
+      const secondCallPayload = mutation.mutateAsync.mock.calls[1]![0] as {
+        messages: Array<{ role: string; content: string }>;
+      };
+      expect(secondCallPayload.messages.map((m) => [m.role, m.content])).toEqual([
+        ["user", QUESTION],
+      ]);
+    } finally {
+      said.mockRestore();
+    }
+  });
+
+  it("keeps showing the connection error line for a non-cap error", async () => {
+    const said = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      reply = () => Promise.reject(new Error("connection dropped"));
+      await ask(QUESTION);
+      expect(screen.getByText(ASK_COPY.error)).toBeTruthy();
+      expect(screen.queryByText(ASK_COPY.cutOff)).toBeNull();
+      expect(recentEvents().map((e) => [e.kind, e.detail])).toEqual([
+        ["ask", "sent"],
+        ["ask", "error"],
+      ]);
+    } finally {
+      said.mockRestore();
     }
   });
 });

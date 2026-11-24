@@ -163,6 +163,7 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | Kitchen home: pending queue display, responsive "Then" line, no cancelled rows, no vertical scroll | `app/e2e/home.spec.ts` (HOME-1) |
 | Kitchen home: starting top recipe, returning to cook-under-way state | `app/e2e/home.spec.ts` (HOME-2) |
 | Kitchen home: idle state and Cookpacks link | `app/e2e/home.spec.ts` (HOME-3) |
+| Kitchen home: the names panel wholly on the screen, each row level with its rail icon, its left strip closing it | `app/e2e/home.spec.ts` (HOME-4) |
 | Queue screen: pending order, Made recently order, cancelled rows hidden | `app/e2e/queue.spec.ts` (QUEUE-1) |
 | Queue screen: Edit and Remove deletes row and updates rail count | `app/e2e/queue.spec.ts` (QUEUE-2) |
 | Queue screen: starting a recipe from its queue row | `app/e2e/queue.spec.ts` (QUEUE-3) |
@@ -172,9 +173,11 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | Cook mode: opening timetable with its Get out list, the prep page before the first cooking step, Next/Previous step, reload resume | `app/e2e/cook.spec.ts` (COOK-1) |
 | Cook mode: two small prep jobs as one page of tick rows, a tick kept across reload, Next leaving prep | `app/e2e/cook.spec.ts` (COOK-4) |
 | Cook mode: the bottom strip on a cooking step, filled to the step in hand and moving on with Next, a tap raising the peek on the step in hand, the peek's arrow putting it away | `app/e2e/cook.spec.ts` (COOK-5) |
+| Cook mode: the peek and the whole cook laid out again as Prep first's pages turn (the time to the table and the fill move with the page) | not covered in a browser: COOK-5 still passes when the sheet's hold reads only the step's mark and not its page (`inHandKey` in `app/src/lib/kitchen/sheet-strip.ts`). The unit test in `app/src/lib/kitchen/sheet-strip.test.ts` ("tells each page in hand apart") is its only guard. |
 | Cook mode: the whole meal drawn as lines on the opening and at the whole cook, the step in hand marked now, Esc back to the step | `app/e2e/cook.spec.ts` (COOK-6) |
 | Cook mode: starting a step timer and persistence across reload | `app/e2e/cook.spec.ts` (COOK-2) |
 | Cook mode: walking to end, armed Done cooking finish, home and Made recently update | `app/e2e/cook.spec.ts` (COOK-3) |
+| Cook mode: Sue's replies as the repository ships, with no clip files: Sounds and voice not offered, a stored choice of it read as Sounds, no clip requested | `app/e2e/voice-replies.spec.ts` (VOICE-1) |
 | No model key: as-written cook with pending then failed prep plan note | `app/e2e/no-key.spec.ts` (NOKEY-1) |
 | No model key: settled plan error keeps as-written view and error unchanged | `app/e2e/no-key.spec.ts` (NOKEY-2) |
 | No model key: paste import surfaces missing-key error without adding a row | `app/e2e/no-key.spec.ts` (NOKEY-3) |

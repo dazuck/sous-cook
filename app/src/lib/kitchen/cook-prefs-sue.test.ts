@@ -32,8 +32,12 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
+
+/** A build with every clip, as `next.config.ts` marks one (`ack-clips-build.ts`). */
+const withClips = () => vi.stubEnv("SOUS_SUE_CLIPS", "1");
 
 describe("Sue's replies preference", () => {
   it("is sounds until the cook chooses", () => {
@@ -41,7 +45,8 @@ describe("Sue's replies preference", () => {
     expect(DEFAULT_SUE_REPLIES).toBe("sounds");
   });
 
-  it("keeps each of the three and reads it back", () => {
+  it("with the clips in the build, keeps each of the three and reads it back", () => {
+    withClips();
     for (const mode of ["off", "voice", "sounds"] as const) {
       setSueReplies(mode);
       expect(store[SUE_REPLIES_KEY]).toBe(mode);
@@ -54,7 +59,8 @@ describe("Sue's replies preference", () => {
     expect(getSueReplies()).toBe("sounds");
   });
 
-  it("goes sounds, voice, off, sounds", () => {
+  it("with the clips in the build, goes sounds, voice, off, sounds", () => {
+    withClips();
     expect(nextSueReplies("sounds")).toBe("voice");
     expect(nextSueReplies("voice")).toBe("off");
     expect(nextSueReplies("off")).toBe("sounds");
@@ -77,5 +83,30 @@ describe("Sue's replies preference", () => {
     expect(() => setSueReplies("off")).not.toThrow();
     expect(getSueReplies()).toBe("off");
     setSueReplies("sounds");
+  });
+});
+
+describe("Sue's replies in a build without the clips (as this repository ships)", () => {
+  it("never offers voice: a press goes sounds, off, sounds", () => {
+    expect(nextSueReplies("sounds")).toBe("off");
+    expect(nextSueReplies("off")).toBe("sounds");
+    // A page still showing voice from before moves on as it would have.
+    expect(nextSueReplies("voice")).toBe("off");
+  });
+
+  it("reads a stored voice, chosen under a build that had them, as sounds, and says nothing about it", () => {
+    const said = [vi.spyOn(console, "error"), vi.spyOn(console, "warn"), vi.spyOn(console, "log")];
+    store[SUE_REPLIES_KEY] = "voice";
+    expect(getSueReplies()).toBe("sounds");
+    // The device's choice is left as it was, for a later build that has the clips.
+    expect(store[SUE_REPLIES_KEY]).toBe("voice");
+    for (const spy of said) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("keeps off and sounds as ever", () => {
+    for (const mode of ["off", "sounds"] as const) {
+      setSueReplies(mode);
+      expect(getSueReplies()).toBe(mode);
+    }
   });
 });

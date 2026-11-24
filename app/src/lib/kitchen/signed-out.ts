@@ -2,6 +2,8 @@
 
 import { useSyncExternalStore } from "react";
 
+export const SIGNED_OUT_COOK_NOTICE = "Signed out. Sign in again after this cook.";
+
 let signedOut = false;
 const listeners = new Set<() => void>();
 

@@ -887,28 +887,44 @@ describe("AUTHERR-5: the saved cook sign-in looks for is found at either stored 
     expect(stored?.state.session.state.pos).toBe(1);
   });
 
-  it("a place saved at version 1 whose plan can't be walked is cleared: with no saved cook, the page goes to sign in", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await savedQ1();
-    const [first, second] = ZUCCHINI_PLAN.tasks;
-    const cyclic = {
-      ...ZUCCHINI_PLAN,
-      tasks: ZUCCHINI_PLAN.tasks.map((t) =>
-        t.id === first!.id ? { ...t, needs: [second!.id] } : t.id === second!.id ? { ...t, needs: [first!.id] } : t,
-      ),
-    };
-    asVersion1(cyclic, { mode: "first", pos: 0, ticked: [] });
-    const err = await refusal();
-    const { replaced, navigation } = navigationLog();
+  // A needs cycle the plan's steps can't be walked on, at either version and in either mode. In
+  // "As I go" a version-1 place is renumbered without walking the plan, so the walk that fails is
+  // the stored read's own count of the plan's screens; it must clear the place, never throw.
+  it.each([
+    [1, "first"],
+    [1, "go"],
+    [SESSION_VERSION, "first"],
+    [SESSION_VERSION, "go"],
+  ] as const)(
+    "a place saved at version %s in mode %s whose plan can't be walked is cleared: with no saved cook, the page goes to sign in",
+    async (version, mode) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      await savedQ1();
+      const [first, second] = ZUCCHINI_PLAN.tasks;
+      const cyclic = {
+        ...ZUCCHINI_PLAN,
+        tasks: ZUCCHINI_PLAN.tasks.map((t) =>
+          t.id === first!.id ? { ...t, needs: [second!.id] } : t.id === second!.id ? { ...t, needs: [first!.id] } : t,
+        ),
+      };
+      asVersion1(cyclic, { mode, pos: 0, ticked: [] });
+      if (version !== 1) {
+        const raw = JSON.parse(window.localStorage.getItem(sessionKey("q1"))!);
+        raw.version = version;
+        window.localStorage.setItem(sessionKey("q1"), JSON.stringify(raw));
+      }
+      const err = await refusal();
+      const { replaced, navigation } = navigationLog();
 
-    expect(() => handleAuthError(err, { navigation })).not.toThrow();
+      expect(() => handleAuthError(err, { navigation })).not.toThrow();
 
-    expect(replaced).toEqual(["/sign-in"]);
-    expect(isSignedOut()).toBe(false);
-    expect(storedQ1()).toBeNull();
-    expect(consumeCorruptionNotices()).toHaveLength(1);
-    expect(warn).toHaveBeenCalled();
-  });
+      expect(replaced).toEqual(["/sign-in"]);
+      expect(isSignedOut()).toBe(false);
+      expect(storedQ1()).toBeNull();
+      expect(consumeCorruptionNotices()).toHaveLength(1);
+      warn.mockRestore();
+    },
+  );
 });
 
 describe("AUTHERR-4: reportOutbox singleton does not navigate on UNAUTHORIZED", () => {
