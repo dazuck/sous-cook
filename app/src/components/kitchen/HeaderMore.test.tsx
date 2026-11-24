@@ -607,25 +607,55 @@ describe("Sue's replies", () => {
     expect(row("sounds")?.textContent).toBe("Sue's replies: Sounds");
   });
 
-  it("a press turns to the next setting and the menu stays open to show it, round to where it began", () => {
-    render(<More />);
-    fireEvent.click(button());
-    fireEvent.click(row("sounds")!);
-    expect(row("voice")?.textContent).toBe("Sue's replies: Sounds and voice");
-    expect(menu()).not.toBeNull();
-    fireEvent.click(row("voice")!);
-    expect(row("off")?.textContent).toBe("Sue's replies: Off");
-    fireEvent.click(row("off")!);
-    expect(row("sounds")).not.toBeNull();
+  describe("in a build without the clips (as this repository ships)", () => {
+    it("never offers Sounds and voice: a press goes Sounds, Off, Sounds", () => {
+      render(<More />);
+      fireEvent.click(button());
+      fireEvent.click(row("sounds")!);
+      expect(row("off")?.textContent).toBe("Sue's replies: Off");
+      expect(menu()).not.toBeNull();
+      fireEvent.click(row("off")!);
+      expect(row("sounds")?.textContent).toBe("Sue's replies: Sounds");
+      expect(row("voice")).toBeNull();
+    });
+
+    it("shows a device's stored Sounds and voice as Sounds", () => {
+      localStorage.setItem("sous-sue-replies", "voice");
+      render(<More />);
+      fireEvent.click(button());
+      expect(row("sounds")?.textContent).toBe("Sue's replies: Sounds");
+      expect(row("voice")).toBeNull();
+    });
   });
 
-  it("is kept on the device: a menu opened again reads it back", () => {
-    render(<More />);
-    fireEvent.click(button());
-    fireEvent.click(row("sounds")!);
-    fireEvent.click(button());
-    fireEvent.click(button());
-    expect(row("voice")).not.toBeNull();
-    expect(localStorage.getItem("sous-sue-replies")).toBe("voice");
+  describe("in a build with the clips", () => {
+    beforeEach(() => {
+      vi.stubEnv("SOUS_SUE_CLIPS", "1");
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("a press turns to the next setting and the menu stays open to show it, round to where it began", () => {
+      render(<More />);
+      fireEvent.click(button());
+      fireEvent.click(row("sounds")!);
+      expect(row("voice")?.textContent).toBe("Sue's replies: Sounds and voice");
+      expect(menu()).not.toBeNull();
+      fireEvent.click(row("voice")!);
+      expect(row("off")?.textContent).toBe("Sue's replies: Off");
+      fireEvent.click(row("off")!);
+      expect(row("sounds")).not.toBeNull();
+    });
+
+    it("is kept on the device: a menu opened again reads it back", () => {
+      render(<More />);
+      fireEvent.click(button());
+      fireEvent.click(row("sounds")!);
+      fireEvent.click(button());
+      fireEvent.click(button());
+      expect(row("voice")).not.toBeNull();
+      expect(localStorage.getItem("sous-sue-replies")).toBe("voice");
+    });
   });
 });

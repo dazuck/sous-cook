@@ -200,7 +200,7 @@ describe("Sue's sounds and clips on a tablet, where a tap starts each listen", (
   });
 });
 
-describe("as this repository ships, with no clip files", () => {
+describe("Sounds and voice where the clips are missing", () => {
   let fetched: string[];
   let said: { level: string; message: string }[];
   let ctx: FakeAudioContext;
@@ -238,7 +238,23 @@ describe("as this repository ships, with no clip files", () => {
 
   const errors = () => said.filter((s) => s.level === "error").map((s) => s.message);
 
-  it("with Sounds, the default, no clip is fetched and a command sounds as ever", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("in a build without them (as this repository ships), a stored Sounds and voice acts as Sounds: nothing fetched, nothing said", () => {
+    const { result, rec } = onDevice("voice");
+    talk(result);
+    say(rec, "flag");
+    expect(received).toEqual(["flag"]);
+    expect(ctx.notes().map((n) => n.frequency)).toEqual(UNDERSTOOD);
+    expect(ctx.clips()).toEqual([]);
+    expect(fetched).toEqual([]);
+    expect(said).toEqual([]);
+  });
+
+  it("in a build with them, Sounds, the default, fetches no clip and a command sounds as ever", () => {
+    vi.stubEnv("SOUS_SUE_CLIPS", "1");
     const { result, rec } = onDevice("sounds");
     talk(result);
     say(rec, "flag");
@@ -248,7 +264,8 @@ describe("as this repository ships, with no clip files", () => {
     expect(said).toEqual([]);
   });
 
-  it("with Sounds and voice, each clip is fetched and each missing one said once; a flag said sounds understood, speaks nothing, and the page carries on", async () => {
+  it("in a build with them but a server without them, each clip is fetched and each missing one said once; a flag said sounds understood, speaks nothing, and the page carries on", async () => {
+    vi.stubEnv("SOUS_SUE_CLIPS", "1");
     const { result, rec } = onDevice("voice");
     expect(fetched.sort()).toEqual(CLIP_NAMES.map(clipUrl).sort());
     await vi.waitFor(() => expect(errors()).toHaveLength(CLIP_NAMES.length));

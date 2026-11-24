@@ -8,6 +8,7 @@
  */
 
 import { safeLocalStorage } from "@/lib/persist/safe-storage";
+import { sueClipsShipped } from "./ack-clips";
 import type { PrepMode } from "./cook-plan";
 
 export const PREP_MODE_KEY = "sous-cook-prep-mode";
@@ -71,6 +72,8 @@ export function setVoiceEnabled(on: boolean): void {
  * answers a spoken command with. `off` is silence, `sounds` a soft sound for
  * a command understood and a lower one for one that wasn't, `voice` those and
  * a rare spoken confirmation on top. A device that never chose has `sounds`.
+ * A build without the clips (`sueClipsShipped`) never offers `voice`, and a
+ * device that chose it under a build that had them reads `sounds`.
  */
 export type SueReplies = "off" | "sounds" | "voice";
 export const SUE_REPLIES_KEY = "sous-sue-replies";
@@ -82,9 +85,15 @@ export function isSueReplies(value: unknown): value is SueReplies {
   return value === "off" || value === "sounds" || value === "voice";
 }
 
-/** The setting a press moves to: sounds, then voice, then off, then sounds again. */
+/** The setting a press moves to: sounds, then voice (when the build has the clips), then off, then sounds again. */
 export function nextSueReplies(now: SueReplies): SueReplies {
-  return now === "sounds" ? "voice" : now === "voice" ? "off" : "sounds";
+  if (now === "sounds") return sueClipsShipped() ? "voice" : "off";
+  return now === "voice" ? "off" : "sounds";
+}
+
+/** What a stored choice means in this build: `voice` without the clips is `sounds`, quietly. */
+function offered(value: SueReplies): SueReplies {
+  return value === "voice" && !sueClipsShipped() ? "sounds" : value;
 }
 
 export function getSueReplies(): SueReplies {
@@ -92,7 +101,7 @@ export function getSueReplies(): SueReplies {
     const store = safeLocalStorage();
     if (!store) return DEFAULT_SUE_REPLIES;
     const value = store.getItem(SUE_REPLIES_KEY);
-    return isSueReplies(value) ? value : DEFAULT_SUE_REPLIES;
+    return isSueReplies(value) ? offered(value) : DEFAULT_SUE_REPLIES;
   } catch {
     return DEFAULT_SUE_REPLIES;
   }

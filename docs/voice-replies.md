@@ -10,7 +10,7 @@ The cook page's More menu has a row for it, per device, and a press moves it on 
 | --- | --- |
 | Off | Nothing. |
 | Sounds (the default) | Two soft rising notes for a command understood or a question handed to Ask; two lower falling notes for anything not understood or refused. Only for speech, never for a tap. |
-| Sounds and voice | The same sounds, and after a spoken command whose result can't be seen from across the kitchen (starting or setting a timer, flagging the screen), sometimes a recorded confirmation: "Yes, chef.", "Timer's on.", "On it.", "Flagged.", or a timer's length read back ("Ten minutes."). At most three in one cook. |
+| Sounds and voice (only in a build with the clips, below) | The same sounds, and after a spoken command whose result can't be seen from across the kitchen (starting or setting a timer, flagging the screen), sometimes a recorded confirmation: "Yes, chef.", "Timer's on.", "On it.", "Flagged.", or a timer's length read back ("Ten minutes."). At most three in one cook. |
 
 The sounds are made in the browser (WebAudio); they need no files. Like the timer's chime, they wait for the page's first tap, as browsers only start audio after one.
 
@@ -18,12 +18,15 @@ The sounds are made in the browser (WebAudio); they need no files. Like the time
 
 The spoken confirmations are 17 short audio files, served from `app/public/sounds/sue/<name>.mp3`, one per name in `CLIP_TEXT` (`ack-clips.ts`). This repository ships without them.
 
-Without them, "Sounds and voice" sounds the same as "Sounds":
+Whether a build has them is decided once, when the app is built: `next.config.ts` asks `sueClipsInBuild` (`app/src/lib/kitchen/ack-clips-build.ts`) whether every one of the 17 files is there, and bakes the answer into the app, where `sueClipsShipped()` (`ack-clips.ts`) reads it. Nothing looks for the files while the app runs.
 
-- With it chosen, a cook page fetches each clip. Each one that is missing is said once on that page's console as an error, naming the clip, and the browser logs its 404. A command that later asks for a missing clip says so once more, by name. Choosing the setting again on the same page fetches the missing clips again but says nothing new.
-- A command that would earn a confirmation sounds its notes alone, and the missing clip doesn't count toward the three a cook.
-- Nothing throws into a cook's command, and the page carries on.
-- A cook page asks the service worker to keep the clips for offline use whatever the setting, so without them each cook page also makes 17 requests from the worker that answer 404. A clip that isn't there is simply not kept.
+In a build without them (the repository as it ships):
+
+- The More menu offers Off and Sounds only; a press goes Sounds, Off, Sounds.
+- A device that chose "Sounds and voice" under a build that had the clips reads as Sounds, without a word in the console. Its stored choice is left alone, so a later build with the clips picks it up again.
+- Neither the cook page nor the service worker asks for a clip.
+
+In a build with them, the setting works as the table above says, and each cook page asks the service worker to keep every clip for offline use. If a file goes missing from the server after such a build, the page says so once per clip on the console and plays the notes alone; the missing clip doesn't count toward the three.
 
 ## Making the clips
 
@@ -35,6 +38,6 @@ GOOGLE_AI_API_KEY=... npx tsx scripts/generate-sue-clips.ts --dry-run   # what i
 GOOGLE_AI_API_KEY=... npx tsx scripts/generate-sue-clips.ts
 ```
 
-It makes only the clips that are missing unless given `--force`. A full set is about 20 calls and costs well under a cent at the listed price. Listen to the clips before you use them: the script measures them, but it can't hear them.
+Build the app again afterwards (or restart `pnpm dev`): the build is what notices them. It makes only the clips that are missing unless given `--force`. A full set is about 20 calls and costs well under a cent at the listed price. Listen to the clips before you use them: the script measures them, but it can't hear them.
 
 Any MP3 per name works as well, if you would rather record your own.

@@ -12,10 +12,14 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 describe("useSueReplies", () => {
-  it("reads sounds until a choice, and follows each choice made on the page", () => {
+  it("reads sounds until a choice, and follows each choice made on the page (a build with the clips)", () => {
+    vi.stubEnv("SOUS_SUE_CLIPS", "1");
     const { result } = renderHook(() => useSueReplies());
     expect(result.current).toBe("sounds");
     act(() => setSueReplies("voice"));
@@ -24,12 +28,21 @@ describe("useSueReplies", () => {
     expect(result.current).toBe("off");
   });
 
-  it("follows another tab's change", () => {
+  it("follows another tab's change (a build with the clips)", () => {
+    vi.stubEnv("SOUS_SUE_CLIPS", "1");
     const { result } = renderHook(() => useSueReplies());
     localStorage.setItem("sous-sue-replies", "voice");
     act(() => {
       window.dispatchEvent(new Event("storage"));
     });
     expect(result.current).toBe("voice");
+  });
+
+  it("in a build without the clips, reads a stored or newly set voice as sounds", () => {
+    const { result } = renderHook(() => useSueReplies());
+    act(() => setSueReplies("voice"));
+    expect(result.current).toBe("sounds");
+    act(() => setSueReplies("off"));
+    expect(result.current).toBe("off");
   });
 });

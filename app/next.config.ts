@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import type { NextConfig } from "next";
+import { sueClipsInBuild } from "./src/lib/kitchen/ack-clips-build";
 
 // The app builds from inside a monorepo: the shared pack schema lives at the
 // repo root (`../pack`, slice B3), so Turbopack's resolution boundary and the
@@ -15,6 +16,10 @@ const repoRoot = path.resolve(__dirname, "..");
 // `.next/BUILD_ID` holds. The diary maps it to the commit.
 process.env.SOUS_BUILD_ID ??= `${new Date().toISOString().slice(0, 10)}-${randomBytes(4).toString("hex")}`;
 const buildId = process.env.SOUS_BUILD_ID;
+
+// Whether this build carries Sue's recorded confirmations (docs/voice-replies.md):
+// decided here, once, from the files, and read in the app as `sueClipsShipped()`.
+const sueClips = sueClipsInBuild(path.join(__dirname, "public")) ? "1" : "0";
 
 const nextConfig: NextConfig = {
   turbopack: { root: repoRoot },
@@ -31,7 +36,7 @@ const nextConfig: NextConfig = {
     "/api/kitchen-queue": ["../packs/**/*.json", "./pack-plans/**/*.json"],
   },
   generateBuildId: () => buildId,
-  env: { SOUS_BUILD_ID: buildId },
+  env: { SOUS_BUILD_ID: buildId, SOUS_SUE_CLIPS: sueClips },
   async redirects() {
     return [
       { source: "/", destination: "/kitchen", permanent: false },
