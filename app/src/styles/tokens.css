@@ -1,6 +1,5 @@
-/* Design tokens from DESIGN_SYSTEM.md v1.24 — the Counter subset, as
- * written. Change protocol: never adjust these locally; proposals go to
- * design/design-proposals.md. */
+/* Design tokens (DS v1.24), the Counter subset, as written. Never adjust
+ * them locally for one screen: a change here is a change to the design. */
 
 @property --ambient-t {
   syntax: "<percentage>";

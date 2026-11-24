@@ -81,6 +81,13 @@ export interface StackMeasure {
    * Room to reserve for the nudge line if it fits without dropping the step's scale.
    */
   nudgeReserve?: number;
+  /**
+   * How much of the stack's foot (the padding under the step's last row) the nudge may stand in,
+   * px: the nudge is drawn over the stage's bottom edge, so the foot is room it can share while it
+   * keeps its gap from the row above (DECISIONS 2026-11-24). Used only where the reserve alone
+   * drops the nudge, and only at 0.8 and up, below which the foot is already the tight one.
+   */
+  nudgeFoot?: number;
   /** Kept for caller compatibility; always 0 now that steps stay whole. */
   part?: number;
 }
@@ -94,6 +101,8 @@ export interface StackFit {
   pages: null;
   /** Always 0. */
   part: 0;
+  /** Set where the nudge stands in the stack's foot: how many px of it the step's rows took. */
+  footUsed?: number;
 }
 
 export function fitStack(m: StackMeasure): StackFit {
@@ -110,6 +119,16 @@ export function fitStack(m: StackMeasure): StackFit {
     const withIt = [...FIT_UP, ...STEP_FIT_SCALES].find((s) => fits(m.now(s, 0, n, true), reserve));
     if (base !== null && withIt !== undefined && withIt >= base) {
       return { scale: withIt, nudge: true, pages: null, part: 0 };
+    }
+    // Where the reserve alone drops it, the nudge may stand in the stack's foot (`nudgeFoot`):
+    // the step keeps the size it has without the nudge's climb, and a step that kept its nudge
+    // above is never moved by this.
+    const foot = m.nudgeFoot ?? 0;
+    if (base !== null && base >= 0.8 && foot > 0) {
+      const height = m.now(base, 0, n, true);
+      if (fits(height, reserve - foot)) {
+        return { scale: base, nudge: true, pages: null, part: 0, footUsed: Math.max(0, m.top + height + reserve - m.room) };
+      }
     }
   }
 

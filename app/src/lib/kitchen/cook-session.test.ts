@@ -602,10 +602,56 @@ describe("a session saved before Prep became step pages (version 1)", () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const store = memoryStorage();
       storeV1(store, { mode, pos: 0, ticked: [], passed: [] }, cyclic);
-      expect(() => loadSession("q1", store)).not.toThrow();
-      expect(loadSession("q1", store)).toBeNull();
+      let loaded: ReturnType<typeof loadSession> | undefined;
+      expect(() => {
+        loaded = loadSession("q1", store);
+      }).not.toThrow();
+      expect(loaded).toBeNull();
       expect(store.data.has(sessionKey("q1"))).toBe(false);
       expect(consumeCorruptionNotices().map((n) => n.text)).toEqual([SESSION_RESET_COPY]);
+      warn.mockRestore();
+    },
+  );
+
+  it.each(["first", "go"] as const)(
+    "a cycle only among make-ahead tasks never throws on load, versions 1 and 2 (the cook view breaks it in plan order; review round 3): %s",
+    (mode) => {
+      const ahead = (id: string, needs: string[]) => ({
+        id,
+        kind: "ahead" as const,
+        text: `Make ${id} ahead`,
+        label: `make ${id}`,
+        ingredientIdx: [],
+        sourceStep: null,
+        implied: true,
+        needs,
+        lead: "overnight",
+        branch: "Filling",
+      });
+      const aheadCycle = { ...ZUCCHINI_PLAN, tasks: [ahead("pickle", ["brine"]), ahead("brine", ["pickle"]), ...ZUCCHINI_PLAN.tasks] };
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const v1 = memoryStorage();
+      storeV1(v1, { mode, pos: 0, ticked: [], passed: [] }, aheadCycle);
+      let fromV1: ReturnType<typeof loadSession> | undefined;
+      expect(() => {
+        fromV1 = loadSession("q1", v1);
+      }).not.toThrow();
+      const v2 = memoryStorage();
+      saveSession("q1", "a", underWay(), snapshot(), NOW, v2);
+      const raw = JSON.parse(v2.data.get(sessionKey("q1"))!);
+      raw.state.session.plan = aheadCycle;
+      raw.state.session.state = { mode, pos: 0, ticked: [], passed: [], kept: [] };
+      v2.data.set(sessionKey("q1"), JSON.stringify(raw));
+      let fromV2: ReturnType<typeof loadSession> | undefined;
+      expect(() => {
+        fromV2 = loadSession("q1", v2);
+      }).not.toThrow();
+      // Walkable, so kept: each place loads on its plan, and nothing says it was reset.
+      for (const loaded of [fromV1, fromV2]) {
+        expect(loaded?.session.plan.tasks.map((t) => t.id).slice(0, 2)).toEqual(["pickle", "brine"]);
+        expect(loaded?.session.state.pos).toBe(0);
+      }
+      expect(consumeCorruptionNotices()).toEqual([]);
       warn.mockRestore();
     },
   );
@@ -620,7 +666,11 @@ describe("a session saved before Prep became step pages (version 1)", () => {
       raw.state.session.plan = cyclic;
       raw.state.session.state = { mode, pos: 0, ticked: [], passed: [], kept: [] };
       store.data.set(sessionKey("q1"), JSON.stringify(raw));
-      expect(() => loadSession("q1", store)).not.toThrow();
+      let loaded: ReturnType<typeof loadSession> | undefined;
+      expect(() => {
+        loaded = loadSession("q1", store);
+      }).not.toThrow();
+      expect(loaded).toBeNull();
       expect(store.data.has(sessionKey("q1"))).toBe(false);
       expect(consumeCorruptionNotices().map((n) => n.text)).toEqual([SESSION_RESET_COPY]);
       warn.mockRestore();

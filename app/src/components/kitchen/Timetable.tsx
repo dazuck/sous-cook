@@ -29,13 +29,13 @@
  *   (`✓` / `done`, active `--ember-700` with `min left`, and upcoming phases).
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
 import Link from "next/link";
 import { prepWords } from "@/lib/kitchen/cook-overview";
 import { buildCookPhases, type CookPhaseRow } from "@/lib/kitchen/cook-phases";
 import type { CookPlan, PrepMode } from "@/lib/kitchen/cook-plan";
 import type { Strip } from "@/lib/kitchen/cook-strip";
-import { COOK_COPY, type CookState, type PrepAheadGroup } from "@/lib/kitchen/cook-view";
+import { COOK_COPY, missedAheadAsk, type CookState, type PrepAheadGroup } from "@/lib/kitchen/cook-view";
 import { buildGetOut, type GetOutItem as CategorizedGetOutItem } from "@/lib/kitchen/get-out";
 import { footMask, useMoreBelow } from "@/hooks/useMoreBelow";
 import { MeasurementPopover } from "./MeasurementPopover";
@@ -67,6 +67,17 @@ const SOONER_HOLD_MS = 1900;
 export const GET_OUT_LINES = 210;
 /** The Ahead note's one row above the flow, with the flow's gap under it (cpx): the lines and the phases leave it this room. */
 export const AHEAD_ROW = 40;
+
+/**
+ * The room the Ahead note's one row takes above the flow, in px, with the flow's 4 cpx gap under it:
+ * its line (26 cpx) and padding (4 cpx each side), and, carrying "Missed it? Ask Sous", the 48 px its
+ * target stands at least (review round 3). Never less than `AHEAD_ROW`, so where a unit is 1.333 px
+ * (the tablet) nothing moves; where it is less (a Chrome tab, 1280×680) the 48 px is budgeted.
+ */
+export function aheadRowPx(c: number, ask: boolean): number {
+  const note = ask ? Math.max(48, 34 * c) : 34 * c;
+  return Math.max(AHEAD_ROW * c, note + 4 * c);
+}
 /** The Paper the meal's lines leave over the foot, cpx: the opening's 14, at the whole cook too. */
 export const LINES_OVER_FOOT = 14;
 /** Where the whole cook's lines end, in the sheet's cpx from `Y2`: 14 cpx over the foot. */
@@ -109,7 +120,8 @@ export interface TimetableProps {
   state?: CookState;
   ingredients?: StoredIngredientLines;
   steps?: readonly string[];
-  onAskAhead?: (group: PrepAheadGroup) => void;
+  /** "Missed it? Ask Sous" under the Ahead note: Ask with the question about all the make-ahead work (DECISIONS 2026-11-24). */
+  onAskAhead?: (groups: readonly PrepAheadGroup[]) => void;
   /** The tablet upright or a phone: the whole meal draws as one list (DS v1.63). */
   portrait?: boolean;
   /** The serving stepper at Get out's head on the opening (DS v1.63), as on Prep and Whole recipe. */
@@ -237,6 +249,8 @@ export function Timetable(props: TimetableProps) {
     measureText,
   } = props;
 
+  /** The Ahead note's words, which its "Missed it?" button is described by: the button lies over them. */
+  const aheadNoteId = useId();
   const [showAmounts, setShowAmounts] = useState(false);
 
   /** The words and the header: in after the marks have grown (the sheet's `--words-op`). */
@@ -389,6 +403,8 @@ export function Timetable(props: TimetableProps) {
   const stacked = ov.opening !== null && ov.sheetBottom > (ov.opening.chart.w + 2 * ov.opening.chart.x) * c;
   const hasGetOut = getOutModel.equipment.length > 0 || getOutModel.fridge.length > 0 || getOutModel.pantry.length > 0;
   const hasAhead = (phasesModel?.ahead?.length ?? 0) > 0 || Boolean(ov.opening?.ahead && ov.opening.ahead.items.length > 0);
+  /** The note carries "Missed it? Ask Sous" (its 48 px target): there is make-ahead work to ask about, and a way to ask. */
+  const aheadAsks = Boolean(onAskAhead) && (phasesModel?.ahead?.length ?? 0) > 0;
 
   // The whole meal as lines and stations (DS v1.63): the opening's flow and level 2 both draw it.
   // As written has no minutes to draw lines from: it keeps the phase outline.
@@ -414,13 +430,13 @@ export function Timetable(props: TimetableProps) {
       const W = stacked ? room.w * c : room.w * c - (hasGetOut ? (GET_OUT_LINES + 18) * c : 0);
       // With no Get out to head, Ahead stands above the lines in the flow's column: they get the rest.
       const aheadAbove = !stacked && hasAhead && !hasGetOut;
-      return layoutMealLines(lines, { W, H: bodyHeight - (aheadAbove ? AHEAD_ROW * c : 0), c, narrow: stacked }, measure);
+      return layoutMealLines(lines, { W, H: bodyHeight - (aheadAbove ? aheadRowPx(c, aheadAsks) : 0), c, narrow: stacked }, measure);
     }
     const avail = Math.max(120, room.bottom - room.y);
     return layoutMealLines(lines, { W: room.w * c, H: avail * c, c, narrow: portrait }, measure);
     // `room` is read through `roomKey`: the same numbers, the same drawing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lines, roomKey, c, stacked, hasGetOut, hasAhead, portrait, measureText, fontsLoaded]);
+  }, [lines, roomKey, c, stacked, hasGetOut, hasAhead, aheadAsks, portrait, measureText, fontsLoaded]);
   const shedOrder = stacked && !linesDrawing ? stackShedOrder(phases) : [];
   /** The last step of the first rung: tight, every optional line given way, Get out's heads over their lists. */
   const rungEnd = 1 + shedOrder.length;
@@ -804,7 +820,10 @@ export function Timetable(props: TimetableProps) {
           const leftColWidth = px(linesDrawing ? GET_OUT_LINES : 380);
           const rung = stackRung(stackStep, shedOrder.length, hasGetOut);
           const aheadList = phasesModel?.ahead ?? [];
-          const flowAvailCpx = availCpx - (hasAhead ? AHEAD_ROW : 0);
+          const ask = aheadList.length > 0 ? missedAheadAsk(aheadList.map((a) => a.group)) : null;
+          // In the flow (no Get out to head) the note's row is its real height; heading Get out it is not in the flow.
+          const aheadInFlowRow = !stacked && !(linesDrawing !== null && hasGetOut);
+          const flowAvailCpx = availCpx - (hasAhead ? (aheadInFlowRow ? aheadRowPx(c, aheadAsks) / c : AHEAD_ROW) : 0);
           const tightFlow = stacked ? rung.tight : flowAvailCpx < phases.length * 66;
           const baseRowCpx = tightFlow ? 31 : 38;
           const maxSubLines = Math.max(0, Math.floor((flowAvailCpx - 14 - phases.length * baseRowCpx) / 27));
@@ -817,6 +836,41 @@ export function Timetable(props: TimetableProps) {
           const aheadColumn = !stacked && aheadInGetOut;
           const aheadWraps = stacked || aheadInGetOut;
           // Built only when there is a note: an opening with no Ahead has nothing to read it from.
+          // "Missed it? Ask Sous" (DECISIONS 2026-11-24): the Prep screen's shortcut, as the note's last
+          // words, about all the make-ahead work at once (`missedAheadAsk`). The note draws "Missed it?"
+          // ("Missed these?"), which fits one line of Get out's column: it costs the note one line at most,
+          // none where the words fit on its last one. Its target is the whole note, which stands 48 px tall
+          // at least, so the target never hangs past it into the body's clip or the stepper's touch (review
+          // round 2). In the one-line form (no Get out beside the lines) the words follow the cut text,
+          // never cut themselves.
+          const askHere = onAskAhead && ask ? ask : null;
+          const askWords = askHere && (
+            <span data-ask-words aria-hidden="true" className="shrink-0 font-semibold whitespace-nowrap text-ink underline decoration-ink/[.35] underline-offset-[4px]">
+              {askHere.words}
+            </span>
+          );
+          const aheadWords = (
+            <>
+              <span className="font-semibold text-ink" style={{ fontSize: px(24), lineHeight: `${px(26)}px` }}>
+                {COOK_COPY.ahead}
+              </span>{" "}
+              {aheadList.length > 0
+                ? aheadList.map((a, q) => (
+                    <span key={q} className={aheadWraps ? undefined : "whitespace-nowrap"}>
+                      {q > 0 ? " · " : ""}
+                      <span className="font-bold text-ink">{a.summary}</span>{" "}
+                      <span className="font-medium text-ink-soft">· {a.lead}</span>
+                    </span>
+                  ))
+                : (op.ahead?.items ?? []).map((a, q) => (
+                    <span key={q} className={aheadWraps ? undefined : "whitespace-nowrap"}>
+                      {q > 0 ? " · " : ""}
+                      <span className="font-bold text-ink">{a.name}</span>{" "}
+                      <span className="font-medium text-ink-soft">{a.lead}</span>
+                    </span>
+                  ))}
+            </>
+          );
           const aheadBlock = hasAhead && (
                     <div
                       data-ahead
@@ -824,48 +878,57 @@ export function Timetable(props: TimetableProps) {
                       data-ahead-form={stacked ? "stacked" : aheadColumn ? "column" : "row"}
                       className={
                         aheadColumn
-                          ? "flex shrink-0 flex-col items-start gap-[calc(4*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(6*var(--cpx))]"
+                          ? `relative flex shrink-0 flex-col items-start justify-center gap-[calc(4*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(6*var(--cpx))]${askHere ? " min-h-[48px]" : ""}`
                           : stacked
-                          ? "flex items-baseline justify-between gap-[calc(10*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))]"
-                          : "flex flex-nowrap items-baseline justify-between gap-[calc(10*var(--cpx))] overflow-hidden rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))]"
+                          ? `relative flex items-center justify-between gap-[calc(10*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))]${askHere ? " min-h-[48px] shrink-0" : ""}`
+                          : `flex flex-nowrap justify-between gap-[calc(10*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))] ${askHere ? "relative min-h-[48px] shrink-0 items-center" : "items-baseline overflow-hidden"}`
                       }
                     >
                       <p
-                        className={aheadWraps ? "m-0 min-w-0 flex-1" : "m-0 min-w-0 flex-1 truncate"}
+                        id={aheadNoteId}
+                        className={aheadWraps ? "m-0 min-w-0 flex-1" : "m-0 flex min-w-0 flex-1 items-baseline whitespace-nowrap"}
                         style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
                       >
-                        <span className="font-semibold text-ink" style={{ fontSize: px(24), lineHeight: `${px(26)}px` }}>
-                          {COOK_COPY.ahead}
-                        </span>{" "}
-                        {aheadList.length > 0
-                          ? aheadList.map((a, q) => (
-                              <span key={q} className={aheadWraps ? undefined : "whitespace-nowrap"}>
-                                {q > 0 ? " · " : ""}
-                                <span className="font-bold text-ink">{a.summary}</span>{" "}
-                                <span className="font-medium text-ink-soft">· {a.lead}</span>
-                              </span>
-                            ))
-                          : (op.ahead?.items ?? []).map((a, q) => (
-                              <span key={q} className={aheadWraps ? undefined : "whitespace-nowrap"}>
-                                {q > 0 ? " · " : ""}
-                                <span className="font-bold text-ink">{a.name}</span>{" "}
-                                <span className="font-medium text-ink-soft">{a.lead}</span>
-                              </span>
-                            ))}
+                        {/* One line: the note's words cut with an ellipsis, the ask's after them, whole, in
+                            the same text and at its size (review round 3). */}
+                        {aheadWraps ? (
+                          aheadWords
+                        ) : (
+                          // The full stop ends the part that is cut, so a cut note never reads "…. Missed it?".
+                          <span className="min-w-0 truncate">
+                            {aheadWords}
+                            {askHere && <span className="font-medium text-ink-soft">.</span>}
+                          </span>
+                        )}
+                        {/* The words' first half, marked as the opening's inline asks are (an underline),
+                            one line in Get out's column; the note's button below carries the whole, so
+                            they are said once. */}
+                        {askHere &&
+                          (aheadWraps ? (
+                            <>
+                              <span className="font-medium text-ink-soft">.</span> {askWords}
+                            </>
+                          ) : (
+                            <>
+                              <span className="shrink-0 whitespace-pre"> </span>
+                              {askWords}
+                            </>
+                          ))}
                       </p>
-                      {onAskAhead && aheadList[0]?.group && (
+                      {askHere && onAskAhead && (
                         <button
                           type="button"
                           data-ask-ahead
+                          aria-label={askHere.label}
+                          // It lies over the note's words: a finger exploring the note lands on it, so it says them too.
+                          aria-describedby={aheadNoteId}
                           onClick={(e) => {
                             e.stopPropagation();
-                            onAskAhead(aheadList[0].group);
+                            onAskAhead(aheadList.map((a) => a.group));
                           }}
-                          className={`pointer-events-auto shrink-0 cursor-pointer text-left font-semibold ${aheadColumn ? "" : "whitespace-nowrap "}text-ink underline decoration-ink/[.35] underline-offset-[4px] ${FOCUS}`}
-                          style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
-                        >
-                          {COOK_COPY.missedAhead}
-                        </button>
+                          // The ring is drawn inside the note: it stands flush with columns that clip, where a ring outside would be cut.
+                          className={`pointer-events-auto absolute inset-0 cursor-pointer rounded-[var(--radius-2)] outline-none focus-visible:outline-3 focus-visible:-outline-offset-4 focus-visible:outline-ink`}
+                        />
                       )}
                     </div>
           );
@@ -983,7 +1046,9 @@ export function Timetable(props: TimetableProps) {
                     <div
                       data-get-out-head-row
                       className="flex shrink-0 flex-wrap items-baseline justify-between gap-x-[calc(10*var(--cpx))]"
-                      style={stepper && !(hasAhead && aheadInGetOut) ? { paddingTop: px(24) } : undefined}
+                      // Upright the row is one line under the note, and the − and +'s touch would reach
+                      // into the note's (review round 2): the row keeps it the same room there.
+                      style={stepper && (stacked || !(hasAhead && aheadInGetOut)) ? { paddingTop: px(24) } : undefined}
                     >
                       <h2
                         data-get-out-head

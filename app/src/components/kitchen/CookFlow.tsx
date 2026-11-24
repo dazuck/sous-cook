@@ -5,6 +5,7 @@ import {
   useId,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent,
@@ -41,6 +42,7 @@ import { useNow } from "./KitchenTimers";
 import { AlarmBand } from "./AlarmBand";
 import { SoundOff, TimerLine } from "./TimerLine";
 import { TimerLedge } from "./TimerLedge";
+import { wellRoom, wellShapes, wellShapesKey } from "@/lib/kitchen/well-room";
 import type { TimerOffer } from "@/lib/kitchen/timer-attach";
 import { hasHowToCheck, howToCheckText, type ScreenStep } from "@/lib/kitchen/step-types";
 import type { AnswerChoice } from "@/lib/kitchen/how-much";
@@ -767,6 +769,8 @@ function useStackMotion(
  * the screen's edge. It counts toward the stage, so the fit keeps it free.
  */
 const STACK_FOOT = "var(--space-5)";
+/** The least room between the step's last row and the nudge over the stage's edge: its own gap to the foot's rule. */
+const NUDGE_GAP = "calc(10 * var(--cpx))";
 /**
  * Prep's foot, less than a step's: Prep's last line is a row or a fold line
  * at the rows' size, not a glance read across the room, and the room a foot
@@ -931,6 +935,9 @@ function useFitStack(
           pairs: probe.pairs,
           now: (scale) => probe.height(base * scale, scale < 0.8) - (scale < 0.8 ? tightGain : 0),
           nudgeReserve,
+          // The nudge stands over the stage's bottom edge, 10 cpx above the foot's rule: it may share
+          // the stack's foot as long as it keeps that same 10 cpx from the step's last row (DECISIONS 2026-11-24).
+          nudgeFoot: nudgeReserve > 0 ? Math.max(0, foot + 1 - lengthPx(stack, NUDGE_GAP)) : 0,
         });
       } finally {
         probe.remove();
@@ -1385,6 +1392,27 @@ export function CookFlow({
   const ledge = timers?.ledge ?? [];
   const anyClock = stepTimer !== null || ledge.length > 0 || alarm;
   const now = useNow(anyClock);
+  // The room the well keeps on a step with a timer (DECISIONS 2026-11-24): null on one with none.
+  const room = timers ? wellRoom(timers, now) : null;
+  // Every way the well can stand on the step, each drawn unseen and still in its cell (review round 2),
+  // worked out and drawn once per change of the step's timers: nothing in it moves with the clock, so
+  // the tick never draws it again (review round 3).
+  const shapesKey = timers ? wellShapesKey(timers) : null;
+  const onDismissClock = timers?.onDismiss;
+  const heldWell = useMemo(() => {
+    const shapes = timers && onDismissClock ? wellShapes(timers, 0) : null;
+    if (!shapes || !onDismissClock) return null;
+    return (
+      <span data-well-room aria-hidden="true" inert className="invisible contents">
+        {shapes.map((x) => (
+          <span key={`${x.timers.length}|${x.lead}|${x.second ?? ""}`} className="[grid-area:1/1]">
+            <TimerLedge timers={x.timers} emberId={null} onDismiss={onDismissClock} at={0} still shape={x} />
+          </span>
+        ))}
+      </span>
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the timers are read through `shapesKey`
+  }, [shapesKey, onDismissClock]);
   const forward = () => {
     onNext();
   };
@@ -1503,7 +1531,7 @@ export function CookFlow({
 
   const nowText = view.stack[0]?.text ?? COOK_COPY.noSteps;
   const finishing = view.isLast;
-  const ledgeLead = ledge.length === 0 ? "" : `${ledge[0]!.id}:${ledge.length}`;
+  const ledgeLead = `${ledge.length === 0 ? "" : `${ledge[0]!.id}:${ledge.length}`}|${room?.map((t) => t.id).join(",") ?? ""}`;
   const heard = heardLine(voice);
   useFootFit(
     footRef,
@@ -1803,17 +1831,31 @@ export function CookFlow({
             atStart={(level === 0 || opening !== null) && atStart}
             onBack={level > 0 && !opening ? () => look?.onLevel(0) : back}
           />
-          {timers && ledge.length > 0 && (
-            <TimerLedge
-              timers={ledge}
-              emberId={emberClock}
-              // The sound-off ghost isn't the foot's: it stands at the
-              // stage's top (`soundLine`), which it has kept since the
-              // foot's row held Ask Sous too (v1.48 to v1.59).
-              soundLocked={false}
-              onDismiss={timers.onDismiss}
-              onAllowSound={timers.onAllowSound}
-            />
+          {/* The well, always at one place in the tree, so moving between a step with a timer and
+              one without never redraws its clocks (they would fly in again). On a step with a timer
+              it also keeps the room its clocks take (`wellRoom`; DECISIONS 2026-11-24): every way the
+              well can stand on the step (`wellShapes`: without the step's clock and with it, each clock
+              leading), drawn unseen and held still at whole length in the same grid cell, so the
+              progress line beside it stands at one length while the clock starts, counts down, walks
+              in at the whole cook and back out. */}
+          {timers && (
+            <span data-well className={ledge.length > 0 || room ? "inline-grid items-center justify-items-start" : "hidden"}>
+              <span className="[grid-area:1/1]">
+                {ledge.length > 0 && (
+                  <TimerLedge
+                    timers={ledge}
+                    emberId={emberClock}
+                    // The sound-off ghost isn't the foot's: it stands at the
+                    // stage's top (`soundLine`), which it has kept since the
+                    // foot's row held Ask Sous too (v1.48 to v1.59).
+                    soundLocked={false}
+                    onDismiss={timers.onDismiss}
+                    onAllowSound={timers.onAllowSound}
+                  />
+                )}
+              </span>
+              {heldWell}
+            </span>
           )}
         </div>
         {/* The middle is the strip's line (look-ahead slice 1): the sheet

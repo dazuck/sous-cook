@@ -25,7 +25,7 @@
  */
 
 import { useLayoutEffect, useRef, type CSSProperties, type RefObject } from "react";
-import { formatDuration, timerView, type KitchenTimer } from "@/lib/kitchen/timers";
+import { formatCountdown, formatDuration, timerView, type KitchenTimer } from "@/lib/kitchen/timers";
 import type { TimerOffer } from "@/lib/kitchen/timer-attach";
 import { flyClockIn, markClock } from "./clock-flight";
 import { useTimerHere } from "./KitchenTimers";
@@ -187,6 +187,7 @@ export function RunningDigits({
   size,
   finalScale = 1.45,
   name,
+  still = false,
 }: {
   timer: KitchenTimer;
   now: number;
@@ -196,6 +197,11 @@ export function RunningDigits({
   finalScale?: number;
   /** The well's name, which fades in once the digits land. */
   name?: RefObject<HTMLElement | null>;
+  /**
+   * Held still, for the foot's held room (`wellRoom`): the timer's whole length, drawn as text,
+   * no live clock, and no place marked for a clock to fly from (DECISIONS 2026-11-24).
+   */
+  still?: boolean;
 }) {
   // Its name is said, not drawn: named as the clock around it is, so two
   // cooks' clocks are told apart by ear as well (B5a verify round 2).
@@ -204,7 +210,7 @@ export function RunningDigits({
   const flown = useRef(false);
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || still) return;
     if (!flown.current) {
       flown.current = true;
       flyClockIn(timer.id, el, name?.current);
@@ -212,6 +218,13 @@ export function RunningDigits({
     markClock(timer.id, el);
   });
   const digitSize = DIGIT_SIZE[size];
+  if (still) {
+    return (
+      <span data-timer="still" aria-hidden="true" className={`inline-block ${DIGITS} ${digitSize}`}>
+        {formatCountdown(timer.durationMs)}
+      </span>
+    );
+  }
   return (
     <span data-timer="running" role="timer" aria-label={`${view.label}, ${view.digits} left`}>
       <span
@@ -242,12 +255,15 @@ export function Clock({
   more = 0,
   quietName = false,
   ledge = false,
+  still = false,
   onDismiss,
 }: {
   timer: KitchenTimer;
   now: number;
   ember: boolean;
   size: ClockSize;
+  /** Held still, for the foot's held room: its digits at the timer's whole length (`RunningDigits`). */
+  still?: boolean;
   /** The foot's well: the name over the digits, so the name always stands. */
   stacked?: boolean;
   /** How many more timers are behind this one, said in words. */
@@ -283,7 +299,8 @@ export function Clock({
   );
   // In the well the last ten grow a little: the band is the foot's.
   const finalScale = stacked ? 1.12 : 1.45;
-  if (view.phase === "expired") {
+  // Held still, a clock is its whole length whatever the moment: never the alarm (review round 3).
+  if (view.phase === "expired" && !still) {
     const digitSize = DIGIT_SIZE[size];
     const ago = view.overdueMs >= 60_000 ? view.finishedText : null;
     return (
@@ -320,13 +337,13 @@ export function Clock({
         // The others, in words beside the digits; where the foot is short they
         // go first, the name and the digits staying.
         <span className="inline-flex items-baseline gap-x-[var(--space-2)]">
-          <RunningDigits timer={timer} now={now} ember={ember} size={size} finalScale={finalScale} name={nameRef} />
+          <RunningDigits timer={timer} now={now} ember={ember} size={size} finalScale={finalScale} name={nameRef} still={still} />
           <span className={`${LABEL} whitespace-nowrap group-data-[ledge-short]/foot:sr-only`}>{TIMER_COPY.more(more)}</span>
         </span>
       ) : (
         // On a ledge the last ten don't grow: the clock stands at the
         // screen's edge, with no room to grow into.
-        <RunningDigits timer={timer} now={now} ember={ember} size={size} finalScale={ledge ? 1 : finalScale} name={nameRef} />
+        <RunningDigits timer={timer} now={now} ember={ember} size={size} finalScale={ledge ? 1 : finalScale} name={nameRef} still={still} />
       )}
     </span>
   );

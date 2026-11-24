@@ -154,8 +154,8 @@ export interface CookSheetProps {
   topLine?: boolean;
   /** Change the prep mode ("Prep first" | "As I go") from the whole cook's toggle. */
   onMode?: (mode: PrepMode) => void;
-  /** Ask Sous when the cook missed an ahead item on the Opening. */
-  onAskAhead?: (group: PrepAheadGroup) => void;
+  /** "Missed it? Ask Sous" under the opening's Ahead note: Ask about all the make-ahead work (DECISIONS 2026-11-24). */
+  onAskAhead?: (groups: readonly PrepAheadGroup[]) => void;
 }
 
 /** Canvas text metrics with the app's faces, scoped to one layout pass so font-load rebuilds re-measure cleanly. */
@@ -711,12 +711,9 @@ export function CookSheet(props: CookSheetProps) {
       hint: sayBack && !opening,
     };
     // The strip's line: the foot's middle cell, where the sheet draws it (look-ahead slice 1).
-    // FIXME(look-ahead slice 1): when the step's own running clock walks into the well on landing
-    // at the whole cook (N10, `clockInWell`), the cell narrows and the line is laid again in one
-    // step, so its left end jumps by the clock's width (about 245 px at 1280 wide), and back on
-    // leaving it. The fill holds its minute through it; a glide of the line's box (or the well's
-    // room kept while the step's clock runs) is the fix, left for a later design round
-    // (DECISIONS 2026-11-23, look-ahead slice 1, "the line makes room for the well's clock").
+    // On a step with a timer the well keeps its clock's room from the start (`wellRoom`, in
+    // CookFlow's foot; DECISIONS 2026-11-24), so the cell no longer narrows when the step's clock
+    // walks into the well on landing at the whole cook (N10, `clockInWell`), nor widens on leaving.
     const cellR = opening ? null : (middleRef?.current?.getBoundingClientRect() ?? null);
     const lineBox = cellR && cellR.width > 0 ? { x0: cellR.left, x1: cellR.right, y: cellR.top + cellR.height / 2 } : null;
     const L = buildLayout({

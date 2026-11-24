@@ -1,6 +1,6 @@
 /**
- * Ask Sous never answers with a reply that didn't finish (feedback review
- * 2026-10-27). A voice answer stopped after a few words ("…in a bowl of cold
+ * Ask Sous never answers with a reply that didn't finish. A voice answer
+ * once stopped after a few words ("…in a bowl of cold
  * water for") and was shown, spoken and stored. No record kept the real stop
  * reason or token counts; the most likely cause, inferred from the code, is
  * Gemini's thinking spending most of the 350-token cap before the answer.

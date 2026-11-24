@@ -1,6 +1,6 @@
 /**
  * Ask Sous's procedure tells a reply cut at the token cap apart from any
- * other failure (feedback review 2026-10-27): `AnswerCutOff` answers
+ * other failure: `AnswerCutOff` answers
  * `ASK_CUT_OFF_CODE`, which Ask reads to say the answer ran long instead of
  * "Couldn't reach Sous". The cut itself is tested in
  * `lib/claude.ask-truncation.test.ts`.

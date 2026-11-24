@@ -1,5 +1,4 @@
-// Shared UI Components for SugarHub Visual Redesign
-// These components implement the Storybook OS design system
+// Shared UI components, drawn with the design tokens (src/styles/tokens.css).
 
 // Buttons
 export { Button } from "./Button";

@@ -32,6 +32,7 @@ import {
   hasPrepScreen,
   hasUpfrontPrep,
   prepSummary,
+  missedAheadAsk,
   missedAheadQuestion,
   screenForSourceStep,
   sourceStepStates,
@@ -524,6 +525,15 @@ export function CookScreen({
     (group: PrepAheadGroup) => {
       openAsk("words", "field");
       askRef.current?.prefill(missedAheadQuestion(group));
+    },
+    [openAsk],
+  );
+  // The opening's "Missed it? Ask Sous", under its Ahead note (DECISIONS 2026-11-24): the same,
+  // about all the make-ahead work at once. On the opening Ask is about the recipe (`askInHand`).
+  const onAskAheadAll = useCallback(
+    (groups: readonly PrepAheadGroup[]) => {
+      openAsk("words", "field");
+      askRef.current?.prefill(missedAheadAsk(groups).question);
     },
     [openAsk],
   );
@@ -1355,6 +1365,7 @@ export function CookScreen({
                       topLine: TOP_LINE_AT_WHOLE_COOK,
                       more: sheetMore,
                       openingControls,
+                      onAskAhead: onAskAheadAll,
                       whole: {
                         steps,
                         plan,

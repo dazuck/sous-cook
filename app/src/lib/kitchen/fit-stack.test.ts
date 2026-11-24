@@ -227,6 +227,46 @@ describe("fitStack: the ladder", () => {
       });
     });
 
+    describe("standing in the stack's foot (DECISIONS 2026-11-24)", () => {
+      // The nudge is drawn over the stage's bottom edge; the stack's foot under the step's last row
+      // is room it can stand in, as far as `nudgeFoot` says (the foot less the gap it keeps from the row).
+      it("keeps the nudge the reserve alone would drop, at the step's own size, and says how much foot it took", () => {
+        // 20 words, room 260: scale 1 needs 240. With 40 reserved, 280 > 260: dropped before.
+        // With 25 of the foot to stand in, it needs 15 more: 255 <= 260.
+        expect(fitStack(measure(words(20), { room: 260, nudgeReserve: 40, nudgeFoot: 25 }))).toEqual({
+          scale: 1,
+          nudge: true,
+          pages: null,
+          part: 0,
+          footUsed: 20,
+        });
+      });
+
+      it("never moves a step that kept its nudge without the foot: same size, no foot taken", () => {
+        // Room 330: the nudge already shows at 1 (240 + 50 = 290). With the foot it could climb to
+        // 1.1 (305 + 50 - 25 = 330), but a step that showed its nudge stays as it was.
+        for (const room of [330, 600, 290]) {
+          const before = fitStack(measure(words(20), { room, nudgeReserve: 50 }));
+          expect(fitStack(measure(words(20), { room, nudgeReserve: 50, nudgeFoot: 25 }))).toEqual(before);
+        }
+      });
+
+      it("drops the nudge still where the foot is not enough, and never drops the step's size for it", () => {
+        // Room 260, 40 reserved, 15 of foot: 240 + 25 = 265 > 260. Not at 0.9 either: the size stays.
+        expect(fitStack(measure(words(20), { room: 260, nudgeReserve: 40, nudgeFoot: 15 }))).toEqual({
+          scale: 1,
+          nudge: false,
+          pages: null,
+          part: 0,
+        });
+      });
+
+      it("takes no foot below 0.8, where the foot is already the tight one", () => {
+        // 60 words at room 270: 0.6 fits (260) but not with 40 reserved, even less 30 of foot (270).
+        expect(fitStack(measure(words(60), { room: 270, nudgeReserve: 40, nudgeFoot: 30 }))).toMatchObject({ scale: 0.6, nudge: false });
+      });
+    });
+
     it("drops nudge when step overflows FLOOR", () => {
       expect(fitStack(measure(words(100), { room: 200, nudgeReserve: 40 }))).toMatchObject({
         scale: FLOOR,

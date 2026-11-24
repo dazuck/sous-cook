@@ -1,5 +1,5 @@
 /**
- * The kitchen rail's glyphs (DESIGN_SYSTEM §5, the kitchen home), hand-drawn as inline SVG on a 24 grid in one
+ * The kitchen rail's glyphs (the kitchen home), hand-drawn as inline SVG on a 24 grid in one
  * line style: 1.65 stroke, round caps and joins, no fill. No icon library is used anywhere in the app. The rail
  * and the pull-out panel draw the same glyph for the same destination, so each is defined once here, and each
  * is an object that says what the control opens.

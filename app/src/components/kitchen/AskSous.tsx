@@ -288,19 +288,29 @@ export function AskSous({
   const inputRef = useRef<HTMLInputElement>(null);
   const micRef = useRef<HTMLButtonElement>(null);
   /**
-   * Beside a draft the mic stands only while it listens or is refused, so a listen stopped from it
-   * takes the button away under the finger: the focus it held goes to the box, not the page
-   * (review round 2). Noted as the button goes, while it still holds the focus.
+   * Beside a draft the mic stands only while it listens or is refused, so a listen the cook stops by
+   * pressing it takes the button away under the finger: the focus it held goes to the box, or to the
+   * close button while the box is shut for a reply (review round 2). Only that press: a listen that
+   * ends by itself (silence, a question heard, voice lost) moves no focus, so a listen from the
+   * capsule still closes Ask by itself (`afterListen`; review round 3). Noted as the button goes,
+   * while it still holds the focus.
    */
+  const micStopPressed = useRef(false);
   const micLeftFocus = useRef(false);
   const micAt = useCallback((el: HTMLButtonElement | null) => {
-    if (el === null && micRef.current !== null && document.activeElement === micRef.current) micLeftFocus.current = true;
+    if (el === null && micStopPressed.current && micRef.current !== null && document.activeElement === micRef.current) {
+      micLeftFocus.current = true;
+    }
     micRef.current = el;
   }, []);
   useLayoutEffect(() => {
+    if (voice?.status !== "hearing") micStopPressed.current = false;
     if (!micLeftFocus.current) return;
     micLeftFocus.current = false;
-    if (micRef.current === null) inputRef.current?.focus();
+    if (micRef.current !== null) return;
+    const box = inputRef.current;
+    if (box && !box.disabled) box.focus();
+    else collapseRef.current?.focus();
   });
   const collapseRef = useRef<HTMLButtonElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -915,7 +925,10 @@ export function AskSous({
             <button
               ref={micAt}
               type="button"
-              onClick={voice.onTap}
+              onClick={() => {
+                micStopPressed.current = voice.status === "hearing";
+                voice.onTap();
+              }}
               aria-label={actionOf(voice.mode, voice.status)}
               // Listening on a tap, a tap does nothing while Sous speaks.
               aria-disabled={(voice.mode === "tap" && voice.status === "paused") || undefined}

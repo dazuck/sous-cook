@@ -1,6 +1,6 @@
 /**
- * How Sue answers what the cook says (DESIGN_SYSTEM §4, "Sue acknowledges";
- * DECISIONS 2026-11-22). The rules, apart from the browser: which spoken
+ * How Sue answers what the cook says ("Sue acknowledges"; DECISIONS
+ * 2026-11-22). The rules, apart from the browser: which spoken
  * outcome gets which sound, and when a recorded confirmation may be said.
  *
  * - **Sounds** (`sounds` and `voice`): a soft rising sound for a command

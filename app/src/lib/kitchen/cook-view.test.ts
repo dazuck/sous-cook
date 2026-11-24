@@ -4,6 +4,7 @@ import { identityPlan, leadMinutes, parseCookPlan } from "./cook-plan";
 import {
   COOK_COPY,
   aheadFirst,
+  aheadGroups,
   askInHand,
   askStepText,
   back,
@@ -17,6 +18,7 @@ import {
   jumpTo,
   levelSaid,
   bindNumbers,
+  missedAheadAsk,
   missedAheadQuestion,
   minutesLabel,
   miseBefore,
@@ -34,6 +36,7 @@ import {
 import { strip } from "./cook-strip";
 import { readStepDetails } from "./cook-levels";
 import { ZUCCHINI_PLAN, ZUCCHINI_RECIPE } from "./__tests__/zucchini-wraps";
+import { timetableCorpus } from "./__tests__/timetable-corpus";
 import {
   loadCookPlanFixtures,
   loadCookPlanSnapshots,
@@ -2455,6 +2458,47 @@ describe("missedAheadQuestion", () => {
       })).toBe(
       "I was meant to do these the night before and didn't: soak chickpeas; brine the chicken. What's the quickest way through?",
     );
+  });
+});
+
+describe("missedAheadAsk: the opening's one ask for all the make-ahead work (DECISIONS 2026-11-24)", () => {
+  const soak = { id: "a1", text: "Soak the chickpeas overnight.", label: "soak chickpeas", lead: "the night before" };
+  const group = (lead: string | null, ...labels: string[]) => ({
+    lead,
+    items: labels.map((label, i) => ({ ...soak, id: `${label}${i}`, label, lead })),
+    labels,
+  });
+
+  it("asks what Prep's shortcut asks for one group, named as Prep names it ('Missed it? Ask Sous' for one job, 'Missed these? Ask Sous' for several), its words the first half", () => {
+    const one = group("the night before", "soak chickpeas");
+    expect(missedAheadAsk([one])).toEqual({ label: COOK_COPY.missedAhead, words: "Missed it?", question: missedAheadQuestion(one) });
+    const many = group("at least 4 hours before", "grate garlic", "marinate chicken");
+    expect(missedAheadAsk([many])).toEqual({ label: COOK_COPY.missedAheadMany, words: "Missed these?", question: missedAheadQuestion(many) });
+  });
+
+  it("names every group with its own lead where the work has several leads", () => {
+    const ask = missedAheadAsk([group("overnight", "dry-brine chicken"), group("1 hour before", "take chicken out")]);
+    expect(ask.label).toBe(COOK_COPY.missedAheadMany);
+    expect(ask.question).toBe(
+      "I was meant to do these ahead and didn't: dry-brine chicken overnight; take chicken out 1 hour before. What's the quickest way through?",
+    );
+    expect(missedAheadAsk([group(null, "chill rice"), group("at least 2 hours before", "soften butter", "toast oats")]).question).toBe(
+      "I was meant to do these ahead and didn't: chill rice ahead; soften butter and toast oats at least 2 hours before. What's the quickest way through?",
+    );
+  });
+
+  it("asks about every stored meal's make-ahead work, each job named once", () => {
+    let meals = 0;
+    for (const e of timetableCorpus()) {
+      const groups = aheadGroups(e.plan);
+      if (groups.length === 0) continue;
+      meals++;
+      const { question, label } = missedAheadAsk(groups);
+      for (const g of groups) for (const it of g.items) expect(question, e.name).toContain(it.label);
+      const jobs = groups.reduce((n, g) => n + g.items.length, 0);
+      expect(label, e.name).toBe(jobs === 1 ? COOK_COPY.missedAhead : COOK_COPY.missedAheadMany);
+    }
+    expect(meals).toBeGreaterThanOrEqual(5);
   });
 });
 

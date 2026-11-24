@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
-/* Sous DS v1.13 (design/DESIGN_SYSTEM.md): the tokens as written, and the
+/* Sous DS v1.13: the tokens as written, and the
  * vendored faces. Every screen wears them; this file only maps them to
  * Tailwind utilities and sets the page's base. */
 @import "../styles/tokens.css";

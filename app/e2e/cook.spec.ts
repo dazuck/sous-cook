@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures";
 import { liveNowLine } from "./cook-helpers";
 import { readQueueRowById, readQueueRowByName } from "./db";
-import { RECIPE_NAMES } from "./seed-data";
+import { BUNDLED_PACK_ID, RECIPE_NAMES, SEED_NOW } from "./seed-data";
 
 test.describe("Cook mode", () => {
   test("COOK-1: opens Thin White Sauce on the opening screen with its Get out list, then its prep page, steps forward and back, and restores the step on reload", async ({
@@ -340,4 +340,154 @@ test.describe("Cook mode", () => {
       .getByRole("listitem");
     await expect(recentItems.first()).toContainText(RECIPE_NAMES.thinWhiteSauce);
   });
+
+  test("COOK-7: on a step with a timer the progress line holds one length: before the timer starts, as it runs and loses a digit, at the whole cook and back, and past its end; a step with none keeps the whole line", async ({
+    page,
+  }) => {
+    // Pantry Tomato Soup (P3) cooks as written: step 1 has no timer, step 3 offers its 12-minute
+    // simmer (as in COOK-2). The well beside the line keeps the room its clocks take from the
+    // start of a step with a timer (well-room.ts), so the line never jumps when the clock starts,
+    // walks into the well at the whole cook, or runs out.
+    const p3 = await readQueueRowByName(RECIPE_NAMES.pantryTomatoSoup);
+    expect(p3).not.toBeNull();
+    await page.goto(`/kitchen/queue/${p3!.id}`);
+    const sheet = page.locator("[data-cook-sheet]");
+    const strip = page.locator("[data-strip]");
+    const lineBox = async () => {
+      const b = (await strip.boundingBox())!;
+      return { x: Math.round(b.x * 10) / 10, w: Math.round(b.width * 10) / 10 };
+    };
+    const fills = () =>
+      strip.locator("[data-strip-seg] > span").evaluateAll((els) =>
+        els.map((el) => Number(/scaleX\(([\d.]+)\)/.exec((el as HTMLElement).style.transform)?.[1] ?? 0).toFixed(3)).join(" "),
+      );
+    const wellClock = page.locator("[data-foot] [data-ledge]:not([data-well-room] [data-ledge])");
+    /** Every glide on the cook screen done: a step's change, a clock's flight, the sheet's move. */
+    const still = () =>
+      page.waitForFunction(() =>
+        document
+          .querySelector("[data-stage]")!
+          .parentElement!.getAnimations({ subtree: true })
+          .every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity),
+      );
+
+    // Step 1: no timer and no clock anywhere, so no room is held: the whole line.
+    await expect(liveNowLine(page)).toBeVisible();
+    await expect(sheet).toHaveAttribute("data-settled", "0");
+    await still();
+    await expect(page.locator("[data-well-room]")).toHaveCount(0);
+    const whole = await lineBox();
+
+    // Step 3, its timer offered and not started: the room is held already.
+    const next = page.getByRole("button", { name: "Next step" });
+    await next.click();
+    await next.click();
+    const offer = liveNowLine(page).locator('[data-timer="offer"]');
+    await expect(offer).toContainText("Start 12 min timer");
+    await expect(page.locator("[data-well-room]")).toHaveCount(1);
+    await still();
+    const held = await lineBox();
+    expect(held.w, "shorter than the whole line by the well's held room").toBeLessThan(whole.w - 50);
+
+    // Started where it stands.
+    await offer.click();
+    const running = liveNowLine(page).locator('[data-timer="running"]');
+    await expect(running).toBeVisible();
+    await still();
+    expect(await lineBox(), "the timer started").toEqual(held);
+
+    // 12:00 down past 10:00: the clock loses a digit, the line does not move.
+    await page.clock.setFixedTime(SEED_NOW.getTime() + 2 * 60_000 + 1_000);
+    await expect(running).toHaveAttribute("aria-label", /9:5\d left$/);
+    expect(await lineBox(), "a digit fewer").toEqual(held);
+    const fill = await fills();
+
+    // At the whole cook the step's clock walks into the well, seen: the line keeps its length and its fill.
+    await strip.click();
+    await expect(sheet).toHaveAttribute("data-level", "1");
+    await expect(sheet).toHaveAttribute("data-settled", "1");
+    await page.getByRole("button", { name: "Show the whole cook" }).click();
+    await expect(sheet).toHaveAttribute("data-level", "2");
+    await expect(sheet).toHaveAttribute("data-settled", "2");
+    await expect(wellClock).toBeVisible();
+    await still();
+    expect(await lineBox(), "at the whole cook, the clock in the well").toEqual(held);
+    expect(await fills(), "the fill keeps its minute").toBe(fill);
+
+    // Back on the step.
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveAttribute("data-level", "0");
+    await expect(sheet).toHaveAttribute("data-settled", "0");
+    await expect(wellClock).toHaveCount(0);
+    await still();
+    expect(await lineBox(), "back on the step").toEqual(held);
+    expect(await fills(), "the fill keeps its minute").toBe(fill);
+
+    // Half a second past its end the step's clock rings (the band over the stage), and the line
+    // still holds. (The held room is drawn at moment 0, so it never reaches an end here;
+    // TimerLedge.test.tsx checks that a still clock past its end is never the alarm.)
+    await page.clock.setFixedTime(SEED_NOW.getTime() + 12 * 60_000 + 500);
+    await expect(running).toHaveCount(0);
+    await expect(page.locator("[data-alarm-band]")).toBeVisible();
+    await expect(page.locator("[data-well-room] [data-timer]").first()).toHaveAttribute("data-timer", "still");
+    await still();
+    expect(await lineBox(), "past the timer's end").toEqual(held);
+  });
+
+  test("COOK-8: the opening's Ahead note ends in \"Missed it?\", the whole note is its target, and a tap opens Ask with the question about the make-ahead work", async ({
+    page,
+  }) => {
+    // Doughnuts I is the bundled pack recipe whose stored plan has make-ahead work (soften the
+    // butter 30 minutes before). Queued from its pack page, it opens on its opening (as in SHELF-3).
+    await page.goto(`/kitchen/cookpacks/${BUNDLED_PACK_ID}`);
+    await page.locator('[data-pack-row="doughnuts-i"]').click();
+    await expect(page).toHaveURL(/\/kitchen\/queue\/[0-9a-f-]+$/);
+    await expect(page.locator("[data-opening-start]")).toBeVisible();
+
+    const note = page.locator("[data-ahead]");
+    const words = note.locator("[data-ask-words]");
+    const target = note.locator("[data-ask-ahead]");
+    await expect(words).toHaveText("Missed it?");
+    await expect(target).toHaveAccessibleName("Missed it? Ask Sous");
+    const view = page.viewportSize()!;
+    const m = await words.evaluate((el) => {
+      const noteEl = el.closest<HTMLElement>("[data-ahead]")!;
+      const button = noteEl.querySelector<HTMLElement>("[data-ask-ahead]")!;
+      const n = noteEl.getBoundingClientRect();
+      // A finger anywhere on the note, across its width and down its height, lands on the ask.
+      const missed: string[] = [];
+      for (const fy of [0.15, 0.5, 0.85]) {
+        for (let fx = 0.05; fx < 1; fx += 0.1) {
+          const at = document.elementFromPoint(n.left + n.width * fx, n.top + n.height * fy);
+          if (at !== button) missed.push(`${fx.toFixed(2)},${fy}: ${at ? at.tagName : "nothing"}`);
+        }
+      }
+      const w = el.getBoundingClientRect();
+      return {
+        lines: el.getClientRects().length,
+        words: { right: w.right, bottom: w.bottom },
+        textRight: el.closest("p")!.getBoundingClientRect().right,
+        target: button.getBoundingClientRect().height,
+        note: n.height,
+        missed,
+      };
+    });
+    expect(m.lines, "the words on one line").toBe(1);
+    expect(m.words.right, "inside the note's text").toBeLessThanOrEqual(m.textRight + 0.5);
+    expect(m.words.right, "on the screen").toBeLessThanOrEqual(view.width);
+    expect(m.words.bottom, "on the screen").toBeLessThanOrEqual(view.height);
+    expect(m.target, "a target 48 px tall at least").toBeGreaterThanOrEqual(48);
+    expect(m.target, "the target is the whole note").toBeGreaterThanOrEqual(m.note - 0.5);
+    expect(m.missed, "a finger anywhere on the note reaches the ask").toEqual([]);
+
+    // A finger on the words opens Ask about the recipe, the question in its box, not sent.
+    const at = (await words.boundingBox())!;
+    await page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
+    const askPanel = page.locator('[data-ask="open"]');
+    await expect(askPanel).toBeVisible();
+    await expect(askPanel.getByRole("textbox")).toHaveValue(
+      "I was meant to soften butter 30 minutes before and didn't. What's the quickest way through?",
+    );
+  });
+
 });

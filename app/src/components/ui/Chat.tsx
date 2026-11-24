@@ -2,7 +2,7 @@
 
 import { forwardRef, type ReactNode } from "react";
 
-// Chat primitives to the design system (DESIGN_SYSTEM.md): Sous speaks as ink
+// Chat primitives to the design system: Sous speaks as ink
 // text straight on paper; only the cook's words sit in a sand bubble. No
 // avatars, shadows, tails or bounces.
 

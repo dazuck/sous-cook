@@ -30,22 +30,39 @@ export function TimerLedge({
   soundLocked = false,
   onDismiss,
   onAllowSound,
+  at,
+  still = false,
+  shape,
 }: {
   timers: readonly KitchenTimer[];
+  /**
+   * The moment to draw the clocks at, in place of the ticking clock: the foot's held room
+   * (`wellRoom`), drawn unseen, keeps a not-started clock at its whole length.
+   */
+  at?: number;
+  /**
+   * Held still: the foot's held room (`wellRoom`), drawn unseen. Each clock at its timer's whole
+   * length, none live, none marking a place for a clock to fly from (DECISIONS 2026-11-24).
+   */
+  still?: boolean;
+  /** Held still, the clock to lead and the one beside it, in place of the soonest (`wellShapes`). */
+  shape?: { lead: string; second: string | null };
   /** The running clock that holds the screen's ember, if any. */
   emberId: string | null;
   soundLocked?: boolean;
   onDismiss: (id: string) => void;
   onAllowSound?: () => void;
 }) {
-  const now = useNow(timers.length > 0);
-  const lead = ledgeLead(timers, now);
+  // Held still, nothing it draws moves with the clock: it never ticks.
+  const ticking = useNow(!still && at === undefined && timers.length > 0);
+  const now = at ?? ticking;
+  const lead = (shape && timers.find((t) => t.id === shape.lead)) || ledgeLead(timers, now);
   if (lead === null) return null;
   const rest = [...timers].filter((t) => t.id !== lead.id).sort((a, b) => a.endsAtEpochMs - b.endsAtEpochMs);
-  const second = rest[0];
+  const second = shape ? rest.find((t) => t.id === shape.second) : rest[0];
   return (
     <span data-ledge className="inline-flex shrink-0 items-end gap-x-[var(--space-4)] whitespace-nowrap">
-      <Clock timer={lead} now={now} ember={lead.id === emberId} size="well" stacked onDismiss={onDismiss} />
+      <Clock timer={lead} now={now} ember={lead.id === emberId} size="well" stacked still={still} onDismiss={onDismiss} />
       {second && (
         // Where the foot is shortest the second clock goes, still said.
         <span data-ledge-second className="inline-flex group-data-[ledge-one]/foot:sr-only">
@@ -57,6 +74,7 @@ export function TimerLedge({
             stacked
             more={rest.length - 1}
             quietName
+            still={still}
             onDismiss={onDismiss}
           />
         </span>

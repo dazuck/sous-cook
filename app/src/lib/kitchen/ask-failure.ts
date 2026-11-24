@@ -1,5 +1,5 @@
 /**
- * Ask Sous's reply cut off at the token cap (feedback review 2026-10-27).
+ * Ask Sous's reply cut off at the token cap.
  * `answerContent` throws `AnswerCutOff`, the `chatCooking` procedure answers
  * it with `ASK_CUT_OFF_CODE`, and Ask reads the code to say the answer ran
  * long, rather than "Couldn't reach Sous", which would be false about the

@@ -68,7 +68,7 @@ export function setVoiceEnabled(on: boolean): void {
 }
 
 /**
- * Sue's replies, per device (DESIGN_SYSTEM §4, "Sue acknowledges"): what she
+ * Sue's replies, per device ("Sue acknowledges"): what she
  * answers a spoken command with. `off` is silence, `sounds` a soft sound for
  * a command understood and a lower one for one that wasn't, `voice` those and
  * a rare spoken confirmation on top. A device that never chose has `sounds`.

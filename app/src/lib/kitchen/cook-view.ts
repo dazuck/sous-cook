@@ -102,6 +102,9 @@ export const COOK_COPY = {
   asIGo: "As I go",
   missedAhead: "Missed it? Ask Sous",
   missedAheadMany: "Missed these? Ask Sous",
+  /** The opening's Ahead note ends in the half that carries the meaning; its name says it whole (DECISIONS 2026-11-24). */
+  missedAheadShort: "Missed it?",
+  missedAheadManyShort: "Missed these?",
   aheadUntimed: "Ahead of time",
   assumed: "assumed",
   allAssumed: "The recipe doesn't list these; they're read from its steps.",
@@ -785,6 +788,24 @@ export function missedAheadQuestion(group: PrepAheadGroup): string {
   }
   const labels = group.items.map((a) => a.label).join("; ");
   return `I was meant to do these ${when} and didn't: ${labels}. ${tail}`;
+}
+
+/**
+ * The opening's one ask for all the make-ahead work, the last words of its Ahead note (DECISIONS
+ * 2026-11-24): what the Prep screen's shortcut says and asks for one group, its words picked as Prep
+ * picks them ("Missed it? Ask Sous" for one job, "Missed these? Ask Sous" for several). The note
+ * draws their first half (`words`), which fits on one line of Get out's column; `label` is the name
+ * it is said by. Where the work has several leads, each group is named with its own.
+ */
+export function missedAheadAsk(groups: readonly PrepAheadGroup[]): { label: string; words: string; question: string } {
+  const jobs = groups.reduce((n, g) => n + g.items.length, 0);
+  const label = jobs === 1 ? COOK_COPY.missedAhead : COOK_COPY.missedAheadMany;
+  const words = jobs === 1 ? COOK_COPY.missedAheadShort : COOK_COPY.missedAheadManyShort;
+  if (groups.length === 1) return { label, words, question: missedAheadQuestion(groups[0]) };
+  const and = (labels: readonly string[]) =>
+    labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+  const parts = groups.map((g) => `${and(g.items.map((a) => a.label))} ${g.lead ?? "ahead"}`);
+  return { label, words, question: `I was meant to do these ahead and didn't: ${parts.join("; ")}. What's the quickest way through?` };
 }
 
 /**

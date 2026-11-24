@@ -2,6 +2,13 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// The well's held shapes, counted: they are worked out once per change of the step's timers, not per tick.
+vi.mock("@/lib/kitchen/well-room", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/kitchen/well-room")>();
+  return { ...actual, wellShapes: vi.fn(actual.wellShapes) };
+});
+import { wellShapes } from "@/lib/kitchen/well-room";
 import { FINISH_ARM_MS } from "@/hooks/useFinishArm";
 import { TAP_MS, TAP_SLOP } from "@/lib/kitchen/tap-zone";
 import { identityPlan } from "@/lib/kitchen/cook-plan";
@@ -127,7 +134,7 @@ function flow(
     onTick: vi.fn(),
   };
   const flowHandlers = handlers;
-  const props = (finishState: FinishState, nav: boolean) => (
+  const props = (finishState: FinishState, nav: boolean, t: CookTimers | undefined = timers) => (
     <CookFlow
       view={view}
       mode="first"
@@ -138,7 +145,7 @@ function flow(
       navEnabled={nav}
       voice={voice}
       askOpen={askOpen}
-      timers={timers}
+      timers={t}
       notices={notices}
       restInert={restInert}
       opening={opening}
@@ -149,8 +156,8 @@ function flow(
   const result = render(props(finish, navEnabled));
   return {
     ...handlers,
-    rerender: (finishState: FinishState, nav = navEnabled) =>
-      result.rerender(props(finishState, nav)),
+    rerender: (finishState: FinishState, nav = navEnabled, t: CookTimers | undefined = timers) =>
+      result.rerender(props(finishState, nav, t)),
   };
 }
 
@@ -1601,6 +1608,99 @@ describe("CookFlow: timers", () => {
     expect(document.querySelector("[data-foot]")!.textContent).not.toContain(TIMER_COPY.soundOff);
   });
 
+  describe("the well holds its room on a step with a timer, so the progress line never jumps (DECISIONS 2026-11-24)", () => {
+    /** The well's held room: the clocks it keeps space for, drawn unseen. */
+    const room = () => document.querySelector<HTMLElement>("[data-foot] [data-well-room]");
+
+    it("draws the step's clock unseen in the well from before it starts, out of reach of touch, keys and a screen reader", () => {
+      flow(SECOND, { timers: timers() });
+      const r = room()!;
+      expect(r).not.toBeNull();
+      expect(r.getAttribute("aria-hidden")).toBe("true");
+      expect(r.hasAttribute("inert")).toBe(true);
+      expect(r.className.split(/\s+/)).toContain("invisible");
+      expect(r.textContent).toContain("Saute zucchini");
+      // The step's whole length, as it will stand when it starts.
+      expect(r.textContent).toContain("5:00");
+      // The clock the cook sees stays on the step: the real well is empty.
+      expect([...document.querySelectorAll("[data-foot] [data-ledge]")].filter((el) => !el.closest("[data-well-room]"))).toHaveLength(0);
+    });
+
+    it("holds the same clocks started, at the whole cook (its clock in the well), and with a second timer running", () => {
+      flow(SECOND, { timers: timers({ stepTimer: running, soonestRunning: running.id }) });
+      expect(room()!.textContent).toContain("Saute zucchini");
+      cleanup();
+      // At the whole cook the step's clock is in the well: the room is the very clocks drawn there.
+      flow(SECOND, { timers: timers({ ledge: [running], soonestRunning: running.id }) });
+      const shown = [...document.querySelectorAll("[data-foot] [data-ledge]")].find((el) => !el.closest("[data-well-room]"))!;
+      expect(shown.textContent).toContain("Saute zucchini");
+      // Held as it is and as it will be, the same clock both ways, at its whole length.
+      for (const held of room()!.querySelectorAll("[data-ledge]")) expect(held.textContent).toMatch(/Saute zucchini5:00$/);
+      cleanup();
+      flow(SECOND, { timers: timers({ stepTimer: running, ledge: [other], soonestRunning: other.id }) });
+      expect(room()!.textContent).toContain("Saute zucchini");
+      expect(room()!.textContent).toContain("Soak rice");
+    });
+
+    it("draws the held room once per change of the step's timers, not on the clock's tick (review round 3)", () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+      try {
+        flow(SECOND, { timers: timers({ ledge: [other], soonestRunning: other.id }) });
+        const shown = () => [...document.querySelectorAll("[data-foot] [data-ledge]")].find((el) => !el.closest("[data-well-room]"))!.textContent;
+        const before = shown();
+        vi.mocked(wellShapes).mockClear();
+        act(() => {
+          vi.advanceTimersByTime(2_000);
+        });
+        // The well the cook sees counts down; the room held beside it is not worked out again.
+        expect(shown()).not.toBe(before);
+        expect(wellShapes).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("holds the room still: no live clock in it, and the step's clock at its whole length however far it has run", () => {
+      // Started 61 s ago: the clock the cook sees says 3:59, the room keeps 5:00, so the line does
+      // not move when the digits lose a glyph (10:00 to 9:59, 1:00:00 to 59:59).
+      const ran = { ...offer, endsAtEpochMs: Date.now() + 239_000 };
+      flow(SECOND, { timers: timers({ stepTimer: ran, soonestRunning: ran.id }) });
+      expect(room()!.querySelectorAll('[role="timer"]')).toHaveLength(0);
+      expect(room()!.textContent).toContain("5:00");
+      expect(room()!.textContent).not.toContain("3:59");
+    });
+
+    it("holds the room of the well as it is and as it will be, each clock leading, so neither the lead nor the count moves the line", () => {
+      // The well as the cook sees it now (the other's clock alone), and with the step's clock in it,
+      // led by either: which leads moves with the minutes (review round 2).
+      flow(SECOND, { timers: timers({ ledge: [other], soonestRunning: other.id }) });
+      const held = [...room()!.querySelectorAll("[data-ledge]")].map((el) => el.textContent ?? "");
+      expect(held).toHaveLength(3);
+      expect(held[0]).toContain("Soak rice");
+      expect(held[0]).not.toContain("Saute zucchini");
+      const both = held.slice(1);
+      for (const h of both) expect(h).toMatch(/Soak rice.*Saute zucchini|Saute zucchini.*Soak rice/);
+      expect(both.map((h) => h.indexOf("Saute zucchini") < h.indexOf("Soak rice")).sort()).toEqual([false, true]);
+    });
+
+    it("keeps the well the cook sees in one place in the tree, so moving between a timed and an untimed step never redraws its clocks", () => {
+      const f = flow(SECOND, { timers: timers({ ledge: [other], soonestRunning: other.id }) });
+      const shown = () => [...document.querySelectorAll("[data-foot] [data-ledge]")].find((el) => !el.closest("[data-well-room]"));
+      const before = shown();
+      expect(before).toBeTruthy();
+      f.rerender("ready", true, timers({ offer: null, ledge: [other], soonestRunning: other.id }));
+      expect(room()).toBeNull();
+      expect(shown()).toBe(before);
+      f.rerender("ready", true, timers({ ledge: [other], soonestRunning: other.id }));
+      expect(shown()).toBe(before);
+    });
+
+    it("holds nothing on a step with no timer: its line is the whole line", () => {
+      flow(SECOND, { timers: timers({ offer: null, ledge: [other], soonestRunning: other.id }) });
+      expect(room()).toBeNull();
+    });
+  });
+
   it("puts a timer whose step isn't on screen in the foot's well, named, ember when it is the soonest", () => {
     flow(SECOND, { timers: timers({ ledge: [other], soonestRunning: other.id }) });
     const ledge = document.querySelector("[data-foot] [data-ledge]")!;
@@ -1608,7 +1708,8 @@ describe("CookFlow: timers", () => {
     expect(ledge.querySelector("[aria-hidden]")!.className).toContain("text-ember");
     expect(stepText().className).toContain("text-ink");
     // The well sits with back, so the middle's ghosts never move for it.
-    expect(ledge.parentElement!.querySelector(`[aria-label="${COOK_COPY.back}"]`)).not.toBeNull();
+    // (On a step with a timer the well's cell also holds its room, so the cell is the foot's first.)
+    expect(ledge.closest("[data-foot] > *")!.querySelector(`[aria-label="${COOK_COPY.back}"]`)).not.toBeNull();
   });
 
   it("shows a second timer in the well with its own digits, never a count badge", () => {

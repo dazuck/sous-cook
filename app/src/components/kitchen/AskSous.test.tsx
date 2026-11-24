@@ -724,7 +724,7 @@ describe("AskSous server context, error recovery, grounding sources, and spoken 
 
 });
 
-describe("AskSous when the answer was cut at the token cap (feedback review 2026-10-27)", () => {
+describe("AskSous when the answer was cut at the token cap", () => {
   /** What the tRPC client rejects with: the server's error code under `data`. */
   function rejection(message: string, code: string) {
     return Object.assign(new Error(message), { data: { code } });
@@ -1054,17 +1054,80 @@ describe("Ask on the cook screen: the side panel and the sheet", () => {
     expect(row.querySelector("[data-voice]")!.getAttribute("data-voice")).toBe("blocked");
   });
 
-  it("a listen stopped from the mic beside a draft leaves the cook in the box, not on the page", () => {
+  it("a listen the cook stops from the panel's mic beside a draft leaves the cook in the box, not on the page", () => {
     const { rerender, props } = panel({ voice: tapVoice("ready") });
     const box = screen.getByRole("textbox", { name: ASK_COPY.field });
     fireEvent.change(box, { target: { value: "How hot" } });
     rerender(<AskSous {...props} voice={tapVoice("hearing")} />);
-    screen.getByRole("button", { name: "Stop listening" }).focus();
-    expect(document.activeElement?.getAttribute("aria-label")).toBe("Stop listening");
+    const mic = screen.getByRole("button", { name: "Stop listening" });
+    mic.focus();
+    fireEvent.click(mic);
     // The listen is over: the mic gives its place back to Send, and the focus it held goes to the box.
     rerender(<AskSous {...props} voice={tapVoice("ready")} />);
     expect(screen.queryByRole("button", { name: "Stop listening" })).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole("textbox", { name: ASK_COPY.field }));
+  });
+
+  it.each([
+    ["ends in silence", tapVoice("ready", { kind: "silence" })],
+    ["hears a question", tapVoice("ready", { kind: "asked", text: "How hot" })],
+    ["can no longer listen", tapVoice("unsupported")],
+  ])("a listen that %s beside a draft, the mic not pressed, moves no focus into the box (review round 2: the capsule's listen closes by itself)", (_, after) => {
+    const onEngage = vi.fn();
+    const { rerender, props } = panel({ voice: tapVoice("ready"), onEngage });
+    fireEvent.change(screen.getByRole("textbox", { name: ASK_COPY.field }), { target: { value: "How hot" } });
+    onEngage.mockClear();
+    rerender(<AskSous {...props} voice={tapVoice("hearing")} />);
+    screen.getByRole("button", { name: "Stop listening" }).focus();
+    rerender(<AskSous {...props} voice={after} />);
+    expect(document.activeElement).not.toBe(screen.getByRole("textbox", { name: ASK_COPY.field }));
+    expect(onEngage).not.toHaveBeenCalled();
+  });
+
+  it("a listen the cook started from the panel's mic, which then ends by itself beside a draft, moves no focus into the box: only a press that stops it does", () => {
+    const { rerender, props } = panel({ voice: tapVoice("ready") });
+    const talk = screen.getByRole("button", { name: "Talk to Sous" });
+    talk.focus();
+    fireEvent.click(talk);
+    rerender(<AskSous {...props} voice={tapVoice("hearing")} />);
+    fireEvent.change(screen.getByRole("textbox", { name: ASK_COPY.field }), { target: { value: "How hot" } });
+    screen.getByRole("button", { name: "Stop listening" }).focus();
+    rerender(<AskSous {...props} voice={tapVoice("ready", { kind: "silence" })} />);
+    expect(screen.queryByRole("button", { name: "Stop listening" })).toBeNull();
+    expect(document.activeElement).not.toBe(screen.getByRole("textbox", { name: ASK_COPY.field }));
+  });
+
+  it("a stop pressed once is not remembered: the next listen, ending by itself beside the draft, moves no focus into the box", () => {
+    const { rerender, props } = panel({ voice: tapVoice("ready") });
+    const box = screen.getByRole("textbox", { name: ASK_COPY.field });
+    fireEvent.change(box, { target: { value: "How hot" } });
+    rerender(<AskSous {...props} voice={tapVoice("hearing")} />);
+    const mic = screen.getByRole("button", { name: "Stop listening" });
+    mic.focus();
+    fireEvent.click(mic);
+    rerender(<AskSous {...props} voice={tapVoice("ready")} />);
+    expect(document.activeElement).toBe(box);
+    // A second listen, from the capsule this time, that ends in silence while its mic holds the focus.
+    rerender(<AskSous {...props} voice={tapVoice("hearing")} />);
+    screen.getByRole("button", { name: "Stop listening" }).focus();
+    rerender(<AskSous {...props} voice={tapVoice("ready", { kind: "silence" })} />);
+    expect(document.activeElement).not.toBe(screen.getByRole("textbox", { name: ASK_COPY.field }));
+  });
+
+  it("a listen stopped from the panel's mic while Sous answers (the box shut) leaves focus on the close button, not the page", () => {
+    mutation.isPending = true;
+    try {
+      const { rerender, props } = panel({ voice: tapVoice("ready") });
+      fireEvent.change(screen.getByRole("textbox", { name: ASK_COPY.field }), { target: { value: "How hot" } });
+      rerender(<AskSous {...props} voice={tapVoice("hearing")} />);
+      const mic = screen.getByRole("button", { name: "Stop listening" });
+      mic.focus();
+      fireEvent.click(mic);
+      rerender(<AskSous {...props} voice={tapVoice("ready")} />);
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: ASK_COPY.close }));
+    } finally {
+      mutation.isPending = false;
+    }
   });
 
   it("has no camera where there is none, and no mic where the browser cannot listen", () => {

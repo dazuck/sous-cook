@@ -200,7 +200,7 @@ describe("OpeningControls", () => {
 });
 
 import { strip } from "@/lib/kitchen/cook-strip";
-import { initialCookState, next, prepPages } from "@/lib/kitchen/cook-view";
+import { aheadGroups, initialCookState, missedAheadAsk, next, prepPages } from "@/lib/kitchen/cook-view";
 import { placeOverview } from "@/lib/kitchen/overview-place";
 import { LINE_FROM_FOOT } from "@/lib/kitchen/strip-map";
 import { buildTimetable } from "@/lib/kitchen/timetable-model";
@@ -209,7 +209,7 @@ import { timetableCorpus } from "@/lib/kitchen/__tests__/timetable-corpus";
 import { storedIngredientLines } from "@/lib/kitchen/ingredient-display";
 import { legacyToPackRecipe } from "@/lib/pack-convert/convert";
 import { AMOUNT_RULE } from "./MeasurementPopover";
-import { AHEAD_ROW, GET_OUT_LINES, Timetable } from "./Timetable";
+import { AHEAD_ROW, aheadRowPx, GET_OUT_LINES, Timetable } from "./Timetable";
 
 describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", () => {
   const geo = {
@@ -413,19 +413,137 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
     }
   });
 
-  it("with Ahead work and no Get out, Ahead stands above the lines and the lines leave it its row: drawn whole or scrolling, never cut (review: bug 3)", () => {
-    const entry = timetableCorpus().find((x) => x.name === "sunday-roast-dinner")!;
-    const firstStrip = strip(entry.plan, initialCookState("first"), null, 0);
-    const goStrip = strip(entry.plan, initialCookState("go"), null, 0);
-    const tFirst = buildTimetable(entry.plan, firstStrip, goStrip, "first")!;
-    const tGo = buildTimetable(entry.plan, firstStrip, goStrip, "go")!;
-    // Tablet-shaped sheets from roomy to tight: wherever the lines are drawn whole, Ahead's row is left to them.
+  it("'Missed it? Ask Sous' under the Ahead note on every stored meal with make-ahead work, wide and upright, and none without (DECISIONS 2026-11-24)", () => {
+    const wide = { ...geo, W: 1280, H: 800, c: 1280 / 960, footTop: 720, ledgeTop: 698 };
+    const upright = { W: 800, H: 1280, c: 800 / 600, E: 35, top: 64, stepTop: 84, footTop: 1200, ledgeTop: 1178, portrait: true };
+    let withAhead = 0;
+    let without = 0;
+    for (const entry of timetableCorpus()) {
+      const firstStrip = strip(entry.plan, initialCookState("first"), null, 0);
+      const goStrip = strip(entry.plan, initialCookState("go"), null, 0);
+      const tFirst = buildTimetable(entry.plan, firstStrip, goStrip, "first");
+      const tGo = buildTimetable(entry.plan, firstStrip, goStrip, "go");
+      if (!tFirst || !tGo) continue;
+      const groups = aheadGroups(entry.plan);
+      for (const [shape, g] of [["wide", wide], ["upright", upright]] as const) {
+        const ov = placeOverview({
+          timetable: tFirst,
+          other: tGo,
+          geo: g,
+          measure,
+          chrome: { more: { w: 48, h: 48 }, controls: { w: 160, h: 56 }, hint: false },
+          toggle: true,
+          title: entry.name,
+          opening: { getOut: sampleGetOut, scaleNote: null, handsOn: "20 min hands-on" },
+          read: null,
+          topLine: false,
+          ttDims,
+        });
+        const onAskAhead = vi.fn();
+        const r = render(
+          <Timetable
+            ov={ov}
+            rootRef={null}
+            measureText={() => measure}
+            strip={firstStrip}
+            opening={true}
+            live={false}
+            readMark={null}
+            onRead={() => {}}
+            onGo={() => {}}
+            onWhole={() => {}}
+            onClose={() => {}}
+            onMode={() => {}}
+            getOut={sampleGetOut}
+            scaleNote={null}
+            readText={null}
+            plan={entry.plan}
+            state={initialCookState("first")}
+            steps={entry.plan.tasks.map((t) => t.text)}
+            onAskAhead={onAskAhead}
+            stepper={{ recipe: { serves_base: 4, serves_estimated: true }, servings: 4, onChange: () => {} }}
+          />,
+        );
+        const where = `${entry.name} ${shape}`;
+        const ask = r.container.querySelector<HTMLButtonElement>("[data-ask-ahead]");
+        if (groups.length === 0) {
+          expect(ask, where).toBeNull();
+          without++;
+          cleanup();
+          continue;
+        }
+        withAhead++;
+        expect(ask, where).not.toBeNull();
+        const note = r.container.querySelector<HTMLElement>("[data-ahead]")!;
+        const words = note.querySelector<HTMLElement>("p [data-ask-words]");
+        // The note's last words, inline in its own text: no block of their own under it.
+        expect(words, where).not.toBeNull();
+        const text = note.querySelector("p")!;
+        expect(text.lastElementChild, where).toBe(words);
+        // The words' first half, the half that carries the meaning; the whole is the ask's name.
+        expect(words!.textContent, where).toBe(missedAheadAsk(groups).words);
+        // At the note's size, the 22 cpx floor, in a note that cuts nothing.
+        expect(parseFloat(text.style.fontSize), where).toBeCloseTo(22 * g.c, 3);
+        for (const el of [note, text]) expect(el.getAttribute("class") ?? "", where).not.toMatch(/\b(truncate|overflow-hidden|text-ellipsis)\b/);
+        // The target is the whole note, at least 48 px tall, named by the ask's words; said once.
+        expect(note.contains(ask), where).toBe(true);
+        expect(ask!.getAttribute("aria-label"), where).toBe(missedAheadAsk(groups).label);
+        expect(ask!.textContent, where).toBe("");
+        expect(words!.getAttribute("aria-hidden"), where).toBe("true");
+        // The note is the target, 48 px tall at least of its own, so the target never hangs past it
+        // (into the body's clip above, or the stepper's touch below).
+        expect(ask!.className.split(/\s+/), where).toEqual(expect.arrayContaining(["absolute", "inset-0"]));
+        expect(ask!.className, where).not.toMatch(/translate|min-h/);
+        expect(note.className.split(/\s+/), where).toEqual(expect.arrayContaining(["relative", "min-h-[48px]"]));
+        // Its 48 px is a floor, never a size a full column may squeeze it to under its words.
+        expect(note.className.split(/\s+/), where).toContain("shrink-0");
+        // It lies over the note's words, so it is described by them: a finger exploring the note hears the work too.
+        expect(ask!.getAttribute("aria-describedby"), where).toBe(text.id);
+        expect(text.id, where).not.toBe("");
+        // Its focus ring is drawn inside the note, which stands flush with columns that clip.
+        expect(ask!.className.split(/\s+/), where).toContain("focus-visible:-outline-offset-4");
+        // Upright, Get out's head row (the stepper's − and +, whose touch stands 24 cpx over their row)
+        // keeps that room under the note, so neither takes the other's taps.
+        const servings = r.container.querySelector("[role='group'][aria-label='Servings']");
+        expect(servings, where).not.toBeNull();
+        if (shape !== "wide") {
+          const row = r.container.querySelector<HTMLElement>("[data-get-out-head-row]")!;
+          expect(parseFloat(row.style.paddingTop), where).toBeCloseTo(24 * g.c, 3);
+        }
+        // In Get out's column wherever the note heads it.
+        if (shape === "wide") expect(r.container.querySelector("[data-get-out]")!.contains(note), where).toBe(true);
+        fireEvent.click(ask!);
+        expect(onAskAhead, where).toHaveBeenCalledWith(groups);
+        cleanup();
+      }
+    }
+    expect(withAhead).toBeGreaterThanOrEqual(10);
+    expect(without).toBeGreaterThan(0);
+  });
+
+  it("with Ahead work and no Get out, Ahead stands above the lines in its one-line form, the ask's words in its text at its size, and the lines leave it its real height: drawn whole or scrolling, never cut (review: bug 3; review round 3)", () => {
+    // Every stored meal with make-ahead work, its Get out left empty so the note takes its one-line form,
+    // on the tablet (1280×800) and in its Chrome tab (1280×680, where a unit is under 1.333 px); the
+    // roast across tablet-shaped sheets from roomy to tight.
+    const sheets: { name: string; H: number }[] = [];
+    for (const entry of timetableCorpus()) for (const H of [800, 680]) sheets.push({ name: entry.name, H });
+    for (let H = 560; H <= 900; H += 20) sheets.push({ name: "sunday-roast-dinner", H });
+    let rowForm = 0;
     let tight = 0;
-    for (let H = 560; H <= 900; H += 20) {
+    for (const { name, H } of sheets) {
+      const entry = timetableCorpus().find((x) => x.name === name)!;
+      const firstStrip = strip(entry.plan, initialCookState("first"), null, 0);
+      const goStrip = strip(entry.plan, initialCookState("go"), null, 0);
+      const tFirst = buildTimetable(entry.plan, firstStrip, goStrip, "first");
+      const tGo = buildTimetable(entry.plan, firstStrip, goStrip, "go");
+      if (!tFirst || !tGo) continue;
+      // The screen's real unit (`CookSheet`: 960 × 600 cpx fitted to it): 4/3 at 1280×800, 680/600 at
+      // 1280×680; the foot and the ledge at their cpx heights (60 and 76.5) in it (review round 4).
+      const c = Math.min(1280 / 960, H / 600);
       const ov = placeOverview({
         timetable: tFirst,
         other: tGo,
-        geo: { ...geo, W: 1280, H, footTop: H - 80, ledgeTop: H - 102 },
+        geo: { ...geo, W: 1280, H, c, footTop: H - 60 * c, ledgeTop: H - 76.5 * c },
         measure,
         chrome: { more: { w: 48, h: 48 }, controls: { w: 160, h: 56 }, hint: false },
         toggle: true,
@@ -458,18 +576,54 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
           onAskAhead={() => {}}
         />,
       );
-      const flow = r.container.querySelector<HTMLElement>("[data-opening-flow]")!;
-      expect(r.container.querySelector("[data-get-out]")).toBeNull();
-      expect(flow.querySelector("[data-ahead]")).not.toBeNull();
-      const drawn = flow.querySelector<HTMLElement>("[data-meal-lines]")!;
-      const room = parseFloat(flow.style.maxHeight) - AHEAD_ROW * ov.c;
-      if (drawn.getAttribute("data-scroll") === "false") {
-        expect(parseFloat(drawn.style.height), `sheet ${H} px tall`).toBeLessThanOrEqual(room + 0.5);
-        if (parseFloat(drawn.style.height) > room - AHEAD_ROW * ov.c) tight++;
+      const where = `${name} at 1280×${H}`;
+      const flow = r.container.querySelector<HTMLElement>("[data-opening-flow]");
+      const note = flow?.querySelector<HTMLElement>("[data-ahead]");
+      if (!flow || !note) {
+        cleanup();
+        continue;
+      }
+      rowForm++;
+      expect(r.container.querySelector("[data-get-out]"), where).toBeNull();
+      expect(note.getAttribute("data-ahead-form"), where).toBe("row");
+      // The ask's words in the note's own text, at its size (22 cpx, never under the floor), after its
+      // cut part and never cut themselves; the whole note the target, named whole.
+      const text = note.querySelector<HTMLElement>("p")!;
+      const words = note.querySelector<HTMLElement>("[data-ask-words]");
+      expect(words, where).not.toBeNull();
+      expect(words!.closest("p"), where).toBe(text);
+      expect(parseFloat(text.style.fontSize), where).toBeCloseTo(22 * ov.c, 3);
+      expect(words!.style.fontSize, where).toBe("");
+      expect(words!.closest(".truncate"), where).toBeNull();
+      expect(words!.className.split(/\s+/), where).toEqual(expect.arrayContaining(["shrink-0", "whitespace-nowrap"]));
+      // The full stop ends the part that is cut, so a cut note reads "… Missed it?", never "…. Missed it?".
+      const cut = text.querySelector<HTMLElement>(".truncate");
+      expect(cut, where).not.toBeNull();
+      expect(cut!.textContent, where).toMatch(/\.$/);
+      const after = text.textContent!.slice(text.textContent!.indexOf(cut!.textContent!) + cut!.textContent!.length);
+      expect(after, where).toBe(` ${words!.textContent}`);
+      const target = note.querySelector<HTMLElement>("[data-ask-ahead]");
+      expect(target?.getAttribute("aria-label"), where).toMatch(/^Missed (it|these)\? Ask Sous$/);
+      expect(note.className.split(/\s+/), where).toEqual(expect.arrayContaining(["relative", "min-h-[48px]", "shrink-0", "items-center", "py-[calc(4*var(--cpx))]"]));
+      expect(note.className.split(/\s+/), where).not.toContain("overflow-hidden");
+      expect(target!.className.split(/\s+/), where).toContain("inset-0");
+      // The note's real height: its line and padding, 48 px at least; with the flow's gap under it.
+      expect(flow.className.split(/\s+/), where).toContain("gap-[calc(4*var(--cpx))]");
+      const noteHeight = Math.max(48, parseFloat(text.style.lineHeight) + 8 * ov.c);
+      // The layout budgets that height (`aheadRowPx`), gap and all; on the tablet, exactly the old 40 units.
+      expect(ov.c, where).toBeCloseTo(c, 6);
+      expect(aheadRowPx(ov.c, true), where).toBeGreaterThanOrEqual(noteHeight + 4 * ov.c - 0.01);
+      if (H === 800) expect(aheadRowPx(ov.c, true), where).toBeCloseTo(AHEAD_ROW * ov.c, 6);
+      const drawn = flow.querySelector<HTMLElement>("[data-meal-lines]");
+      if (drawn && drawn.getAttribute("data-scroll") === "false") {
+        const room = parseFloat(flow.style.maxHeight) - noteHeight - 4 * ov.c;
+        expect(parseFloat(drawn.style.height), where).toBeLessThanOrEqual(room + 0.5);
+        if (parseFloat(drawn.style.height) > room - 8) tight++;
       }
       cleanup();
     }
-    // The sweep reaches sheets where the lines need nearly all the room, so the row is what decides.
+    expect(rowForm).toBeGreaterThanOrEqual(20);
+    // The sweep reaches drawings that need nearly all the room, so the row's height is what decides.
     expect(tight).toBeGreaterThan(0);
   });
 
@@ -536,22 +690,23 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
     const ahead = r.container.querySelector<HTMLElement>("[data-ahead]")!;
     expect(ahead).not.toBeNull();
     const askBtn = ahead.querySelector<HTMLButtonElement>("[data-ask-ahead]")!;
-    expect(askBtn.textContent).toBe(COOK_COPY.missedAhead);
+    // The roast's two make-ahead jobs (overnight, an hour before): one ask for both, in Prep's words for several.
+    expect(askBtn.getAttribute("aria-label")).toBe(COOK_COPY.missedAheadMany);
     fireEvent.click(askBtn);
     expect(onAskAhead).toHaveBeenCalledTimes(1);
 
     // Ahead heads Get out's column, as drawn, so the flow's column opens on the meal's shape.
     expect(getOutSec.contains(ahead)).toBe(true);
-    // In that narrow column the note wraps and the ask takes a line of its own: one nowrap line there
+    // In that narrow column the note wraps, its ask its last words: one nowrap line there
     // squeezed the note's words to nothing and clipped "Missed it? Ask Sous" itself.
     expect(ahead.querySelector("p")!.textContent).toMatch(/Dry-brine chicken/);
     const clips = /\b(truncate|whitespace-nowrap|overflow-hidden|text-ellipsis)\b/;
-    for (const el of [ahead, ...ahead.querySelectorAll<HTMLElement>("*")]) expect(el.getAttribute("class") ?? "").not.toMatch(clips);
+    // (The ask's own words hold together on one line: they are the one exception.)
+    for (const el of [ahead, ...ahead.querySelectorAll<HTMLElement>("*:not([data-ask-words])")]) expect(el.getAttribute("class") ?? "").not.toMatch(clips);
     expect(ahead.getAttribute("data-ahead-form")).toBe("column");
-    // Its words wrap at spaces, so the label stays whole if its longest word fits inside the note's padding.
+    // The ask's words, kept on one line, fit one line of the note's text inside its padding (186 cpx).
     const inner = GET_OUT_LINES - 2 * 12;
-    for (const label of [COOK_COPY.missedAhead, COOK_COPY.missedAheadMany])
-      expect(Math.max(...label.split(" ").map((w) => measure(w, 22, 600)))).toBeLessThanOrEqual(inner);
+    for (const words of [COOK_COPY.missedAheadShort, COOK_COPY.missedAheadManyShort]) expect(measure(words, 22, 600)).toBeLessThanOrEqual(inner);
 
     // The flow: the meal as lines, a column per dish, no phases; nothing in hand and nothing to tap before Start.
     const flow = r.container.querySelector<HTMLElement>("[data-opening-flow]")!;

@@ -25,7 +25,7 @@ interface ButtonBaseProps {
 type ButtonProps = ButtonBaseProps &
   Omit<ButtonHTMLAttributes<HTMLButtonElement>, keyof ButtonBaseProps>;
 
-// Design system pills (DESIGN_SYSTEM.md): ember for the one act a screen is
+// Design system pills: ember for the one act a screen is
 // for, sand for the rest, ink-soft text for the quiet ones. Colour answers a
 // press; nothing scales, slides or casts a shadow. The ember act waits in
 // sand with ink-soft text until it can be acted on, never as faded ember
