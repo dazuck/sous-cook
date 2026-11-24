@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Page } from "@playwright/test";
+import { devices, type Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
 import { readQueueRowByName } from "./db";
 import { installFakeSpeech } from "./fake-speech";
@@ -105,18 +105,30 @@ function clipAnswers(page: Page) {
   return answers;
 }
 
-/** Thin White Sauce, past its opening and its prep page, on its first cooking step, listening. */
-async function toFirstStep(page: Page) {
+/** Thin White Sauce, past its opening and its prep page, on its first cooking step. */
+async function openFirstStep(page: Page) {
   const row = await readQueueRowByName(RECIPE_NAMES.thinWhiteSauce);
   await page.goto(`/kitchen/queue/${row!.id}`);
   await page.locator("[data-opening-start]").click();
   await page.getByRole("button", { name: "Next step" }).click();
+}
+
+/**
+ * The first cooking step, listening all the time, as the suite's desktop
+ * browser does (the projects' user agent in `playwright.config.ts`). The
+ * dot's state comes first so a browser that listens only on a tap fails here
+ * by name ("ready").
+ */
+async function toFirstStep(page: Page) {
+  await openFirstStep(page);
+  await expect(dot(page)).toHaveAttribute("data-voice", "listening");
   await expect.poll(() => page.evaluate(() => window.__speech.listening())).toBe(1);
 }
 
 /** A tap anywhere unlocks the page's audio, as it does for the timer's chime. */
 const tapPage = (page: Page) => page.getByRole("banner").click({ position: { x: 4, y: 4 } });
 
+// Listening all the time: the suite's own browser, Playwright's desktop Chrome on every machine.
 test.describe("Sue's replies", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(installFakeSpeech);
@@ -275,10 +287,7 @@ test.describe("Sue's replies on Android, where a tap starts each listen", () => 
   test("VOICE-8: the tap unlocks the sound, the whole command heard sounds understood, and the dot isn't held", async ({ page }) => {
     await page.addInitScript(installFakeSpeech);
     await page.addInitScript(watchAudio);
-    const row = await readQueueRowByName(RECIPE_NAMES.thinWhiteSauce);
-    await page.goto(`/kitchen/queue/${row!.id}`);
-    await page.locator("[data-opening-start]").click();
-    await page.getByRole("button", { name: "Next step" }).click();
+    await openFirstStep(page);
     await expect(dot(page)).toHaveAttribute("data-voice", "ready");
     await dot(page).click();
     await expect(dot(page)).toHaveAttribute("data-voice", "hearing");
@@ -287,5 +296,42 @@ test.describe("Sue's replies on Android, where a tap starts each listen", () => 
     await say(page, "next");
     await expect(dot(page)).toHaveAttribute("data-voice", "ready");
     expect(await notes(page)).toEqual(UNDERSTOOD);
+  });
+});
+
+/** Chromium on a Linux machine, as it says it is (a CI runner's among them). */
+const LINUX_DESKTOP_USER_AGENT =
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36";
+
+test.describe("How the cook screen listens, by what the browser says it is", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(installFakeSpeech);
+  });
+
+  test("VOICE-9: every spec's browser says it is Playwright's desktop Chrome, whatever machine runs the suite", async ({ page }) => {
+    await page.goto("/kitchen");
+    expect(await page.evaluate(() => navigator.userAgent)).toBe(devices["Desktop Chrome"].userAgent);
+  });
+
+  test.describe("Linux with a touch screen, as the tablet asking for desktop sites says it is", () => {
+    test.use({ userAgent: LINUX_DESKTOP_USER_AGENT, hasTouch: true });
+
+    test("VOICE-10: nothing listens until the dot is tapped", async ({ page }) => {
+      await openFirstStep(page);
+      await expect(dot(page)).toHaveAttribute("data-voice", "ready");
+      expect(await page.evaluate(() => window.__speech.listening())).toBe(0);
+      await dot(page).click();
+      await expect(dot(page)).toHaveAttribute("data-voice", "hearing");
+      expect(await page.evaluate(() => window.__speech.listening())).toBe(1);
+    });
+  });
+
+  test.describe("Linux without a touch screen", () => {
+    test.use({ userAgent: LINUX_DESKTOP_USER_AGENT, hasTouch: false });
+
+    test("VOICE-11: it listens all the time, with no tap", async ({ page }) => {
+      expect(await page.evaluate(() => navigator.maxTouchPoints)).toBe(0);
+      await toFirstStep(page);
+    });
   });
 });

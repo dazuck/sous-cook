@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 import { E2E_BASE_URL, E2E_LOCALE, E2E_TIMEZONE } from "./e2e/env";
 
 const skipBuild = process.env.E2E_SKIP_BUILD === "1";
@@ -76,6 +76,15 @@ const localConfig = defineConfig({
     serviceWorkers: "block",
     timezoneId: E2E_TIMEZONE,
     locale: E2E_LOCALE,
+    // What the browser says it is, the same on every machine: Playwright's
+    // desktop Chrome (it says Windows). The cook screen picks how it listens
+    // from this and the touch screen (src/lib/kitchen/voice-mode.ts), and
+    // Chromium on Linux with the projects' touch screen reads as the tablet
+    // asking for desktop sites, which listens only on a tap. Left to the
+    // machine, a Linux CI runner would test a different cook screen than a
+    // Mac. Specs that test the other identities set their own
+    // (e2e/voice-replies.spec.ts, VOICE-8 to VOICE-11).
+    userAgent: devices["Desktop Chrome"].userAgent,
     trace: "retain-on-failure",
   },
   projects: [
