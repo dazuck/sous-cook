@@ -1,9 +1,18 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import http from "node:http";
+import net, { type AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { assertLocalDatabase } from "./env";
-import { FORBIDDEN_ENV_FILES, findForbiddenEnvFiles } from "./serve";
+import {
+  FORBIDDEN_ENV_FILES,
+  chunkEndsWithNewline,
+  findForbiddenEnvFiles,
+  formatReadyLine,
+  isPortInUse,
+  probeLocalHttp,
+} from "./serve";
 
 describe("ENV-1: assertLocalDatabase", () => {
   it("accepts 127.0.0.1 and localhost database URLs", () => {
@@ -226,6 +235,113 @@ describe("ENV-3: environment overrides for ports and container name", () => {
       vi.stubEnv("E2E_PG_PORT", undefined);
       vi.stubEnv("E2E_PG_CONTAINER", bad);
       await expect(loadFreshEnv()).rejects.toThrow(/E2E_PG_CONTAINER/);
+    }
+  });
+});
+
+describe("ENV-4: isPortInUse", () => {
+  it("reports a listening server on 127.0.0.1 as in use and a closed port as free", async () => {
+    const server = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      expect(await isPortInUse("127.0.0.1", port)).toBe(true);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+
+    expect(await isPortInUse("127.0.0.1", port)).toBe(false);
+  });
+});
+
+describe("ENV-5: ready line newline handling", () => {
+  it("prepends a newline before the ready line when the last forwarded stdout chunk did not end with one", () => {
+    const anchoredPattern = /^sous-e2e-server-ready pid=\d+ port=4145$/m;
+
+    expect(chunkEndsWithNewline("Ready in 120ms\n")).toBe(true);
+    expect(chunkEndsWithNewline(Buffer.from("Ready in 120ms\n"))).toBe(true);
+    expect(chunkEndsWithNewline("partial output")).toBe(false);
+    expect(chunkEndsWithNewline(Buffer.from("partial output"))).toBe(false);
+
+    const midLineOutput =
+      "partial output" + formatReadyLine(12345, 4145, chunkEndsWithNewline("partial output"));
+    expect(midLineOutput).toBe(
+      "partial output\nsous-e2e-server-ready pid=12345 port=4145\n",
+    );
+    expect(anchoredPattern.test(midLineOutput)).toBe(true);
+
+    const afterNewlineOutput =
+      "Ready in 120ms\n" +
+      formatReadyLine(12345, 4145, chunkEndsWithNewline("Ready in 120ms\n"));
+    expect(afterNewlineOutput).toBe(
+      "Ready in 120ms\nsous-e2e-server-ready pid=12345 port=4145\n",
+    );
+    expect(anchoredPattern.test(afterNewlineOutput)).toBe(true);
+  });
+});
+
+describe("ENV-6: probeLocalHttp", () => {
+  it("uses connection close without keep-alive and succeeds on 200", async () => {
+    const connectionHeaders: Array<string | undefined> = [];
+    const server = http.createServer((req, res) => {
+      connectionHeaders.push(req.headers.connection);
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("ok");
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const ok = await probeLocalHttp("127.0.0.1", port, "/kitchen", 2_000);
+      expect(ok).toBe(true);
+      expect(connectionHeaders).toEqual(["close"]);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+  });
+
+  it("times out within the per-request budget when the server stalls", async () => {
+    const sockets = new Set<net.Socket>();
+    const server = http.createServer((_req, _res) => {
+      // Intentionally leave the response open until the client times out.
+    });
+    server.on("connection", (socket) => {
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const start = Date.now();
+      const ok = await probeLocalHttp("127.0.0.1", port, "/kitchen", 150);
+      const elapsed = Date.now() - start;
+      expect(ok).toBe(false);
+      expect(elapsed).toBeLessThan(1_500);
+      expect(await probeLocalHttp("127.0.0.1", port, "/kitchen", 0)).toBe(false);
+    } finally {
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
     }
   });
 });

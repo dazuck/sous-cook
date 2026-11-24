@@ -57,6 +57,7 @@ validate_container() {
 
 e2e_env_args=()
 app_port="4131"
+pg_container="rails-pg"
 if [ -n "${E2E_APP_PORT:-}" ]; then
   validate_port "E2E_APP_PORT" "${E2E_APP_PORT}"
   app_port="${E2E_APP_PORT}"
@@ -68,6 +69,7 @@ if [ -n "${E2E_PG_PORT:-}" ]; then
 fi
 if [ -n "${E2E_PG_CONTAINER:-}" ]; then
   validate_container "E2E_PG_CONTAINER" "${E2E_PG_CONTAINER}"
+  pg_container="${E2E_PG_CONTAINER}"
   e2e_env_args+=("E2E_PG_CONTAINER=${E2E_PG_CONTAINER}")
 fi
 
@@ -121,6 +123,31 @@ if ! check_port_free "${app_port}"; then
 fi
 
 tmp_base="${TMPDIR:-/tmp}"
+
+run_docker_clean() {
+  env -i PATH="${PATH}" HOME="${HOME}" TMPDIR="${tmp_base}" docker "$@"
+}
+
+owner_rand="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(8).toString("hex"))')"
+pg_owner="rcheck-${sha:0:12}-$$-${owner_rand}"
+
+check_pg_container_absent() {
+  if run_docker_clean container inspect "${pg_container}" >/dev/null 2>&1; then
+    printf 'FAILED: Docker container "%s" already exists; another run may be using it. Remove it with `pnpm --dir app e2e:db:down` (with the same E2E_* variables) if it is yours, or choose different E2E_PG_CONTAINER and E2E_PG_PORT values.\n' "${pg_container}" >&2
+    exit 1
+  fi
+}
+
+container_owned_by_run() {
+  local actual_owner=""
+  if ! actual_owner="$(run_docker_clean container inspect --format '{{ index .Config.Labels "sous.e2e.owner" }}' "${pg_container}" 2>/dev/null)"; then
+    return 1
+  fi
+  [ -n "${actual_owner}" ] && [ "${actual_owner}" = "${pg_owner}" ]
+}
+
+check_pg_container_absent
+
 tmp_dir="$(mktemp -d "${tmp_base%/}/sous-release-check.XXXXXX")"
 worktree_dir="${tmp_dir}/worktree"
 e2e_json="${tmp_dir}/e2e-report.json"
@@ -129,7 +156,7 @@ worktree_added=0
 db_started=0
 
 cleanup() {
-  if [ "${db_started}" -eq 1 ] && [ -d "${worktree_dir}/app" ]; then
+  if [ "${db_started}" -eq 1 ] && [ -d "${worktree_dir}/app" ] && container_owned_by_run; then
     env -i PATH="${PATH}" HOME="${HOME}" TMPDIR="${tmp_base}" \
       ${e2e_env_args[@]+"${e2e_env_args[@]}"} \
       pnpm --dir "${worktree_dir}/app" e2e:db:down >/dev/null 2>&1 || true
@@ -185,8 +212,9 @@ fi
 run_clean "app test:run" pnpm --dir app test:run
 run_clean "app build" "SOUS_RELEASE_COMMIT=${sha}" pnpm --dir app build
 
+check_pg_container_absent
 db_started=1
-run_clean "app e2e:db:up" pnpm --dir app e2e:db:up
+run_clean "app e2e:db:up" "E2E_PG_OWNER=${pg_owner}" pnpm --dir app e2e:db:up
 
 run_clean "app e2e" \
   "SOUS_RELEASE_COMMIT=${sha}" \
