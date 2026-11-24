@@ -127,7 +127,7 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | Cookpacks pack view: queueing Doughnuts I with stored plan and no `ensureCookPlan` request | `app/e2e/shelf.spec.ts` (SHELF-3) |
 | Cook mode: opening timetable with its Get out list, the prep page before the first cooking step, Next/Previous step, reload resume | `app/e2e/cook.spec.ts` (COOK-1) |
 | Cook mode: two small prep jobs as one page of tick rows, a tick kept across reload, Next leaving prep | `app/e2e/cook.spec.ts` (COOK-4) |
-| Cook mode: the bottom strip on a cooking step, a tap raising the peek on the step in hand, Put away lowering it | `app/e2e/cook.spec.ts` (COOK-5) |
+| Cook mode: the bottom strip on a cooking step, filled to the step in hand and moving on with Next, a tap raising the peek on the step in hand, the peek's arrow putting it away | `app/e2e/cook.spec.ts` (COOK-5) |
 | Cook mode: the whole meal drawn as lines on the opening and at the whole cook, the step in hand marked now, Esc back to the step | `app/e2e/cook.spec.ts` (COOK-6) |
 | Cook mode: starting a step timer and persistence across reload | `app/e2e/cook.spec.ts` (COOK-2) |
 | Cook mode: walking to end, armed Done cooking finish, home and Made recently update | `app/e2e/cook.spec.ts` (COOK-3) |

@@ -254,6 +254,24 @@ describe("peekRows on hand-made screens: the edges", () => {
   it("the table in under a minute still says a minute, never 0", () => {
     const rows = peekRows({ screens: [s("Serve", 0, 1, 0)], at: 0, frees: [], toTable: 0.2, asWritten: false });
     expect(read(rows).at(-1)).toBe("then on the table in about 5 min");
+    // At the cook's end, or past it, the same: never "Ready" in the middle of a sentence.
+    for (const toTable of [0, -1]) {
+      expect(read(peekRows({ screens: [s("Serve", 0, 1, 0)], at: 0, frees: [], toTable, asWritten: false })).at(-1)).toBe(
+        "then on the table in about 5 min",
+      );
+    }
+  });
+
+  it("a Prep screen with nothing on it shows no minutes, never a made-up minute", () => {
+    // As I go with all the mise in the steps: the Prep screen says there is nothing to do before
+    // you start, and the peek must not say "Prep · 1 min" over it.
+    const cookies = corpusPlan("chewy-oat-cookies");
+    const st = initialCookState("go");
+    const first = peekRows(peekOf(cookies, st, strip(cookies, st)))[0];
+    expect(first).toMatchObject({ kind: "step", key: "prep", now: true, minutes: null });
+    expect(read([first])).toEqual(["● Prep"]);
+    // A step of real minutes keeps them, however short.
+    expect(peekRows({ screens: [s("Stir", 0, 0.4, 0)], at: 0, frees: [], toTable: 1, asWritten: false })[0]).toMatchObject({ minutes: 1 });
   });
 });
 

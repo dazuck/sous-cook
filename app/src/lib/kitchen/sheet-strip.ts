@@ -25,6 +25,7 @@
 import { clamp, sstep, type Frame, type FrameState, type LayoutInput, type SheetLayout } from "./sheet-layout";
 import { PEEK_ARROW_Y, layoutPeek, type PeekDrawing } from "./peek-layout";
 import { GAP_MIN, WORK_MIN, linePartsOf, type LinePart } from "./strip-line";
+import type { Strip } from "./cook-strip";
 
 /** The line in the strip: its ends, its centre, its parts (px on screen). */
 export interface StripLineLayout {
@@ -177,4 +178,15 @@ export function keyLevel(key: string, k: Lvl): Lvl | null {
   if (key === "ArrowDown" && k > 0) return (k - 1) as Lvl;
   if (key === "Escape" && k > 0) return 0;
   return null;
+}
+
+/**
+ * The step in hand, as the sheet's hold reads it (`CookSheet`'s content key): its mark and the
+ * screen it stands on. Prep first's pages share one mark (`prep`), in hand on each page, so the
+ * screen is what tells them apart: a page turned at the peek or the whole cook lays the sheet out
+ * again, as a step does, and its time to the table and its fill move with it.
+ */
+export function inHandKey(s: Strip): string {
+  const m = s.marks.find((x) => x.state === "in-hand");
+  return m ? `${m.key}:${m.screen}` : "";
 }

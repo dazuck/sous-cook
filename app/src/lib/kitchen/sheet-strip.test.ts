@@ -7,7 +7,7 @@ import { advanceMeasure } from "./__tests__/advance-measure";
 import { timetableCorpus } from "./__tests__/timetable-corpus";
 import { buildLayout, frameAt, type LayoutInput, type Measure, type SheetGeo, type SheetLayout } from "./sheet-layout";
 import { peekOf } from "./cook-peek";
-import { PEEK_IN, PEEK_OUT, keyLevel, sheetArrowTargets, sheetArrows, stripTap } from "./sheet-strip";
+import { PEEK_IN, PEEK_OUT, inHandKey, keyLevel, sheetArrowTargets, sheetArrows, stripTap } from "./sheet-strip";
 import { SheetMotion, type Level, type MotionHost } from "./sheet-motion";
 
 const measure: Measure = (text, px, weight, family) => advanceMeasure(text, px, weight, family);
@@ -134,6 +134,21 @@ describe("a long step at the peek: the peek folds sooner rather than stand over 
       if (bottom > L.detents[1] - 22 * g.c + 0.5) expect(L.peek!.limit, `folded to the step in hand (${bottom} under ${L.detents[1]})`).toBe(0);
     });
   }
+});
+
+describe("the sheet's hold across Prep first's pages", () => {
+  it("tells each page in hand apart, so a page turned at the peek or the whole cook lays the sheet out again", () => {
+    // The roast's four prep pages share the one prep mark, in hand on each, while the line's end and
+    // the time to the table move page by page: a key on the mark alone held the first page's.
+    const pages = [0, 1, 2, 3].map((pos) => strip(roast, at(roast, pos), null, 0));
+    for (const s of pages) expect(s.marks.find((m) => m.state === "in-hand")?.key).toBe("prep");
+    const keys = pages.map(inHandKey);
+    expect(new Set(keys).size).toBe(4);
+    // The page's own key stands still while it is in hand, so a minute at the peek still lays nothing out.
+    expect(inHandKey(strip(roast, at(roast, 2), null, 0))).toBe(keys[2]);
+    // And on to the cooking steps, a step in hand is its own key, as before.
+    expect(inHandKey(strip(roast, at(roast, 5), null, 0))).not.toBe(inHandKey(strip(roast, at(roast, 6), null, 0)));
+  });
 });
 
 describe("the strip's fill and the peek's rows by depth", () => {

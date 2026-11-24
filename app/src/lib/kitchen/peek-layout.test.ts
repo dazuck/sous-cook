@@ -68,12 +68,19 @@ describe("layoutPeek on the Sunday roast, Coat potatoes (the approved drawing's 
   });
 
   for (const s of SCREENS) {
-    it(`at ${s.name}: four rows, each step on one line with its dish, the ruled row and the after row; nothing over its room`, () => {
+    it(`at ${s.name}: four rows, each step with its dish (on one line in landscape), the ruled row and the after row; nothing over its room`, () => {
       const g = geoOf(s.W, s.H);
       const d = layoutPeek(input, g, measure);
       expect(d.rows.map((r) => r.kind)).toEqual(["step", "step", "break", "after"]);
       const steps = d.rows.filter((r) => r.kind === "step");
       for (const r of steps) expect(r.kind === "step" && r.dish).toBeTruthy();
+      // Landscape keeps each step on one line; the narrow form (upright, a phone) wraps a label to
+      // three lines at most, with the dish in its own column (the header's two forms).
+      for (const r of steps) {
+        const lines = r.kind === "step" ? r.lines.length : 0;
+        if (g.narrow) expect(lines).toBeLessThanOrEqual(3);
+        else expect(lines).toBe(1);
+      }
       // Nothing is under the 22 cpx floor, anywhere.
       for (const px of [d.type.label, d.type.meta, d.type.ruled]) expect(px).toBeGreaterThanOrEqual(22 * g.c - 1e-6);
       checkFits(d, s.W, g.E);
@@ -128,17 +135,33 @@ describe("layoutPeek: the edges", () => {
   });
 
   it("on a phone a ruled row too long for one line drops its 'while' before it wraps", () => {
+    // Two steps fold into the ruled row's lead, so on a phone "2 more steps, then 55 min free while
+    // it roasts" is wider than its room: the tail goes, and the row stays on one line. The tablet,
+    // with the room for it, keeps the tail.
     const screens = [
-      { key: "a", label: "Coat", dish: null, start: 0, end: 2, pot: false, stretch: 0 },
-      { key: "b", label: "Roast chicken", dish: null, start: 2, end: 60, pot: true, stretch: 0 },
-      { key: "c", label: "Carve", dish: null, start: 60, end: 62, pot: false, stretch: 1 },
+      { key: "a", label: "Coat", dish: null, start: 0, end: 1, pot: false, stretch: 0 },
+      { key: "b", label: "Season", dish: null, start: 1, end: 2, pot: false, stretch: 0 },
+      { key: "c", label: "Tie", dish: null, start: 2, end: 3, pot: false, stretch: 0 },
+      { key: "d", label: "Oil", dish: null, start: 3, end: 4, pot: false, stretch: 0 },
+      { key: "e", label: "Roast chicken", dish: null, start: 4, end: 60, pot: true, stretch: 0 },
+      { key: "f", label: "Carve", dish: null, start: 60, end: 62, pot: false, stretch: 1 },
     ];
-    const input: PeekInput = { screens, at: 0, frees: [{ stretch: 0, from: 2, to: 60, minutes: 55 }], toTable: 62, asWritten: false };
-    const g = geoOf(390, 844);
-    const d = layoutPeek(input, g, measure);
-    const brk = d.rows.find((r) => r.kind === "break");
-    expect(brk).toBeDefined();
-    checkFits(d, 390, g.E);
+    const input: PeekInput = { screens, at: 0, frees: [{ stretch: 0, from: 5, to: 60, minutes: 55 }], toTable: 62, asWritten: false };
+    const ruled = (W: number, H: number) => {
+      const g = geoOf(W, H);
+      const d = layoutPeek(input, g, measure);
+      checkFits(d, W, g.E);
+      const brk = d.rows.find((r) => r.kind === "break");
+      if (brk?.kind !== "break") throw new Error("no ruled row");
+      return brk;
+    };
+    const phone = ruled(390, 844);
+    expect(phone.words.lead).toBe("2 more steps, then");
+    expect(phone.words.tail).toBeNull();
+    expect(phone.lines).toHaveLength(1);
+    const tablet = ruled(1280, 800);
+    expect(tablet.words.tail).toBe("while it roasts");
+    expect(tablet.lines).toHaveLength(1);
   });
 
   it("with no rows the peek is empty", () => {
@@ -149,5 +172,19 @@ describe("layoutPeek: the edges", () => {
   it("type sizes as cpx: 24 and 22 on the tablet's landscape, 30 and 26 upright and on a phone", () => {
     expect(PEEK_TYPE.wide).toMatchObject({ label: 24, meta: 22, ruled: 24 });
     expect(PEEK_TYPE.narrow).toMatchObject({ label: 30, meta: 26, ruled: 28 });
+    // And the layout draws them so, each way round.
+    const input: PeekInput = { screens: [screen("a", "Serve", 0)], at: 0, frees: [], toTable: 1, asWritten: false };
+    const sizes = [
+      [1280, 800, { label: 24, meta: 22, ruled: 24 }],
+      [800, 1280, { label: 30, meta: 26, ruled: 28 }],
+      [390, 844, { label: 30, meta: 26, ruled: 28 }],
+    ] as const;
+    for (const [W, H, cpx] of sizes) {
+      const g = geoOf(W, H);
+      const d = layoutPeek(input, g, measure);
+      expect(d.type.label / g.c).toBeCloseTo(cpx.label, 6);
+      expect(d.type.meta / g.c).toBeCloseTo(cpx.meta, 6);
+      expect(d.type.ruled / g.c).toBeCloseTo(cpx.ruled, 6);
+    }
   });
 });

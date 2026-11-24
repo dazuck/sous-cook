@@ -135,6 +135,14 @@ test.describe("Cook mode", () => {
     const strip = page.locator("[data-strip]");
     await expect(strip).toBeVisible();
     expect(await strip.locator("[data-strip-seg]").count()).toBeGreaterThan(0);
+    // Filled to the end of the step in hand: some of the line already, not all of it.
+    const fill = async () =>
+      strip.locator("[data-strip-seg] > span").evaluateAll((els) =>
+        els.reduce((a, el) => a + Number(/scaleX\(([\d.]+)\)/.exec((el as HTMLElement).style.transform)?.[1] ?? 0), 0),
+      );
+    await expect.poll(fill).toBeGreaterThan(0);
+    const filledAtFirstStep = await fill();
+    expect(filledAtFirstStep).toBeLessThan(await strip.locator("[data-strip-seg]").count());
     const sheet = page.locator("[data-cook-sheet]");
     await expect(sheet).toHaveAttribute("data-level", "0");
     await expect(strip).toHaveAttribute("aria-expanded", "false");
@@ -143,6 +151,8 @@ test.describe("Cook mode", () => {
     // then the steps up to the next break (cook-peek.ts; PeekRows.tsx)
     await strip.click();
     await expect(sheet).toHaveAttribute("data-level", "1");
+    // Settled at the peek, where its arrows take taps (they ignore one made mid-glide).
+    await expect(sheet).toHaveAttribute("data-settled", "1");
     await expect(strip).toHaveAttribute("aria-expanded", "true");
     const peek = page.locator("[data-peek]");
     await expect(peek).toBeVisible();
@@ -151,11 +161,17 @@ test.describe("Cook mode", () => {
     await expect(inHand).toHaveAttribute("data-peek-key", stepKey!);
     expect(await peek.locator("[data-peek-row]").count()).toBeGreaterThan(1);
 
-    // Put away lowers it again; the step in hand has not moved
-    await page.getByRole("button", { name: "Put away" }).first().click();
+    // The ⌄ arrow on the peek's edge puts it away (the strip, also named Put away
+    // at the peek, is not the button tapped here); the step in hand has not moved
+    await page.locator('[data-sheet-arrow="collapse"]').click();
     await expect(sheet).toHaveAttribute("data-level", "0");
     await expect(peek).toBeHidden();
     await expect(liveNowLine(page)).toHaveAttribute("data-line", stepKey!);
+
+    // On to the next step, the fill moves on with it
+    await page.getByRole("button", { name: "Next step" }).click();
+    await expect(liveNowLine(page)).not.toHaveAttribute("data-line", stepKey!);
+    await expect.poll(fill).toBeGreaterThan(filledAtFirstStep);
   });
 
   test("COOK-6: the opening and the whole cook draw the meal as lines with its stops, and at the whole cook the step in hand is the stop marked now", async ({

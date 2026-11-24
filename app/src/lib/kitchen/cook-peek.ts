@@ -121,7 +121,8 @@ export function peekRows(input: PeekInput, limit = PEEK_MAX_NEXT): PeekRow[] {
       key: s.key,
       label: s.label,
       dish: s.dish,
-      minutes: asWritten || counted(s) ? null : Math.max(1, Math.round(s.end - s.start)),
+      // A screen with no minutes at all (As I go's Prep with nothing before the start) shows none.
+      minutes: asWritten || counted(s) || s.end <= s.start ? null : Math.max(1, Math.round(s.end - s.start)),
       pot: s.pot,
       now,
     };

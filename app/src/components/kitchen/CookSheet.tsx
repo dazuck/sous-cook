@@ -37,7 +37,7 @@ import { hitOutline, readStepDetails, type Nudge } from "@/lib/kitchen/cook-leve
 import { cardUnder } from "./card-under";
 import { prepWords, timedKey, timedStrip, type PotTimer } from "@/lib/kitchen/cook-overview";
 import { peekOf } from "@/lib/kitchen/cook-peek";
-import { keyLevel, sheetArrowTargets, stripTap } from "@/lib/kitchen/sheet-strip";
+import { inHandKey, keyLevel, sheetArrowTargets, stripTap } from "@/lib/kitchen/sheet-strip";
 import type { PrepMode } from "@/lib/kitchen/cook-plan";
 import type { GetOutItem } from "@/lib/kitchen/timetable-layout";
 import { buildTimetable } from "@/lib/kitchen/timetable-model";
@@ -528,7 +528,6 @@ export function CookSheet(props: CookSheetProps) {
   // the clock without a layout. At rest at Now (the line alone) the sheet is
   // laid out on the minute, so a pull from there draws the strip as it is
   // (T3 fix round).
-  const inHandKey = strip.marks.find((m) => m.state === "in-hand")?.key ?? "";
   const timersKey = pots
     ? [...pots.timers.entries()]
         .map(([id, t]) => `${id}:${t.endsAtEpochMs}`)
@@ -536,7 +535,7 @@ export function CookSheet(props: CookSheetProps) {
         .join(",")
     : "";
   const marksKey = strip.marks.map((m) => m.key).join(",");
-  const contentKey = `${strip.mode}|${inHandKey}|${timersKey}|${strip.asWritten}|${marksKey}`;
+  const contentKey = `${strip.mode}|${inHandKey(strip)}|${timersKey}|${strip.asWritten}|${marksKey}`;
   const atNow = level === 0 && settled === 0 && !moving;
   const holdKey = !opening && !atNow ? `${cap}|${contentKey}` : null;
   // The pots' timers decide their ends and their done (N3): drawn so when laid out, and live for the steps' states.
