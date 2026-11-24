@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, type ChangeEvent } from "react";
 import { Button } from "@/components/ui";
 import { BACK_TO_KITCHEN, BorrowedScreen } from "./BorrowedScreen";
 import { EDGE_X } from "./cook-edge";
+import { allowanceSentence } from "@/lib/kitchen/allowance";
 import {
   isServesEstimateFailure,
   isUnreadableRecipe,
@@ -470,11 +471,12 @@ export function RecipeImportModal({
     } catch (err) {
       console.error("Add to queue error:", err);
       setError(
-        isUnreadableRecipe(err)
-          ? QUEUE_REFUSAL_COPY.notAdded
-          : isServesEstimateFailure(err)
-            ? QUEUE_REFUSAL_COPY.servesNotEstimated
-            : QUEUE_REFUSAL_COPY.addFailed,
+        allowanceSentence(err) ??
+          (isUnreadableRecipe(err)
+            ? QUEUE_REFUSAL_COPY.notAdded
+            : isServesEstimateFailure(err)
+              ? QUEUE_REFUSAL_COPY.servesNotEstimated
+              : QUEUE_REFUSAL_COPY.addFailed),
       );
       setAdding(false);
       return;

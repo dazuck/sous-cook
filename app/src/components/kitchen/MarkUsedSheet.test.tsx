@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { allowanceError } from "@/lib/kitchen/__tests__/allowance-error";
 import { MarkUsedSheet } from "./MarkUsedSheet";
 
 const mockApplyMutateAsync = vi.fn();
@@ -19,6 +20,7 @@ let queryResult: {
   };
   isLoading: boolean;
   isError: boolean;
+  error?: unknown;
 };
 
 vi.mock("@/lib/trpc", () => ({
@@ -287,5 +289,57 @@ describe("MarkUsedSheet", () => {
       });
       expect(onFinish).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("shows the allowance sentence and a Finish button that runs onFinish once when reconciliation hits the AI cap", () => {
+    const capError = allowanceError("kitchen", new Date("2026-12-01T00:00:00.000Z"));
+    queryResult = {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: capError,
+    };
+    const onFinish = vi.fn();
+
+    render(
+      <MarkUsedSheet
+        queueId="q-1"
+        recipeName="Tomato Soup"
+        isOpen={true}
+        onFinish={onFinish}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(capError.message)).toBeTruthy();
+    const finishButton = screen.getByRole("button", { name: "Finish" });
+    expect(onFinish).not.toHaveBeenCalled();
+
+    fireEvent.click(finishButton);
+    fireEvent.click(finishButton);
+    expect(onFinish).toHaveBeenCalledTimes(1);
+  });
+
+  it("bypasses and draws nothing when reconciliation fails with an ordinary error", () => {
+    queryResult = {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("Pantry unavailable"),
+    };
+    const onFinish = vi.fn();
+
+    render(
+      <MarkUsedSheet
+        queueId="q-1"
+        recipeName="Tomato Soup"
+        isOpen={true}
+        onFinish={onFinish}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(onFinish).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

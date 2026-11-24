@@ -22,7 +22,6 @@ import {
 } from "@/components/kitchen";
 import { SavedForLater } from "@/components/cookpacks/SavedForLater";
 import { trpc } from "@/lib/trpc";
-import { DEFAULT_COOK } from "@/lib/cook-id";
 import { connected } from "@/lib/hooks/connected";
 import type { ImportedRecipe } from "@/lib/recipe-import";
 import { dishName } from "@/lib/kitchen/dish-name";
@@ -74,7 +73,7 @@ function KitchenPageContent() {
   // Fetch kitchen queue for current user, poll every 10 seconds
   const { data: queueItems, refetch: refetchQueue, status: queueStatus } =
     trpc.getKitchenQueue.useQuery(
-      { userId: DEFAULT_COOK },
+      {},
       {
         refetchInterval: 10000, // Poll every 10s
       },
@@ -83,7 +82,7 @@ function KitchenPageContent() {
   // Fetch items currently being cooked (for resume functionality)
   const { data: cookingItems, refetch: refetchCooking, status: cookingStatus } =
     trpc.getRecentCookingItems.useQuery(
-      { userId: DEFAULT_COOK, limit: 3 },
+      { limit: 3 },
       {
         refetchInterval: 10000, // Poll every 10s
       },
@@ -91,7 +90,6 @@ function KitchenPageContent() {
 
   // Recently completed queue items (Made recently, for re-cooking)
   const { data: completedItems, status: completedStatus } = trpc.getKitchenQueue.useQuery({
-    userId: DEFAULT_COOK,
     status: "completed",
   });
 
@@ -104,7 +102,7 @@ function KitchenPageContent() {
   // "How was it?" (T2): today's latest finished cook, until it's answered,
   // put off or the day ends. How often it is read: `askPollInterval`.
   const { data: cookAsk, refetch: refetchAsk, status: askStatus } = trpc.getCookAsk.useQuery(
-    { userId: DEFAULT_COOK },
+    {},
     { refetchInterval: askPollInterval },
   );
   // Not now hides the line at once; a dismiss the server refused brings it back.
@@ -180,7 +178,6 @@ function KitchenPageContent() {
     // Add to kitchen queue
     await addToQueue.mutateAsync({
       recipeData: recipe,
-      targetUser: DEFAULT_COOK,
     });
   };
 
@@ -195,7 +192,7 @@ function KitchenPageContent() {
     const id =
       queuedImport.current?.recipe === recipe
         ? queuedImport.current.id
-        : (await addToQueue.mutateAsync({ recipeData: recipe, targetUser: DEFAULT_COOK })).id;
+        : (await addToQueue.mutateAsync({ recipeData: recipe })).id;
     queuedImport.current = { recipe, id };
     await updateQueueStatus.mutateAsync({ queueId: id, status: "cooking" });
     queuedImport.current = null;
