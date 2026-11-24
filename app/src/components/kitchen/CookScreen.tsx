@@ -1024,6 +1024,7 @@ export function CookScreen({
     echo: voiceEcho,
     reset: resetVoice,
     talk,
+    end: endListen,
   } = useKitchenVoiceCommands({
     enabled: voiceOn,
     // Held while an answer is said, so it isn't heard as a command (D13).
@@ -1091,12 +1092,17 @@ export function CookScreen({
     const was = askWasOpen.current;
     askWasOpen.current = isClaudeExpanded;
     if (!was || isClaudeExpanded) return;
+    // Every listen on a tap is Ask's: closed by the cook (Close, Esc, the
+    // look-ahead, back to the opening) while it still listens, the listen
+    // ends with it, so nothing said afterwards runs a command or asks again.
+    // A listen already over (one that closed Ask itself) is left as it is.
+    endListen();
     const at = document.activeElement;
     if (at !== null && at !== document.body) return;
     // On the opening there is no capsule: its own mic opened Ask.
     if (opening) openingMicRef.current?.focus();
     else capsuleRef.current?.focus(askEntry.way);
-  }, [isClaudeExpanded, askEntry.way, opening]);
+  }, [isClaudeExpanded, askEntry.way, opening, endListen]);
 
   useLayoutEffect(() => {
     askAfterTap.current = (heard: string) => {

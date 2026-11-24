@@ -415,6 +415,31 @@ describe("useKitchenVoiceCommands on Android: one listen per tap", () => {
     expect(questions).toHaveLength(1);
   });
 
+  it("ends a listen under way when told to, and drops what it hears as it stops; never starts one", () => {
+    const questions: string[] = [];
+    const { result, rec } = listen({ onQuestion: (q) => questions.push(q) });
+    // Nothing under way: ending starts nothing.
+    act(() => result.current.end());
+    expect(rec.starts).toBe(0);
+    expect(result.current.status).toBe("ready");
+    talk(result);
+    expect(result.current.status).toBe("hearing");
+    act(() => result.current.end());
+    expect(result.current.status).toBe("ready");
+    expect(rec.running).toBe(false);
+    // What Chrome hands over as it stops counts for nothing.
+    say(rec, "Sue, can I use butter instead?");
+    wait(QUIET_MS);
+    expect(questions).toEqual([]);
+    expect(commands).toEqual([]);
+    // Ending twice is still nothing, and the next tap listens afresh.
+    act(() => result.current.end());
+    expect(rec.starts).toBe(1);
+    talk(result);
+    expect(rec.starts).toBe(2);
+    expect(result.current.status).toBe("hearing");
+  });
+
   it("asks nothing when a tap hears a word too few to ask about", () => {
     const questions: string[] = [];
     const { result, rec } = listen({ onQuestion: (q) => questions.push(q) });

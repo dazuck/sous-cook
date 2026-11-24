@@ -1733,17 +1733,28 @@ describe("CookFlow: timers", () => {
 
 describe("CookFlow: the walk-away line on the step's meta (look-ahead slice 1, DS v1.62)", () => {
   it("says 'After this step: about 50 min free.' under the step's minutes, at the meta's size in ink-soft, and goes with the meta as the sheet rises", () => {
-    flow(SECOND, { away: COOK_COPY.stepAwayMeta(50) });
-    const meta = document.querySelector<HTMLElement>('[data-role="now"] [data-meta]')!;
+    // A cooking step that has both its minutes and its amounts, so the order below is checked, never skipped.
+    const metaNow = () => document.querySelector<HTMLElement>('[data-role="now"] [data-meta]');
+    let state = initialCookState("first");
+    for (let i = 0; i < 40; i++) {
+      cleanup();
+      flow(cookView(ZUCCHINI_PLAN, { kind: "derived" }, state), { away: COOK_COPY.stepAwayMeta(50) });
+      const m = metaNow();
+      if (m?.querySelector("[data-time]") && m.querySelector("[data-pairs]")) break;
+      state = next(ZUCCHINI_PLAN, state);
+    }
+    const meta = metaNow()!;
     const away = meta.querySelector<HTMLElement>("[data-step-away]")!;
     expect(away.textContent).toBe("After this step: about 50 min free.");
     expect(away.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-[length:var(--type-meta)]", "text-ink-soft"]));
     expect(away.style.opacity).toBe("var(--look-meta, 1)");
     // Under the minutes, before the step's amounts.
     const time = meta.querySelector("[data-time]");
-    if (time) expect(time.compareDocumentPosition(away) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const pairs = meta.querySelector("[data-pairs]");
-    if (pairs) expect(away.compareDocumentPosition(pairs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(time, "a step with minutes").not.toBeNull();
+    expect(pairs, "a step with amounts").not.toBeNull();
+    expect(time!.compareDocumentPosition(away) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(away.compareDocumentPosition(pairs!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("is absent where it doesn't apply", () => {

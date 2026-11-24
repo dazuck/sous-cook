@@ -139,6 +139,12 @@ export interface UseKitchenVoiceCommandsReturn {
   reset: () => void;
   /** Where voice listens on a tap: listen once, or end the listen under way. */
   talk: () => void;
+  /**
+   * Where voice listens on a tap: end the listen under way, and drop what it
+   * hears as it stops; with none under way, nothing (it never starts one).
+   * For a screen the listen was for closing under it, as Ask does.
+   */
+  end: () => void;
 }
 
 /**
@@ -533,6 +539,12 @@ export function useKitchenVoiceCommands({
     startListening();
   }, [isSupported, startListening, stopListening]);
 
+  const end = useCallback(() => {
+    if (!live.current.tap || !tapped.current.taking) return;
+    tapActs.current.closeListen("cancelled");
+    stopListening();
+  }, [stopListening]);
+
   useEffect(() => {
     if (want) {
       begin();
@@ -580,5 +592,5 @@ export function useKitchenVoiceCommands({
   else status = "listening";
 
   const shown = tap ? !held : want;
-  return { mode, status, echo: shown ? echo : null, reset, talk };
+  return { mode, status, echo: shown ? echo : null, reset, talk, end };
 }

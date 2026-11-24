@@ -1034,6 +1034,25 @@ describe("Ask on the cook screen: the side panel and the sheet", () => {
     expect(screen.getByRole("button", { name: "Talk to Sous" })).toBeTruthy();
   });
 
+  it("keeps the mic beside Send while it listens or is refused, so a kept draft never strands a listen", () => {
+    const onTap = vi.fn();
+    const { container, rerender, props } = panel({ voice: tapVoice("ready", null, onTap) });
+    const row = container.querySelector("[data-ask-input]")!;
+    fireEvent.change(screen.getByRole("textbox", { name: ASK_COPY.field }), { target: { value: "How hot" } });
+    expect([...row.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual(["Send"]);
+    // Opened by the capsule's mic with that draft still in the field: the mic stays, to stop the listen.
+    rerender(<AskSous {...props} voice={tapVoice("hearing", null, onTap)} />);
+    expect([...row.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Send",
+      "Stop listening",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Stop listening" }));
+    expect(onTap).toHaveBeenCalledOnce();
+    // A refused mic keeps its button too, to be tapped again.
+    rerender(<AskSous {...props} voice={tapVoice("blocked", null, onTap)} />);
+    expect(row.querySelector("[data-voice]")!.getAttribute("data-voice")).toBe("blocked");
+  });
+
   it("has no camera where there is none, and no mic where the browser cannot listen", () => {
     const { container } = panel({ voice: tapVoice("unsupported") });
     expect(container.querySelector("[data-ask-input]")!.querySelectorAll("button")).toHaveLength(0);

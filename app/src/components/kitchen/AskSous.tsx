@@ -884,7 +884,10 @@ export function AskSous({
               <CameraMark />
             </button>
           )}
-          {!hasText && speaks && (
+          {/* Words to send give the mic's place to Send, but not while the mic listens or is
+              refused: a draft kept from before must never leave a listen with no way to stop
+              it, or a refused mic with nothing to tap again. */}
+          {speaks && (!hasText || voice.status === "hearing" || voice.status === "blocked") && (
             <button
               ref={micRef}
               type="button"
