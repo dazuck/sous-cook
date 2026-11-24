@@ -8,11 +8,10 @@
  *   (`footTop`): no band is kept over it, so the step has that room back.
  * - **The peek (1):** a drawer of the next steps (`peek-layout.ts`), its edge
  *   the drawer's own height over the strip.
- * - **The whole cook (2):** as before (a derived plan's timetable, as
- *   written's outline). The strip's line is the only progress line on screen:
- *   the timetable's last track is not drawn (the sheet hides it), and the
- *   strip's fill glides from the end of the step in hand to the clock's
- *   minute on the way there (v1.54's rule, kept).
+ * - **The whole cook (2):** a derived plan's meal drawn as lines (v1.63), as
+ *   written's outline. The strip's line is the only progress line on screen,
+ *   and its fill stands at the end of the step in hand here too (v1.63 retired
+ *   v1.54's glide to the clock's minute: the lines have no clock axis).
  *
  * As written joins the same strip and peek (call 1, pending review):
  * its band's bars and its level-1 names are retired; its outline at level 2
