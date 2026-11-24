@@ -1,6 +1,6 @@
 # Browser tests
 
-The browser test suite drives a production build of Sous in Chromium through Playwright. It checks end-to-end behaviour across the kitchen home screen, queue screen, Cookpacks shelf and pack view, cook mode, and single-kitchen mode without model keys. Every spec runs in two tablet projects: `landscape` (1280x800) and `portrait` (800x1280), both with touch enabled and a device scale factor of 1.
+The browser test suite drives a production build of Sous in Chromium through Playwright. It checks end-to-end behaviour across the kitchen home screen, queue screen, Cookpacks shelf and pack view, cook mode, and single-kitchen mode without model keys. Every spec runs in two tablet projects: `landscape` (1280x800) and `portrait` (800x1280), both with touch enabled and a device scale factor of 1. In both, the browser says it is Playwright's desktop Chrome (`userAgent` in `app/playwright.config.ts`) on whatever machine runs the suite: the cook screen picks how it listens from that and the touch screen, and Chromium on Linux with a touch screen reads as the tablet asking for desktop sites, which listens only on a tap.
 
 ## Prerequisites
 
@@ -184,6 +184,7 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | Cook mode: Sue's replies in More (Sounds until chosen, Sounds and voice offered and fetching every clip, the choice kept across a reload) | `app/e2e/voice-replies.spec.ts` (VOICE-1) |
 | Cook mode: every recorded clip answered as audio and decoded in Chromium at its measured length | `app/e2e/voice-replies.spec.ts` (VOICE-2) |
 | Cook mode: voice commands heard through a recognizer the spec talks to: the understood and not-understood sounds, none for touch or for talk not meant for Sue, Off silent, a flag confirmed by its clip (three at most), a timer read back from its clip, and a tap starting each listen on Android | `app/e2e/voice-replies.spec.ts` (VOICE-3 to VOICE-8) |
+| Cook mode: how it listens by what the browser says it is: every spec's browser is Playwright's desktop Chrome on any machine; Linux with a touch screen listens only once the dot is tapped; Linux without one listens all the time | `app/e2e/voice-replies.spec.ts` (VOICE-9 to VOICE-11) |
 | No model key: as-written cook with pending then failed prep plan note | `app/e2e/no-key.spec.ts` (NOKEY-1) |
 | No model key: settled plan error keeps as-written view and error unchanged | `app/e2e/no-key.spec.ts` (NOKEY-2) |
 | No model key: paste import surfaces missing-key error without adding a row | `app/e2e/no-key.spec.ts` (NOKEY-3) |
