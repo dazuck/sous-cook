@@ -60,10 +60,14 @@ import {
   recipeFingerprint,
   reduceSession,
   saveSession,
+  sessionKey,
+  SESSION_VERSION,
   startSession,
   type CookSession,
   type CookSnapshot,
 } from "./cook-session";
+import { prepPages } from "./cook-view";
+import { consumeCorruptionNotices } from "@/lib/persist/safe-storage";
 import type { CookReport } from "./report-capture";
 import { isSignedOut, resetSignedOutForTests } from "./signed-out";
 
@@ -814,6 +818,96 @@ describe("AUTHERR-3: a cook page with a saved session stays open and marks signe
 
     expect(replaced).toEqual(["/sign-in"]);
     expect(isSignedOut()).toBe(false);
+  });
+});
+
+describe("AUTHERR-5: the saved cook sign-in looks for is found at either stored version", () => {
+  /** A refusal from the real route, as a cook page meets one when the session has ended. */
+  async function refusal(): Promise<unknown> {
+    const err = await catchRejection(createRouteTrpcClient().getKitchenQueue.query({}));
+    expect(authErrorKind(err)).toBe("sign-in");
+    return err;
+  }
+
+  /** q1's saved place as the tablet keeps it: its stored envelope, read raw. */
+  function storedQ1(): { version: number; state: { session: { state: { pos: number } } } } | null {
+    const raw = window.localStorage.getItem(sessionKey("q1"));
+    return raw === null ? null : JSON.parse(raw);
+  }
+
+  /** Rewrites q1's saved place as the release before prep pages wrote it (version 1). */
+  function asVersion1(plan: typeof ZUCCHINI_PLAN, place: { mode: "first" | "go"; pos: number; ticked: string[] }): void {
+    const raw = JSON.parse(window.localStorage.getItem(sessionKey("q1"))!);
+    raw.version = 1;
+    raw.state.session.plan = plan;
+    raw.state.session.state = { ...raw.state.session.state, ...place, passed: [], kept: [] };
+    window.localStorage.setItem(sessionKey("q1"), JSON.stringify(raw));
+  }
+
+  async function savedQ1(): Promise<void> {
+    await setWindowUrl(`${TEST_AUTH_ENV.BETTER_AUTH_URL}/kitchen/queue/q1`);
+    const { fingerprint, session, snapshot } = createSavedCookFixtures();
+    expect(saveSession("q1", fingerprint, session, snapshot, 1_700_000_000_000)).toBe(true);
+  }
+
+  function navigationLog() {
+    const replaced: string[] = [];
+    return { replaced, navigation: { replace: (url: string) => void replaced.push(url) } };
+  }
+
+  it("a place saved at today's version: the cook page stays open and the place is left as it was", async () => {
+    await savedQ1();
+    const before = window.localStorage.getItem(sessionKey("q1"));
+    expect(storedQ1()?.version).toBe(SESSION_VERSION);
+    const err = await refusal();
+    const { replaced, navigation } = navigationLog();
+
+    handleAuthError(err, { navigation });
+
+    expect(replaced).toEqual([]);
+    expect(isSignedOut()).toBe(true);
+    expect(window.localStorage.getItem(sessionKey("q1"))).toBe(before);
+  });
+
+  it("a place saved at version 1 is renumbered on the way in and found: the cook page stays open on its prep page", async () => {
+    await savedQ1();
+    // Saved on the old Prep screen with the first page's jobs all ticked: today that is the second prep page.
+    const [firstPage, secondPage] = prepPages(ZUCCHINI_PLAN, "first");
+    expect(secondPage).toBeDefined();
+    asVersion1(ZUCCHINI_PLAN, { mode: "first", pos: 0, ticked: firstPage!.tasks.map((t) => t.id) });
+    const err = await refusal();
+    const { replaced, navigation } = navigationLog();
+
+    handleAuthError(err, { navigation });
+
+    expect(replaced).toEqual([]);
+    expect(isSignedOut()).toBe(true);
+    const stored = storedQ1();
+    expect(stored?.version).toBe(SESSION_VERSION);
+    expect(stored?.state.session.state.pos).toBe(1);
+  });
+
+  it("a place saved at version 1 whose plan can't be walked is cleared: with no saved cook, the page goes to sign in", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await savedQ1();
+    const [first, second] = ZUCCHINI_PLAN.tasks;
+    const cyclic = {
+      ...ZUCCHINI_PLAN,
+      tasks: ZUCCHINI_PLAN.tasks.map((t) =>
+        t.id === first!.id ? { ...t, needs: [second!.id] } : t.id === second!.id ? { ...t, needs: [first!.id] } : t,
+      ),
+    };
+    asVersion1(cyclic, { mode: "first", pos: 0, ticked: [] });
+    const err = await refusal();
+    const { replaced, navigation } = navigationLog();
+
+    expect(() => handleAuthError(err, { navigation })).not.toThrow();
+
+    expect(replaced).toEqual(["/sign-in"]);
+    expect(isSignedOut()).toBe(false);
+    expect(storedQ1()).toBeNull();
+    expect(consumeCorruptionNotices()).toHaveLength(1);
+    expect(warn).toHaveBeenCalled();
   });
 });
 
