@@ -380,14 +380,14 @@ describe("through the router: the same path as Done", () => {
       const after = await item(id);
       expect([after.status, after.finishedBy, after.cookLog, after.cookLogError]).toEqual(["completed", "auto", null, null]);
     }
-    expect(await router.getCookAsk({ userId: "cook" })).toBeNull();
+    expect(await router.getCookAsk({})).toBeNull();
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("the kitchen's ask is a read: it finishes nothing, however long a cook sat", async () => {
     const id = await cooking({ lastScreenActiveAt: ago(50) });
 
-    expect(await router.getCookAsk({ userId: "cook" })).toBeNull();
+    expect(await router.getCookAsk({})).toBeNull();
     expect((await item(id)).status).toBe("cooking");
     expect(mockFetch).not.toHaveBeenCalled();
   });

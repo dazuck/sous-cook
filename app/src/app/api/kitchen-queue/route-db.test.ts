@@ -111,7 +111,7 @@ describe("POST /api/kitchen-queue, through the database", () => {
     expect(res.status).toBe(200);
     const { queueIds } = (await res.json()) as { queueIds: string[] };
     expect(queueIds).toHaveLength(1);
-    expect((await caller.getKitchenQueue({ userId: "cook" })).map((row) => row.id)).toEqual(queueIds);
+    expect((await caller.getKitchenQueue({})).map((row) => row.id)).toEqual(queueIds);
     // Nothing runs before the response: the row waits for intake.
     expect(mockChat).not.toHaveBeenCalled();
     for (const id of queueIds) {

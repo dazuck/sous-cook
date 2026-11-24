@@ -16,7 +16,6 @@ import {
   type QueueStatus,
   type KitchenQueueInput,
 } from "./kitchen-queue";
-import { DEFAULT_COOK, isValidUserId } from "./cook-id";
 
 const KITCHEN_ID = "00000000-0000-4000-8000-000000000001";
 
@@ -59,30 +58,6 @@ function resetMocks() {
 // =============================================================================
 
 describe("Type Guards", () => {
-  describe("isValidUserId", () => {
-    it("returns true for the default cook", () => {
-      expect(isValidUserId(DEFAULT_COOK)).toBe(true);
-      expect(DEFAULT_COOK).toBe("cook");
-    });
-
-    it("returns true for any slug: lowercase letters, digits, single hyphens", () => {
-      expect(isValidUserId("cook-2")).toBe(true);
-      expect(isValidUserId("sam")).toBe(true);
-      expect(isValidUserId("a".repeat(40))).toBe(true);
-    });
-
-    it("returns false for anything that isn't a slug", () => {
-      expect(isValidUserId("")).toBe(false);
-      expect(isValidUserId("COOK")).toBe(false);
-      expect(isValidUserId("the cook")).toBe(false);
-      expect(isValidUserId("-cook")).toBe(false);
-      expect(isValidUserId("cook-")).toBe(false);
-      expect(isValidUserId("cook--2")).toBe(false);
-      expect(isValidUserId("cook_2")).toBe(false);
-      expect(isValidUserId("a".repeat(41))).toBe(false);
-    });
-  });
-
   describe("isValidQueueStatus", () => {
     it("returns true for valid statuses", () => {
       expect(isValidQueueStatus("pending")).toBe(true);

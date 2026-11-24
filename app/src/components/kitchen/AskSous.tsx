@@ -19,6 +19,7 @@ import {
   ChatLoadingIndicator,
   ChatQuickReplies,
 } from "@/components/ui";
+import { allowanceSentence } from "@/lib/kitchen/allowance";
 import { isAnswerCutOff } from "@/lib/kitchen/ask-failure";
 import { recordAsk } from "@/lib/kitchen/report-events";
 import { speak } from "@/lib/kitchen/speak";
@@ -522,17 +523,24 @@ export function AskSous({
         }
       }
     } catch (error) {
-      // A reply cut at the token cap says so, in the line and in a flag's
-      // lead-up; anything else is the connection line (feedback review
-      // 2026-10-27).
-      const cutOff = isAnswerCutOff(error);
-      recordAsk(cutOff ? "error: cut at the token cap" : "error");
+      // An AI allowance refusal shows the server's sentence; a reply cut at
+      // the token cap says so, in the line and in a flag's lead-up; anything
+      // else is the connection line (feedback review 2026-10-27).
+      const allowance = allowanceSentence(error);
+      const cutOff = allowance === null && isAnswerCutOff(error);
+      recordAsk(
+        allowance !== null
+          ? "error: allowance used"
+          : cutOff
+            ? "error: cut at the token cap"
+            : "error",
+      );
       // Append error reply only to UI state without mutating history.current (B2a-6)
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: cutOff ? ASK_COPY.cutOff : ASK_COPY.error,
+          content: allowance ?? (cutOff ? ASK_COPY.cutOff : ASK_COPY.error),
         },
       ]);
       console.error("Chat error:", error);

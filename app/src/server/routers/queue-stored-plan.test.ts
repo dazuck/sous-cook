@@ -93,7 +93,7 @@ async function libraryRow(plan: Partial<typeof docRecipes.$inferInsert> = {}) {
   });
 }
 
-const queue = () => caller.queueFromPack({ packId: "household-book", recipeId: "zucchini-wraps", targetUser: "cook" });
+const queue = () => caller.queueFromPack({ packId: "household-book", recipeId: "zucchini-wraps" });
 
 async function queued(id: string) {
   const [row] = await db.select().from(kitchenQueue).where(eq(kitchenQueue.id, id));
@@ -221,7 +221,7 @@ describe("queueFromPack: a pack file's committed plan", () => {
     };
     writeFileSync(planFile, serializePackPlanFile(file));
   }
-  const queuePack = () => caller.queueFromPack({ packId: pack.id, recipeId: recipe.recipeId, targetUser: "cook" });
+  const queuePack = () => caller.queueFromPack({ packId: pack.id, recipeId: recipe.recipeId });
 
   beforeAll(() => mkdirSync(plansDir, { recursive: true }));
   afterEach(() => rmSync(planFile, { force: true }));

@@ -209,7 +209,6 @@ describe("queueFromPack: a pack file", () => {
     const result = await caller.queueFromPack({
       packId: "fannie-farmer-1896",
       recipeId: "thin-white-sauce",
-      targetUser: "cook",
     });
     expect(result).toEqual({ id: QUEUE_ID });
     const [queuedKitchenId, queued] = vi.mocked(addToKitchenQueue).mock.calls[0]!;
@@ -260,7 +259,7 @@ describe("queueFromPack: a pack file", () => {
       );
       shelfAt.packsDir = dir;
       shelfAt.sources = [{ id: "odd", source: { type: "pack-file", path: "odd.json" } }];
-      await expect(caller.queueFromPack({ packId: "odd", recipeId: "thyme", targetUser: "cook" })).rejects.toMatchObject({
+      await expect(caller.queueFromPack({ packId: "odd", recipeId: "thyme" })).rejects.toMatchObject({
         code: "UNPROCESSABLE_CONTENT",
       });
       expect(addToKitchenQueue).not.toHaveBeenCalled();
@@ -272,9 +271,9 @@ describe("queueFromPack: a pack file", () => {
 
   it("knows no recipe of an unknown pack or id", async () => {
     await expect(
-      caller.queueFromPack({ packId: "fannie-farmer-1896", recipeId: "nope", targetUser: "cook" }),
+      caller.queueFromPack({ packId: "fannie-farmer-1896", recipeId: "nope" }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
-    await expect(caller.queueFromPack({ packId: "nope", recipeId: "x", targetUser: "cook" })).rejects.toMatchObject({
+    await expect(caller.queueFromPack({ packId: "nope", recipeId: "x" })).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
     expect(addToKitchenQueue).not.toHaveBeenCalled();
@@ -297,14 +296,14 @@ describe("with no recipe library connected (as the app ships)", () => {
   it("knows no household book: its view and a send from it are NOT_FOUND, and a pack file's still work", async () => {
     await expect(caller.getPack({ packId: "household-book" })).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(
-      caller.queueFromPack({ packId: "household-book", recipeId: "dal", targetUser: "cook" }),
+      caller.queueFromPack({ packId: "household-book", recipeId: "dal" }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(getDocRecipeBySlug).not.toHaveBeenCalled();
     expect(addToKitchenQueue).not.toHaveBeenCalled();
 
     expect(await caller.getPack({ packId: "fannie-farmer-1896" })).toMatchObject({ kind: "creator", cookable: 5 });
     expect(
-      await caller.queueFromPack({ packId: "fannie-farmer-1896", recipeId: "thin-white-sauce", targetUser: "cook" }),
+      await caller.queueFromPack({ packId: "fannie-farmer-1896", recipeId: "thin-white-sauce" }),
     ).toEqual({ id: QUEUE_ID });
     expect(readFamilyLibrary).not.toHaveBeenCalled();
   });

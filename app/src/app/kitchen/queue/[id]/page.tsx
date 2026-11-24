@@ -9,7 +9,6 @@ import { useWakeLock } from "@/hooks";
 import { useCookSession } from "@/hooks/useCookSession";
 import { useIntakeAsk } from "@/hooks/useIntakeAsk";
 import { useFinishCook } from "@/hooks/useFinishCook";
-import { DEFAULT_COOK } from "@/lib/cook-id";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import { hasStepsToPlan, isCurrentCookPlan } from "@/lib/kitchen/cook-plan";
@@ -37,6 +36,7 @@ import {
   type SourcePackInfo,
 } from "@/lib/pack-convert/recipe-library";
 import type { KitchenQueueRecipeData } from "../../../../../drizzle/schema";
+import { useCookNotices } from "./cook-notices";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -268,6 +268,7 @@ function CookSessionView({
 }: CookSessionViewProps) {
   const router = useRouter();
   const { say, unsay } = useKitchenTimers();
+  const { extraNotices, recordPlanError } = useCookNotices();
 
   const queueOriginal = trpc.queueFromPack.useMutation({
     onSuccess: (item) => router.push(`/kitchen/queue/${item.id}`),
@@ -281,7 +282,6 @@ function CookSessionView({
     queueOriginal.mutate({
       packId: sourcePack.packId,
       recipeId: sourcePack.recipeId,
-      targetUser: DEFAULT_COOK,
     });
   }, [sourcePack, queueOriginal]);
 
@@ -446,11 +446,12 @@ function CookSessionView({
           }),
         onError: (err) => {
           console.error("Could not work out the prep plan:", err);
+          recordPlanError(err);
           dispatch({ type: "offer", ...resolvePlan(recipe, null, "failed") });
         },
       },
     );
-  }, [ensurePlan, needsPlan, id, recipe, dispatch]);
+  }, [ensurePlan, needsPlan, id, recipe, dispatch, recordPlanError]);
 
   // While the cook is on screen a new build waits (B5b, B6), and the worker
   // keeps this page and its files for a reload with no connection (E4).
@@ -483,6 +484,7 @@ function CookSessionView({
       resumePart={resumePart}
       resumeWidth={resumeWidth}
       onPart={onPart}
+      extraNotices={extraNotices}
     />
   );
 }
