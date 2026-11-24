@@ -46,7 +46,43 @@ pnpm --dir app kitchens token create --kitchen home --label agent
 
 The token is printed once; pass it in `Authorization: Bearer <token>`. See [docs/webhook.md](docs/webhook.md).
 
-The server side of Google sign-in mode (multiple kitchens, an invite list and per-kitchen access) is built, but the app has no sign-in pages yet and sign-in with a real Google account has not been exercised, so every deployment runs in single-kitchen mode (`SOUS_SIGN_IN=off`).
+### Sign-in mode
+
+In sign-in mode, each household is its own kitchen, only invited Google accounts get in, and each kitchen sees only its own data. Sign-in with a real Google account, including from the app installed to a tablet's home screen, has not been exercised yet, so treat it as untested.
+
+Create a Google OAuth client of the "Web application" type in the Google Cloud console. Set its authorized JavaScript origin to the origin of `BETTER_AUTH_URL` (for example `https://sous.example.com`) and its authorized redirect URI to `BETTER_AUTH_URL` followed by `/api/auth/callback/google` (for example `https://sous.example.com/api/auth/callback/google`). Configure the consent screen to ask for the `openid`, `email` and `profile` scopes only.
+
+Leave `SOUS_SIGN_IN` unset (or set it to `on`), keep every hook unconnected, and export `DATABASE_URL`, a model key as for single-kitchen mode, and the six required sign-in variables: `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SOUS_AI_KITCHEN_CAP_USD` and `SOUS_AI_TOTAL_CAP_USD` (see [docs/environment.md](docs/environment.md) for what each must hold):
+
+```sh
+export SOUS_SIGN_IN=on
+export DATABASE_URL=postgres://localhost:5432/sous
+export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
+export BETTER_AUTH_URL=https://sous.example.com
+export GOOGLE_CLIENT_ID=example-client-id.apps.googleusercontent.com
+export GOOGLE_CLIENT_SECRET=example-client-secret
+export SOUS_AI_KITCHEN_CAP_USD=2
+export SOUS_AI_TOTAL_CAP_USD=20
+export GOOGLE_AI_API_KEY=example-model-key
+```
+
+Generate `BETTER_AUTH_SECRET` once and keep it somewhere safe: a different secret on the next start signs everyone out. Then run the same `db:migrate`, `build` and `start` commands as in the single-kitchen setup above.
+
+Inviting is done only from the command line. With `DATABASE_URL` set and `SOUS_SIGN_IN` not set to `off` (single-kitchen mode refuses invites because it has no members or invites), invite the first person:
+
+```sh
+pnpm --dir app kitchens invite --email cook@example.com --new-kitchen "River House"
+```
+
+The invite is accepted on that person's first request after signing in; a `--new-kitchen` invite creates the kitchen then, with that person as its owner. Run `pnpm --dir app kitchens list` to see kitchens, members and pending invites.
+
+On the tablet, the invited person opens `/sign-in`, signs in with that Google account, and lands on `/kitchen`. A Google account without an invite lands on `/not-invited`, which says it is not on the invite list. A session lasts 90 days and is extended by another 90 days when used again after at least 1 day has passed since its last update.
+
+To sign out, open the home screen's right-edge icon rail menu by tapping the pull-out handle ("More") at the bottom of the rail (or long-pressing the rail, or dragging left from it), and tap `Sign out` at the bottom. If any cook reports are still waiting to be sent, the item changes to say how many have not been sent yet and needs a second tap to sign out and remove them.
+
+Signing in and signing out each forget everything Sous stored in that browser on that device (unsent cook reports, the saved place in a cook, timers, and the prep-mode and voice settings), and other open Sous tabs reload when it happens.
+
+Run the app with `pnpm --dir app start` and no shared cache in front of it. The kitchen pages are prerendered and answer with a long shared cache lifetime (`s-maxage`), while the sign-in redirect (and the cookie that shows `Sign out`) is handled per request by `app/src/proxy.ts`. A cache in front of the app that keys only on the address would answer without running that check: a signed-out person could be shown the empty kitchen page, which holds no kitchen data (the server still refuses every read), until the first refused read sends them to `/sign-in`, and `Sign out` may be missing on that load. Do not put such a cache in front of the kitchen pages.
 
 ### Upgrading an older database
 
@@ -72,7 +108,7 @@ Another program can send a recipe to a kitchen with one HTTP call, which is how 
 ## Safety
 
 - **Single-kitchen mode (`SOUS_SIGN_IN=off`).** There is no login. `pnpm --dir app start` and `pnpm --dir app dev` listen on every network interface by default, so anyone on the same network can open the app, read and change everything in it, and spend your model key; add `-H 127.0.0.1` (for example `pnpm --dir app start -H 127.0.0.1`) to keep it to this machine, or run it on a private network or behind your own authentication. Anyone who can reach the server can spend your model key (import, Ask, cook plans, grocery parsing, library refresh), up to a monthly cap if you set one (`SOUS_AI_KITCHEN_CAP_USD`, `SOUS_AI_TOTAL_CAP_USD`, or `pnpm --dir app kitchens cap set`; see [docs/environment.md](docs/environment.md); caps are optional and off unless set), and can write to the database without limit, except cook reports (each with a copy of the screen's HTML), which stop at 100 per rolling 24 hours per kitchen. The tRPC procedures need no token in this mode; the webhook endpoints require a kitchen token in every build.
-- **Sign-in mode.** Sign-in mode (server side built; the app has no sign-in pages yet) is built so that only invited Google accounts get in, each kitchen sees only its own queue, recipes, Ask history and reports, model spend is capped per kitchen and overall each UTC month (both cap variables are required in sign-in mode), and webhook calls require a kitchen's own token in every build.
+- **Sign-in mode.** Sign-in mode (sign-in with a real Google account has not been exercised yet) is built so that only invited Google accounts get in, each kitchen sees only its own queue, recipes, Ask history and reports, model spend is capped per kitchen and overall each UTC month (both cap variables are required in sign-in mode), and webhook calls require a kitchen's own token in every build.
 - **Both modes.** Whoever operates the database can read every kitchen's data, including Ask messages and cook report contents. Row-level security is enabled on every table with no policies, so only the role that owns the tables (the one in `DATABASE_URL`), and roles that bypass row-level security such as a superuser, can read or write them; if your PostgreSQL host also exposes the database through its own API roles (such as Supabase's `anon` and `authenticated` roles), those roles can read nothing, but default grants may still leave them with the `TRUNCATE` privilege, which row-level security does not govern: revoke it. URL import fetches any address, follows redirects, has no size cap, and returns a recipe parsed from what it read. On desktop, cook mode listens continuously for its wake word, and Chrome sends that audio to Google. Ask sends the recipe and any connected context to your model provider.
 
 ## Layout

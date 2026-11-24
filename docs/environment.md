@@ -8,7 +8,7 @@ Next.js reads `app/.env.local` on `dev`, `build` and `start`. The migration scri
 
 ## Required
 
-For single-kitchen mode (one household, no sign-in — the only mode usable end to end today), set both variables below.
+For single-kitchen mode (one household, no sign-in), set both variables below.
 
 | Variable | What it is |
 | --- | --- |
@@ -22,17 +22,17 @@ For single-kitchen mode (one household, no sign-in — the only mode usable end 
 - **Row-level security.** Every table enables row-level security with no policies, so only the role that owns the tables (the one in `DATABASE_URL`), and roles that bypass row-level security such as a superuser, can read or write them. If your PostgreSQL host exposes the database through additional API roles (for example Supabase's `anon` and `authenticated` roles), those roles can read nothing, but default grants may still leave them with the `TRUNCATE` privilege, which row-level security does not govern: revoke `TRUNCATE` from those roles.
 - **Single instance.** Some limits and caches hold per server process (the remembered start-up database check and Better Auth's default in-memory sign-in rate limit): run one server instance.
 
-## Sign-in mode (server side only; not yet usable end to end)
+## Sign-in mode
 
-Sign-in mode's server side is built, but the app has no sign-in pages yet and sign-in with a real Google account has not been exercised. Until sign-in pages exist, run with `SOUS_SIGN_IN=off`.
+See Sign-in mode in [README.md](../README.md#sign-in-mode) for the setup steps. Sign-in with a real Google account has not been exercised yet, so treat it as untested.
 
 When `SOUS_SIGN_IN` is unset, empty, or `on`, all six variables below are required (`SOUS_AI_KITCHEN_CAP_USD` and `SOUS_AI_TOTAL_CAP_USD` are described under Model spend and caps), and every hook flag in `app/src/lib/hooks/connected.ts` must be `false`. If any check fails, the server logs the reason and exits.
 
 | Variable | What it is |
 | --- | --- |
 | `BETTER_AUTH_SECRET` | Secret used by Better Auth to sign session cookies and encrypt stored OAuth tokens (`app/src/lib/auth/auth.ts`, `app/src/lib/kitchens/deployment.ts`). Must be at least 32 characters after trimming. |
-| `BETTER_AUTH_URL` | Public origin of the app, for example `https://sous.example.com` (`app/src/lib/auth/auth.ts`, `app/src/lib/kitchens/deployment.ts`). Must be a valid `http` or `https` URL, and must use `https` unless its hostname is `localhost`, `127.0.0.1`, or `[::1]`. Used as Better Auth's base URL and trusted origin, and checked against `Origin` headers on tRPC requests. |
-| `GOOGLE_CLIENT_ID` | Google OAuth client id for sign-in (`openid`, `email`, and `profile` scopes only; `app/src/lib/auth/auth.ts`). |
+| `BETTER_AUTH_URL` | Public origin of the app, for example `https://sous.example.com` (`app/src/lib/auth/auth.ts`, `app/src/lib/kitchens/deployment.ts`). Must be a valid `http` or `https` URL, and must use `https` unless its hostname is `localhost`, `127.0.0.1`, or `[::1]`. Used as Better Auth's base URL and trusted origin, and checked against `Origin` headers on tRPC requests. Its origin is the Google client's authorized JavaScript origin, and the authorized redirect URI is `BETTER_AUTH_URL` followed by `/api/auth/callback/google`. |
+| `GOOGLE_CLIENT_ID` | Google OAuth client id from an OAuth client of the "Web application" type, for sign-in (`openid`, `email`, and `profile` scopes only; `app/src/lib/auth/auth.ts`). |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret (`app/src/lib/auth/auth.ts`). |
 
 ## Model provider
