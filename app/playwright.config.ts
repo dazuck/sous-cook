@@ -59,7 +59,9 @@ const localConfig = defineConfig({
   retries: 0,
   forbidOnly: Boolean(process.env.CI),
   outputDir: "test-results",
-  reporter: "list",
+  reporter: process.env.CI
+    ? [["list"], ["html", { open: "never" }]]
+    : "list",
   globalSetup: "./e2e/global-setup.ts",
   use: {
     baseURL: E2E_BASE_URL,

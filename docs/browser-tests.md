@@ -76,6 +76,19 @@ SMOKE_BASE_URL=https://sous.example.com pnpm --dir app e2e:smoke
 
 Set `SMOKE_EXPECT_COMMIT=<40-char lowercase sha>` to assert the exact running commit, and set `SMOKE_BYPASS_HEADER` together with `SMOKE_BYPASS_VALUE` if the host requires a deployment protection bypass header.
 
+## In CI
+
+The `browser` job in `.github/workflows/ci.yml` runs the behaviour suite (`pnpm --dir app e2e`) on every push to `main` and every pull request, on Linux (`ubuntu-latest`) with Chromium.
+
+Screenshot tests, when they exist, do not run in CI because their baselines are macOS only. The smoke check (`app/e2e/smoke.spec.ts`) does not run in CI either, because `SMOKE_BASE_URL` is never set there.
+
+When the `browser` job fails, it uploads `app/test-results/` and `app/playwright-report/` as the `browser-test-results` artifact (kept for 7 days). Download and unzip the artifact to inspect a failure trace or the HTML report locally:
+
+```sh
+pnpm --dir app exec playwright show-trace <trace.zip>
+pnpm --dir app exec playwright show-report <report-dir>
+```
+
 ## What the harness does
 
 - **Isolated PostgreSQL container:** `app/e2e/db-up.sh` runs container `rails-pg` (`postgres:17`, overridable via `E2E_PG_CONTAINER`) published only on `127.0.0.1:55731` (port overridable via `E2E_PG_PORT`) using trust authentication (`POSTGRES_HOST_AUTH_METHOD=trust`, no password), user `postgres`, and database `sous_e2e` (`postgres://postgres@127.0.0.1:55731/sous_e2e`). The container holds only invented test data and must never be used for anything else. It drops and recreates `sous_e2e` empty, then runs `pnpm db:migrate` from `app/`. `app/e2e/db-down.sh` removes only the container named by `E2E_PG_CONTAINER` (default `rails-pg`). Every database entry point checks `assertLocalDatabase` so it refuses any host other than `127.0.0.1` or `localhost`.
