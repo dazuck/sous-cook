@@ -72,14 +72,16 @@ export interface ReportSender {
 export type FlagResult = "flagged" | "failed" | "full";
 
 /**
- * How a failed send is taken. Only the server's Zod refusal (`BAD_REQUEST`)
- * is final (F6); the rate cap (F7), a server without the procedure (F8),
- * any other error and the network all leave the entry to go again.
+ * How a failed send is taken. A schema refusal (`BAD_REQUEST`) and a report
+ * id the server already holds under another kitchen (`CONFLICT`) will never
+ * be taken, so both are final; the rate cap (F7), a server without the
+ * procedure (F8), auth refusals, any other error and the network all leave
+ * the entry to go again.
  */
 export function outcomeOf(error: unknown): "refused" | "retry" {
   if (!(error instanceof TRPCClientError)) return "retry";
   const data = error.data as { code?: unknown } | null | undefined;
-  return data?.code === "BAD_REQUEST" ? "refused" : "retry";
+  return data?.code === "BAD_REQUEST" || data?.code === "CONFLICT" ? "refused" : "retry";
 }
 
 // Function properties, not methods: the closures are `this`-free, and
@@ -411,7 +413,7 @@ export function createReportOutbox(backing: StringStore, sender: ReportSender): 
       if (outcome === "retry") break;
       if (outcome === "refused") {
         update(id, (e) => ({ ...e, status: "refused" }));
-        recordEvent("flag", "the server refused a report (BAD_REQUEST)");
+        recordEvent("flag", "the server refused a report");
         continue;
       }
       update(id, (e) => toStub(e, note));

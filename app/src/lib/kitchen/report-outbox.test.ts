@@ -801,7 +801,7 @@ describe("sending (F1, F4, F6–F9)", () => {
     const [entry] = outbox.list();
     expect(entry?.status).toBe("refused");
     expect(entry?.report).toEqual(captured);
-    expect(flagNotes().map((n) => n.detail)).toContain("the server refused a report (BAD_REQUEST)");
+    expect(flagNotes().map((n) => n.detail)).toContain("the server refused a report");
     await outbox.flush();
     void outbox.add(report());
     await settle();
