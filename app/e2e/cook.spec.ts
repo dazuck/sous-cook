@@ -200,6 +200,8 @@ test.describe("Cook mode", () => {
     await page.locator("[data-strip]").click();
     const sheet = page.locator("[data-cook-sheet]");
     await expect(sheet).toHaveAttribute("data-level", "1");
+    // Settled at the peek first: its arrows ignore a tap made mid-glide (as in COOK-5).
+    await expect(sheet).toHaveAttribute("data-settled", "1");
     await page.getByRole("button", { name: "Show the whole cook" }).click();
     await expect(sheet).toHaveAttribute("data-level", "2");
 
