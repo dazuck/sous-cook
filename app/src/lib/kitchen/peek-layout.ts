@@ -66,7 +66,18 @@ export type PeekDrawn =
       /** Where the label's lines must end. */
       labelRight: number;
     })
-  | (Placed & { kind: "break" | "table"; words: { lead: string; main: string; tail: string | null } })
+  | (Placed & {
+      kind: "break" | "table";
+      words: { lead: string; main: string; tail: string | null };
+      /**
+       * Where the main words ("50 min free") begin as the row is wrapped: px from the row's left edge,
+       * and the line they start on. The pull to the whole cook carries them from there.
+       */
+      mainX: number;
+      mainLine: number;
+      /** A break's stretch: the same break on the meal's lines. */
+      stretch: number | null;
+    })
   | (Placed & { kind: "after"; key: string });
 
 export interface PeekDrawing {
@@ -170,7 +181,8 @@ function laid(rows: PeekRow[], g: PeekGeo, measure: Measure, limit: number): Pee
       const lines = wrapLines(one(tail), px.ruled, PEEK_WEIGHT.ruled, room, measure, "text", / +/);
       y += ruledGap;
       const h = lines.length * lh * px.ruled + 2 * (g.narrow ? 14 * c : 8 * c);
-      out.push({ kind: r.kind, words: { ...w, tail }, lines, said, y, h });
+      const main = mainAt(lines, w.lead, px.ruled, PEEK_WEIGHT.ruled, measure);
+      out.push({ kind: r.kind, words: { ...w, tail }, mainX: main.x, mainLine: main.line, stretch: r.kind === "break" ? r.stretch : null, lines, said, y, h });
       y += h;
     } else {
       const lines = clampLines(COOK_COPY.peekAfter(r.label), px.ruled, PEEK_WEIGHT.ruled, right - labelX, 2, measure);
@@ -197,6 +209,21 @@ function laid(rows: PeekRow[], g: PeekGeo, measure: Measure, limit: number): Pee
     rail,
     limit,
   };
+}
+
+/**
+ * Where a ruled row's main words begin once the row is wrapped: the line they start on, and their left
+ * on that line (px from the words' own left). `lines` are the row's words as wrapped on spaces; a row
+ * narrow enough puts "50 min free" on its second line.
+ */
+export function mainAt(lines: string[], lead: string, px: number, weight: number, measure: Measure): { line: number; x: number } {
+  let n = lead.split(/ +/).filter(Boolean).length;
+  for (let i = 0; i < lines.length; i++) {
+    const words = lines[i].split(/ +/).filter(Boolean);
+    if (n < words.length) return { line: i, x: n === 0 ? 0 : measure(`${words.slice(0, n).join(" ")} `, px, weight) };
+    n -= words.length;
+  }
+  return { line: 0, x: 0 };
 }
 
 /** The peek laid out; folded sooner, down to the step in hand, where it stands taller than `maxH`. */

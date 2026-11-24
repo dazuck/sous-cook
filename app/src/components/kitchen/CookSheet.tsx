@@ -37,7 +37,8 @@ import { hitOutline, readStepDetails, type Nudge } from "@/lib/kitchen/cook-leve
 import { cardUnder } from "./card-under";
 import { prepWords, timedKey, timedStrip, type PotTimer } from "@/lib/kitchen/cook-overview";
 import { peekOf } from "@/lib/kitchen/cook-peek";
-import { inHandKey, keyLevel, sheetArrowTargets, stripTap } from "@/lib/kitchen/sheet-strip";
+import { PEEK_OUT, inHandKey, keyLevel, sheetArrowTargets, stripTap } from "@/lib/kitchen/sheet-strip";
+import type { LinesDrawing } from "@/lib/kitchen/meal-lines-layout";
 import type { PrepMode } from "@/lib/kitchen/cook-plan";
 import type { GetOutItem } from "@/lib/kitchen/timetable-layout";
 import { buildTimetable } from "@/lib/kitchen/timetable-model";
@@ -47,6 +48,7 @@ import {
   capFirst,
   clamp,
   frameAt,
+  lerp,
   sstep,
   hm,
   tableWords,
@@ -62,7 +64,9 @@ import { ease } from "@/lib/kitchen/spring";
 import { keyBelongsToTarget } from "@/lib/kitchen/key-target";
 import type { VoiceEcho, VoiceStatus } from "@/hooks/useKitchenVoiceCommands";
 import { BorrowedChrome, LEDGE_BAR_CPX } from "./BorrowedChrome";
-import { TIMETABLE_MOVE_MS, Timetable } from "./Timetable";
+import { TIMETABLE_MOVE_MS, Timetable, wholeLinesBottom } from "./Timetable";
+import { PullPaint } from "./pull-paint";
+import { linesBoxOf, planPull, pullAt, pullInert, pullShare, rowsDrawn, type PullPlan } from "./pull-travel";
 import { EDGE_X } from "./cook-edge";
 import { PeekRows, SheetArrow } from "./PeekRows";
 import { WholeRecipe, type WholeRecipeProps } from "./WholeRecipe";
@@ -240,6 +244,12 @@ function shown(el: HTMLElement | null | undefined, op: number) {
   el.style.visibility = op > 0.02 ? "visible" : "hidden";
 }
 
+/** Kept from touch and from a screen reader (`inert`: while it is not the part that is drawn), or given back. */
+function inertly(el: HTMLElement | null | undefined, on: boolean) {
+  if (!el || el.hasAttribute("inert") === on) return;
+  el.toggleAttribute("inert", on);
+}
+
 function shownOverview(el: HTMLElement | null | undefined, op: number) {
   if (!el) return;
   const vis = op > 0.02;
@@ -307,6 +317,24 @@ export function CookSheet(props: CookSheetProps) {
   const restArrowRef = useRef<HTMLSpanElement>(null);
   const peekRef = useRef<HTMLDivElement>(null);
   const arrows1Ref = useRef<HTMLDivElement>(null);
+  /**
+   * The pull between the peek and the whole cook: the whole cook's lines as the timetable
+   * drew them, the painter that turns the peek's rows into them, and what its plan was made from.
+   */
+  const wholeLines = useRef<LinesDrawing | null>(null);
+  const pullPaint = useRef<PullPaint | null>(null);
+  const pullOf = useRef<{ L: SheetLayout | null; lines: LinesDrawing | null; plan: PullPlan | null }>({ L: null, lines: null, plan: null });
+  useEffect(
+    () => () => {
+      pullPaint.current?.release();
+      pullOf.current = { L: null, lines: null, plan: null };
+    },
+    [],
+  );
+  // Every render may have drawn the page anew: a plan the page did not hold may be looked for once more.
+  useLayoutEffect(() => {
+    pullPaint.current?.redrawn();
+  });
   /** The foot's middle cell, once mounted: the strip's line is drawn into it. */
   const [cell, setCell] = useState<HTMLDivElement | null>(null);
   // Every commit: the cell is the foot's, a sibling committed after the sheet, so its ref is read
@@ -1020,7 +1048,7 @@ export function CookSheet(props: CookSheetProps) {
       const ov = overviewRef.current;
       shownOverview(ov, DF.lanes);
       ov?.style.setProperty("--grow", DF.grow.toFixed(4));
-      ov?.style.setProperty("--words-op", DF.words.toFixed(3));
+      ov?.style.setProperty("--words-op", DF.head.toFixed(3));
     } else {
       // As written: the outline (level 2's lanes are a derived plan's only).
       shownOverview(overviewRef.current, F.lanes);
@@ -1039,7 +1067,7 @@ export function CookSheet(props: CookSheetProps) {
       }
     }
     shown(restArrowRef.current, L.peek ? 1 - sstep(0, 0.3, F.d) : 0);
-    shown(peekRef.current, F.peek ?? 0);
+    applyPull(L, F);
     const edge = DF ? DF.paperTop - Y : 0;
     const arrows = arrows1Ref.current;
     if (arrows) {
@@ -1121,6 +1149,83 @@ export function CookSheet(props: CookSheetProps) {
     // Where each level's edge stands, for the e2e's frame reads.
     if (layerRef.current) layerRef.current.dataset.detents = L.detents.map((v) => v.toFixed(1)).join(",");
   }
+
+  /**
+   * The peek's rows, and between the peek and the whole cook the pull that turns them into the meal's
+   * lines (`pull-travel`): the plan is made once per layout or drawing, its parts found once
+   * per pull, and a frame writes transforms and opacities only. At either level, on a glide straight
+   * between rest and the whole cook, and with no plan to travel by, every part stands as its component
+   * drew it and nothing of the pull is left on the page.
+   */
+  function applyPull(L: SheetLayout, F: Frame) {
+    const DF = F.derived;
+    const ov = overviewRef.current;
+    const p = (pullPaint.current ??= new PullPaint());
+    // (A glide can land one float step off a level and rest there: `pullShare` reads that as the level.)
+    const t = pullShare(F.d);
+    const between = t > 0 && t < 1;
+    const pw = clamp(passing.current, 0, 1);
+    // Between the two levels both sets are on the page. The one that is drawn can be reached, by
+    // touch and by a screen reader; the other is inert (the whole cook's way back, unseen at the top
+    // left, dropped the sheet to rest at a touch). The whole cook counts as drawn by its header, where
+    // its controls are; as written, by its outline (the sheet's own rows, outside both sets: only the
+    // peek gives way to it). At a level neither is inert.
+    const whole = DF ? (DF.lanes > 0 ? DF.head : 0) : F.chart;
+    const reach = (peek: number) => {
+      const off = pullInert(between, peek, whole);
+      inertly(peekRef.current, off.peek);
+      inertly(ov, off.whole);
+    };
+    if (L.derived && DF && L.peek && L.overview && !L.opening && between && pw < 1) {
+      let was = pullOf.current;
+      if (was.L !== L || was.lines !== wholeLines.current) {
+        const box = linesBoxOf(L.overview, wholeLinesBottom(L.overview));
+        const lines = wholeLines.current;
+        const plan = lines && box ? planPull({ peek: L.peek, lines, c: L.geo.c, Y1: L.detents[1], Y2: L.detents[2], box }) : null;
+        was = pullOf.current = { L, lines, plan };
+      }
+      // The plan's parts are found as a pull begins and again where the page drew them anew. Where
+      // the page did not hold them (a render between the two) they are looked for once more after
+      // the next render or new lines (`redrawn`), never frame after frame.
+      if (was.plan && p.wants(was.plan)) {
+        p.bind(was.plan, peekRef.current, ov?.querySelector<HTMLElement>("[data-whole-lines]") ?? null, repaintPull);
+      } else if (!was.plan) p.release();
+      const plan = p.plan;
+      if (plan) {
+        // The lines' box shows through: each part's own opacity is the frame's. A straight pass
+        // between rest and the whole cook shows no peek, and the lines come in as one.
+        ov?.style.setProperty("--lines-op", lerp(1, DF.words, pw).toFixed(3));
+        const frame = pullAt(plan, t, p.scroll, pw);
+        p.paint(frame);
+        shown(peekRef.current, F.peek ?? 0);
+        reach((F.peek ?? 0) * rowsDrawn(frame));
+        return;
+      }
+    }
+    p.release();
+    if (DF) ov?.style.setProperty("--lines-op", DF.words.toFixed(3));
+    // A derived plan with no pull to travel by (its lines not drawn yet): the rows go as they did (DS v1.62).
+    // A straight pass shows no peek at all (`F.peek`).
+    const peek = (F.peek ?? 0) * (L.derived && pw < 1 ? 1 - sstep(1, PEEK_OUT, F.d) : 1);
+    shown(peekRef.current, peek);
+    reach(peek);
+  }
+  /** The frame in hand, painted again: the lines were scrolled in their box mid-pull. */
+  function repaintPull() {
+    const L = layoutRef.current;
+    const F = frameRef.current;
+    if (L && F && clipRef.current) applyPull(L, F);
+  }
+  /** The timetable drew the whole cook's lines: mid-pull, the new parts take the frame in hand. */
+  const onWholeLines = useCallback((d: LinesDrawing | null) => {
+    wholeLines.current = d;
+    pullPaint.current?.redrawn();
+    const L = layoutRef.current;
+    const F = frameRef.current;
+    if (L && F && clipRef.current) applyPull(L, F);
+    // `applyPull` reads refs only: any render's is the same.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ---- pointers: the band, the sheet, the foot, and the stage while pinned ----
   // When the last pull (or held press) ended; a click within 400 ms of it is its own, and swallowed.
@@ -1518,6 +1623,7 @@ export function CookSheet(props: CookSheetProps) {
                     steps={whole.steps}
                     onAskAhead={onAskAhead}
                     portrait={L.geo.portrait}
+                    onWholeLines={onWholeLines}
                     stepper={
                       whole.recipe && whole.onServingsChange
                         ? {

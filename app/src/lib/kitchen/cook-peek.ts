@@ -48,7 +48,14 @@ export interface PeekFree {
 
 export type PeekRow =
   | { kind: "step"; key: string; label: string; dish: string | null; minutes: number | null; pot: boolean; now: boolean }
-  | { kind: "break"; more: number; minutes: number; verb: string | null }
+  | {
+      kind: "break";
+      more: number;
+      minutes: number;
+      verb: string | null;
+      /** The stretch it follows: the same break on the meal's lines (`LineBreak.stretch`). */
+      stretch: number;
+    }
   | { kind: "table"; more: number; minutes: number | null }
   | { kind: "after"; key: string; label: string };
 
@@ -135,7 +142,7 @@ export function peekRows(input: PeekInput, limit = PEEK_MAX_NEXT): PeekRow[] {
   if (brk) {
     // The pot going in as the hands come free names the break: the last such in cook order.
     const going = screens.filter((s) => s.pot && s.start <= brk.from + EPS && s.end > brk.from + EPS).pop();
-    rows.push({ kind: "break", more, minutes: brk.minutes, verb: going ? cookVerb(going.label) : null });
+    rows.push({ kind: "break", more, minutes: brk.minutes, verb: going ? cookVerb(going.label) : null, stretch: brk.stretch });
     // Folded all the way (limit 0) the peek is the step in hand and its ruled row alone.
     if (limit > 0 && next.length <= 1 && after) rows.push({ kind: "after", key: after.key, label: after.label });
   } else {

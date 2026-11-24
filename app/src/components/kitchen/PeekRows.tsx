@@ -9,6 +9,11 @@
  * headings. The rows are words to read, not targets (call 4): a touch on them
  * is the sheet's (a pull), and a tap does nothing.
  *
+ * On the pull to the whole cook each part is moved by `pull-paint`,
+ * found by its `data-peek-*` name: the dot, the label, the dish, the minutes,
+ * a ruled row's rule and words (its "then" and its "while it roasts" apart, so
+ * "50 min free" travels alone), the rail.
+ *
  * What a screen reader hears is each row's own text (`[data-peek-said]`,
  * visually hidden), not an `aria-label` on the item: TalkBack on Chrome may
  * ignore a list item's label, and every drawn word is `aria-hidden` (placed
@@ -52,13 +57,14 @@ function Said({ text }: { text: string }) {
 export function PeekRows({ d, c, label }: { d: PeekDrawing; c: number; label?: string }) {
   const { type: T, cols } = d;
   const rule = (y: number) => (
-    <i aria-hidden className="absolute block h-px bg-ink/[.11]" style={{ left: cols.dot - d.dotR, right: `calc(100% - ${cols.right}px)`, top: y }} />
+    <i aria-hidden data-peek-rule className="absolute block h-px bg-ink/[.11]" style={{ left: cols.dot - d.dotR, right: `calc(100% - ${cols.right}px)`, top: y }} />
   );
   return (
     <ol aria-label={label} className="m-0 list-none p-0">
       {d.rail && (
         <i
           aria-hidden
+          data-peek-rail
           className="absolute block rounded-full bg-ink/[.16]"
           style={{ left: d.rail.x - 1.5 * c, width: 3 * c, top: d.rail.y0, height: d.rail.y1 - d.rail.y0 }}
         />
@@ -148,6 +154,7 @@ export function PeekRows({ d, c, label }: { d: PeekDrawing; c: number; label?: s
             {rule(r.y)}
             <span
               aria-hidden
+              data-peek-words
               className="absolute block font-medium text-ink-soft"
               style={{
                 left: cols.label,
@@ -157,8 +164,9 @@ export function PeekRows({ d, c, label }: { d: PeekDrawing; c: number; label?: s
                 lineHeight: T.lh,
               }}
             >
-              {r.words.lead} <span className="text-ink">{r.words.main}</span>
-              {r.words.tail ? ` ${r.words.tail}` : ""}
+              <span data-peek-lead>{r.words.lead} </span>
+              <span className="text-ink">{r.words.main}</span>
+              {r.words.tail ? <span data-peek-tail>{` ${r.words.tail}`}</span> : null}
             </span>
           </li>
         );

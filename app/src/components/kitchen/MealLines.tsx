@@ -9,6 +9,9 @@
  * Stops are buttons only where `onRead` is given (level 2): a tap reads the
  * step in the header's place, as touch-to-read always has. On the opening
  * they are not controls (DS §6 Starting: the opening's reading stays off).
+ *
+ * On the pull from the peek each part is moved by `pull-paint`, found
+ * by its `data-line-*` name, in the drawing's order.
  */
 
 import type { ColumnsDrawing, DrawnStop, LinesDrawing, ListDrawing } from "@/lib/kitchen/meal-lines-layout";
@@ -137,7 +140,7 @@ function Columns({ drawing: d, c, onRead, readMark, tab, ground }: MealLinesProp
           <line key={`r${r.col}`} data-line-rail={r.col} x1={r.x} x2={r.x} y1={r.y0} y2={r.y1} stroke={PALE} strokeWidth={T.pale * c} strokeLinecap="round" />
         ))}
         {d.hot.map((h) => (
-          <line key={h.key} x1={h.x} x2={h.x} y1={h.y0} y2={h.y1} stroke="var(--ink)" strokeWidth={T.hot * c} strokeLinecap="round" />
+          <line key={h.key} data-line-hot={h.key} x1={h.x} x2={h.x} y1={h.y0} y2={h.y1} stroke="var(--ink)" strokeWidth={T.hot * c} strokeLinecap="round" />
         ))}
         {d.bends.map((b) => {
           const s = b.x > b.toX ? -1 : 1;
@@ -173,11 +176,11 @@ function Columns({ drawing: d, c, onRead, readMark, tab, ground }: MealLinesProp
         ))}
         {d.stops.map((s) =>
           s.state === "now" ? (
-            <circle key={s.key} cx={s.dotX} cy={s.dotY} r={s.dotR} fill="var(--ember)" />
+            <circle key={s.key} data-line-dot={s.key} cx={s.dotX} cy={s.dotY} r={s.dotR} fill="var(--ember)" />
           ) : s.pot ? (
-            <circle key={s.key} cx={s.dotX} cy={s.dotY} r={s.dotR - ring / 2} fill="var(--paper)" stroke="var(--ink)" strokeWidth={ring} />
+            <circle key={s.key} data-line-dot={s.key} cx={s.dotX} cy={s.dotY} r={s.dotR - ring / 2} fill="var(--paper)" stroke="var(--ink)" strokeWidth={ring} />
           ) : (
-            <circle key={s.key} cx={s.dotX} cy={s.dotY} r={s.dotR} fill="var(--ink)" />
+            <circle key={s.key} data-line-dot={s.key} cx={s.dotX} cy={s.dotY} r={s.dotR} fill="var(--ink)" />
           ),
         )}
       </svg>
@@ -255,20 +258,20 @@ function List({ drawing: d, c, onRead, readMark, tab }: MealLinesProps & { drawi
   return (
     <div data-meal-lines="list" data-scroll={d.scroll ? "true" : "false"} className="relative" style={{ width: d.width, height: d.height }}>
       <svg aria-hidden className="absolute top-0 left-0 overflow-visible" width={d.width} height={d.height}>
-        {d.rail && <line x1={d.rail.x} x2={d.rail.x} y1={d.rail.y0} y2={d.rail.y1} stroke={PALE} strokeWidth={LINES_TYPE.pale * c} />}
+        {d.rail && <line data-line-rail="list" x1={d.rail.x} x2={d.rail.x} y1={d.rail.y0} y2={d.rail.y1} stroke={PALE} strokeWidth={LINES_TYPE.pale * c} />}
         {d.rows.map((r) =>
           r.kind === "break" ? (
-            <g key={`b${r.y}`}>
+            <g key={`b${r.y}`} data-line-break={r.stretch}>
               <line x1={0} x2={d.width} y1={r.y + 0.5} y2={r.y + 0.5} stroke={HAIR} />
               <line x1={0} x2={d.width} y1={r.y + r.h - 0.5} y2={r.y + r.h - 0.5} stroke={HAIR} />
             </g>
           ) : r.kind === "step" ? (
             r.state === "now" ? (
-              <circle key={r.key} cx={d.cols.dot} cy={r.dotY} r={d.dotR * 1.25} fill="var(--ember)" />
+              <circle key={r.key} data-line-dot={r.key} cx={d.cols.dot} cy={r.dotY} r={d.dotR * 1.25} fill="var(--ember)" />
             ) : r.pot ? (
-              <circle key={r.key} cx={d.cols.dot} cy={r.dotY} r={d.dotR - LINES_TYPE.ring * c} fill="var(--paper)" stroke="var(--ink)" strokeWidth={LINES_TYPE.ring * c} />
+              <circle key={r.key} data-line-dot={r.key} cx={d.cols.dot} cy={r.dotY} r={d.dotR - LINES_TYPE.ring * c} fill="var(--paper)" stroke="var(--ink)" strokeWidth={LINES_TYPE.ring * c} />
             ) : (
-              <circle key={r.key} cx={d.cols.dot} cy={r.dotY} r={d.dotR} fill="var(--ink)" />
+              <circle key={r.key} data-line-dot={r.key} cx={d.cols.dot} cy={r.dotY} r={d.dotR} fill="var(--ink)" />
             )
           ) : null,
         )}

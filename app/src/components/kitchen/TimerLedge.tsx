@@ -61,7 +61,9 @@ export function TimerLedge({
   const rest = [...timers].filter((t) => t.id !== lead.id).sort((a, b) => a.endsAtEpochMs - b.endsAtEpochMs);
   const second = shape ? rest.find((t) => t.id === shape.second) : rest[0];
   return (
-    <span data-ledge className="inline-flex shrink-0 items-end gap-x-[var(--space-4)] whitespace-nowrap">
+    // Held still, it is a copy and not the well: it carries its own mark, so nothing that finds the
+    // well by `data-ledge` finds it (a release check found the copies).
+    <span data-ledge={still ? undefined : ""} data-ledge-held={still ? "" : undefined} className="inline-flex shrink-0 items-end gap-x-[var(--space-4)] whitespace-nowrap">
       <Clock timer={lead} now={now} ember={lead.id === emberId} size="well" stacked still={still} onDismiss={onDismiss} />
       {second && (
         // Where the foot is shortest the second clock goes, still said.

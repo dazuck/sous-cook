@@ -41,7 +41,14 @@ export interface StripLineLayout {
 export const PEEK_STEP_ROOM = 160;
 /** The line's least width in the strip, cpx (call 6): the foot's own give-way runs before it. */
 export const LINE_MIN = 120;
-/** The depth by which the peek's rows have gone on the way to the whole cook (as the stations did). */
+/**
+ * The depths over which the peek leaves on the way to the whole cook. A derived plan's rows
+ * turn into the meal's lines, each moved by the pull itself (`pull-travel`), so the peek stays to the
+ * end. As written has no lines to turn into: the peek gives way to the outline as it comes in, one
+ * fading as the other shows, so the sheet is never empty.
+ */
+export const PEEK_LEAVE = { derived: [1.97, 2], written: [1.75, 2] } as const;
+/** With no pull to travel by, the depth by which a derived plan's rows have gone (DS v1.62's fade; the sheet applies it). */
 export const PEEK_OUT = 1.15;
 /** The depth by which the peek is drawn on the way up from rest, where it stood behind the foot. */
 export const PEEK_IN = 0.05;
@@ -112,11 +119,12 @@ export function stripFrame(L: SheetLayout, F: Frame, s: FrameState, fillNow: num
   if (!L.peek) return F;
   const pw = clamp(s.pass ?? 0, 0, 1);
   const d = F.d;
+  const [leave0, leave1] = L.asWritten ? PEEK_LEAVE.written : PEEK_LEAVE.derived;
   return {
     ...F,
     // At rest the peek stands behind the foot: drawn from the first move up, so at rest it is
     // neither seen nor read out.
-    peek: (1 - pw) * sstep(0, PEEK_IN, d) * (1 - sstep(1, PEEK_OUT, d)),
+    peek: (1 - pw) * sstep(0, PEEK_IN, d) * (1 - sstep(leave0, leave1, d)),
     // The voice hint is the whole cook's: the peek's top is the arrows'.
     hint: sstep(1.6, 2, d),
     fillMin: fillNow,

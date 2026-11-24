@@ -270,6 +270,8 @@ export interface DerivedFrame {
   lanes: number;
   grow: number;
   words: number;
+  /** The whole cook's own header (its dish name, the way back, the prep choice): in once the top line has gone. */
+  head: number;
 }
 
 const lineAt = (a: LineFrame, b: LineFrame, t: number): LineFrame => ({
@@ -292,6 +294,11 @@ const lineAt = (a: LineFrame, b: LineFrame, t: number): LineFrame => ({
  * picture carries on from where it was (T3 fix round); at depths 0 and 2
  * the two are one picture.
  */
+/** The share of the way from the peek to the whole cook over which the time to the table comes in. */
+export const TT_IN = [0.4, 0.9] as const;
+/** The depths over which the whole cook's own header comes in: after the top line has gone (from 1.55). */
+export const HEAD_IN = [1.8, 2] as const;
+
 export function derivedFrame(L: DerivedLayout, s: FrameState): Frame {
   const D = L.derived;
   const g = L.geo;
@@ -366,11 +373,16 @@ export function derivedFrame(L: DerivedLayout, s: FrameState): Frame {
     wx: lerp(a.wx, b.wx, t),
     wy: lerp(a.wy, b.wy, t),
   });
-  const ownTt = d <= 1 ? ttOf(A, B, d, sstep(0.5, 1, d) * B.op) : ttOf(B, C, d - 1, lerp(B.op, C.op, d - 1));
+  // Past the peek it comes in over the middle of the way, once the peek's rows have shed their dish
+  // and minutes, which ride where it does.
+  const ownTt = d <= 1 ? ttOf(A, B, d, sstep(0.5, 1, d) * B.op) : ttOf(B, C, d - 1, lerp(B.op, C.op, sstep(TT_IN[0], TT_IN[1], d - 1)));
   const tt = L.opening ? ttOf(C, C, 1, C.op) : pw === 0 ? ownTt : mixTt(ownTt, ttOf(head, head, 1, C.op * sstep(1.5, 2, d)), pw);
 
   // The top line gives way to the timetable's words (N3-4(f)); it is gone on the opening.
-  const header = L.opening ? 0 : L.topLine ? 1 : 1 - words;
+  // One dish name at a time (asked 2026-11-24: two stood in the bar at 75%): the top line is gone
+  // before the whole cook's own header comes.
+  const ownHead = L.opening ? 1 : sstep(HEAD_IN[0], HEAD_IN[1], d);
+  const header = L.opening ? 0 : L.topLine ? 1 : 1 - sstep(1.55, HEAD_IN[0], d);
   const off = { x: 0, y0: 0, h: 0, op: 0 };
   return {
     d,
@@ -389,6 +401,6 @@ export function derivedFrame(L: DerivedLayout, s: FrameState): Frame {
     lanes: words,
     header,
     hint: sstep(0.6, 1, d),
-    derived: { paperTop, line, fill, stations, lanes: d > 1.001 || L.opening ? 1 : 0, grow, words },
+    derived: { paperTop, line, fill, stations, lanes: d > 1.001 || L.opening ? 1 : 0, grow, words, head: ownHead },
   };
 }

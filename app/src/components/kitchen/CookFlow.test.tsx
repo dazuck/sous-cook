@@ -9,6 +9,14 @@ vi.mock("@/lib/kitchen/well-room", async (importOriginal) => {
   return { ...actual, wellShapes: vi.fn(actual.wellShapes) };
 });
 import { wellShapes } from "@/lib/kitchen/well-room";
+// The sheet, stood in for: a test that gives the flow a sheet reads what the flow hands it
+// (no test here lays a sheet out).
+vi.mock("./CookSheet", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./CookSheet")>();
+  return { ...actual, CookSheet: vi.fn(() => null) };
+});
+import { CookSheet } from "./CookSheet";
+import type { Nudge } from "@/lib/kitchen/cook-levels";
 import { FINISH_ARM_MS } from "@/hooks/useFinishArm";
 import { TAP_MS, TAP_SLOP } from "@/lib/kitchen/tap-zone";
 import { identityPlan } from "@/lib/kitchen/cook-plan";
@@ -40,6 +48,7 @@ import {
   type CookFlowNav,
   type CookTimers,
   type FinishState,
+  type LookProps,
 } from "./CookFlow";
 
 // happy-dom has no font loading; the flow listens for fonts arriving. The
@@ -971,8 +980,9 @@ describe("CookFlow: fitting the stage", () => {
     el instanceof HTMLElement && el.matches("[data-line]") && el.style.display !== "none";
   // The tokens the fit reads in px (`lengthPx`), as this stand-in resolves
   // them: a step's foot (`--space-5`) 40 px and the closed gap above next
-  // (`--space-4`) 24, the numbers the fits below are worked in.
-  const TOKEN_PX: Record<string, number> = { "var(--space-5)": 40, "var(--space-4)": 24 };
+  // (`--space-4`) 24, the numbers the fits below are worked in; and the 10 cpx
+  // the nudge keeps clear of the step's last row, 10 px.
+  const TOKEN_PX: Record<string, number> = { "var(--space-5)": 40, "var(--space-4)": 24, "calc(10 * var(--cpx))": 10 };
 
   type Observed = () => void;
   let observers: Observed[] = [];
@@ -1050,7 +1060,9 @@ describe("CookFlow: fitting the stage", () => {
       recipe,
       servings,
       onServings,
+      look,
     }: {
+      look?: LookProps;
       times?: string[];
       resumePart?: number;
       resumeWidth?: number;
@@ -1073,6 +1085,7 @@ describe("CookFlow: fitting the stage", () => {
         onServingsChange={onServings}
         onMode={vi.fn()}
         onAskAhead={vi.fn()}
+        look={look}
         finish="ready"
         navEnabled
         navRef={nav}
@@ -1094,6 +1107,22 @@ describe("CookFlow: fitting the stage", () => {
     [...document.querySelectorAll<HTMLElement>("[data-line]")]
       .filter((el) => el.style.display === "none")
       .map((el) => el.dataset.role);
+
+  it("the nudge the step's own room can't take stands in the stack's foot, 10 cpx clear of the last row: the sheet is told to show it (DECISIONS 2026-11-24)", () => {
+    // The step is 440 px (8 lines and its meta) from 60 px down a 580 px stage, over a 40 px
+    // foot: 39 px spare. The nudge's 60 px line does not fit in that. It does with the 31 px of
+    // the foot it may share (the foot's 40 and the edge's 1, less the 10 it keeps clear), and
+    // the step keeps its size.
+    stage.height = 580;
+    vi.mocked(CookSheet).mockClear();
+    const nudge = { kind: "start", text: "Start the rice in about 5 minutes", strand: "Rice", minutes: 5, at: 5 } as Nudge;
+    fitted(longAt("first", 1), { look: { nudge, level: 0 } as LookProps });
+    const sheet = () => vi.mocked(CookSheet).mock.lastCall![0];
+    act(() => sheet().onNudgeHeight!(60));
+    expect(sheet().nudge).toBe(nudge);
+    expect(sheet().nudgeShown).toBe(true);
+    expect(line("now").style.fontSize).toBe("");
+  });
 
   it("keeps a step that fits whole at full size", () => {
     stage.height = 600;
@@ -1612,6 +1641,27 @@ describe("CookFlow: timers", () => {
     /** The well's held room: the clocks it keeps space for, drawn unseen. */
     const room = () => document.querySelector<HTMLElement>("[data-foot] [data-well-room]");
 
+    it("on the last step, where Forward is the wide Done cooking, holds no room ahead of time: started or not", () => {
+      flow(LAST, { timers: timers() });
+      expect(room()).toBeNull();
+      cleanup();
+      const running = { ...offer, endsAtEpochMs: Date.now() + 200_000 };
+      flow(LAST, { timers: timers({ stepTimer: running, soonestRunning: running.id }) });
+      expect(room()).toBeNull();
+      cleanup();
+      // A clock in the well there is drawn as ever, with no room held beside it.
+      flow(LAST, { timers: timers({ ledge: [other], soonestRunning: other.id }) });
+      expect(room()).toBeNull();
+      expect(document.querySelectorAll("[data-foot] [data-ledge]")).toHaveLength(1);
+    });
+
+    it("the held copies are not the well: nothing that finds the well by `[data-ledge]` finds them", () => {
+      flow(SECOND, { timers: timers({ ledge: [other], soonestRunning: other.id }) });
+      expect(room()!.querySelectorAll("[data-ledge]")).toHaveLength(0);
+      expect(room()!.querySelectorAll("[data-ledge-held]").length).toBeGreaterThan(0);
+      expect(document.querySelectorAll("[data-foot] [data-ledge]")).toHaveLength(1);
+    });
+
     it("draws the step's clock unseen in the well from before it starts, out of reach of touch, keys and a screen reader", () => {
       flow(SECOND, { timers: timers() });
       const r = room()!;
@@ -1623,7 +1673,7 @@ describe("CookFlow: timers", () => {
       // The step's whole length, as it will stand when it starts.
       expect(r.textContent).toContain("5:00");
       // The clock the cook sees stays on the step: the real well is empty.
-      expect([...document.querySelectorAll("[data-foot] [data-ledge]")].filter((el) => !el.closest("[data-well-room]"))).toHaveLength(0);
+      expect(document.querySelectorAll("[data-foot] [data-ledge]")).toHaveLength(0);
     });
 
     it("holds the same clocks started, at the whole cook (its clock in the well), and with a second timer running", () => {
@@ -1632,10 +1682,13 @@ describe("CookFlow: timers", () => {
       cleanup();
       // At the whole cook the step's clock is in the well: the room is the very clocks drawn there.
       flow(SECOND, { timers: timers({ ledge: [running], soonestRunning: running.id }) });
-      const shown = [...document.querySelectorAll("[data-foot] [data-ledge]")].find((el) => !el.closest("[data-well-room]"))!;
+      const shown = document.querySelector("[data-foot] [data-ledge]")!;
       expect(shown.textContent).toContain("Saute zucchini");
       // Held as it is and as it will be, the same clock both ways, at its whole length.
-      for (const held of room()!.querySelectorAll("[data-ledge]")) expect(held.textContent).toMatch(/Saute zucchini5:00$/);
+      // (The held copies carry `data-ledge-held`: none of them is the well the cook sees.)
+      const copies = room()!.querySelectorAll("[data-ledge-held]");
+      expect(copies.length).toBeGreaterThan(0);
+      for (const held of copies) expect(held.textContent).toMatch(/Saute zucchini5:00$/);
       cleanup();
       flow(SECOND, { timers: timers({ stepTimer: running, ledge: [other], soonestRunning: other.id }) });
       expect(room()!.textContent).toContain("Saute zucchini");
@@ -1646,7 +1699,7 @@ describe("CookFlow: timers", () => {
       vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
       try {
         flow(SECOND, { timers: timers({ ledge: [other], soonestRunning: other.id }) });
-        const shown = () => [...document.querySelectorAll("[data-foot] [data-ledge]")].find((el) => !el.closest("[data-well-room]"))!.textContent;
+        const shown = () => document.querySelector("[data-foot] [data-ledge]")!.textContent;
         const before = shown();
         vi.mocked(wellShapes).mockClear();
         act(() => {
@@ -1674,7 +1727,7 @@ describe("CookFlow: timers", () => {
       // The well as the cook sees it now (the other's clock alone), and with the step's clock in it,
       // led by either: which leads moves with the minutes (review round 2).
       flow(SECOND, { timers: timers({ ledge: [other], soonestRunning: other.id }) });
-      const held = [...room()!.querySelectorAll("[data-ledge]")].map((el) => el.textContent ?? "");
+      const held = [...room()!.querySelectorAll("[data-ledge-held]")].map((el) => el.textContent ?? "");
       expect(held).toHaveLength(3);
       expect(held[0]).toContain("Soak rice");
       expect(held[0]).not.toContain("Saute zucchini");
@@ -1685,7 +1738,7 @@ describe("CookFlow: timers", () => {
 
     it("keeps the well the cook sees in one place in the tree, so moving between a timed and an untimed step never redraws its clocks", () => {
       const f = flow(SECOND, { timers: timers({ ledge: [other], soonestRunning: other.id }) });
-      const shown = () => [...document.querySelectorAll("[data-foot] [data-ledge]")].find((el) => !el.closest("[data-well-room]"));
+      const shown = () => document.querySelector("[data-foot] [data-ledge]");
       const before = shown();
       expect(before).toBeTruthy();
       f.rerender("ready", true, timers({ offer: null, ledge: [other], soonestRunning: other.id }));

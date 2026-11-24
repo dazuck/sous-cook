@@ -7,7 +7,7 @@ import { advanceMeasure } from "./__tests__/advance-measure";
 import { timetableCorpus } from "./__tests__/timetable-corpus";
 import { buildLayout, frameAt, type LayoutInput, type Measure, type SheetGeo, type SheetLayout } from "./sheet-layout";
 import { peekOf } from "./cook-peek";
-import { PEEK_IN, PEEK_OUT, inHandKey, keyLevel, sheetArrowTargets, sheetArrows, stripTap } from "./sheet-strip";
+import { PEEK_IN, PEEK_LEAVE, inHandKey, keyLevel, sheetArrowTargets, sheetArrows, stripTap } from "./sheet-strip";
 import { SheetMotion, type Level, type MotionHost } from "./sheet-motion";
 
 const measure: Measure = (text, px, weight, family) => advanceMeasure(text, px, weight, family);
@@ -167,13 +167,27 @@ describe("the strip's fill and the peek's rows by depth", () => {
     for (const d of [0, 1, 2]) expect(atDepth(L, d).fillMin).toBe(s.progress);
   });
 
-  it("the peek is not drawn at rest (it stands behind the foot), stands whole from the first move up to level 1, and is gone by 1.15 on the way to the whole cook; a pass shows none", () => {
+  it("the peek is not drawn at rest (it stands behind the foot), stands whole from the first move up to level 1, and on to the whole cook, where its rows have turned into the meal's lines; a pass shows none", () => {
     const L = buildLayout(inputFor(roast, at(roast, 10), 1280, 800));
     expect(atDepth(L, 0).peek).toBe(0);
-    for (const d of [PEEK_IN, 0.3, 1]) expect(atDepth(L, d).peek).toBe(1);
-    expect(atDepth(L, 1.08).peek).toBeGreaterThan(0);
-    for (const d of [PEEK_OUT, 1.5, 2]) expect(atDepth(L, d).peek).toBe(0);
+    // The pull moves and fades each row itself (`pull-travel`): the peek stays for it to the end.
+    for (const d of [PEEK_IN, 0.3, 1, 1.15, 1.5, 1.9, PEEK_LEAVE.derived[0]]) expect(atDepth(L, d).peek).toBe(1);
+    expect(atDepth(L, 2).peek).toBe(0);
     expect(atDepth(L, 0.5, { pass: 1 }).peek).toBe(0);
+    expect(atDepth(L, 1.5, { pass: 1 }).peek).toBe(0);
+  });
+
+  it("as written has no lines to turn into: its peek gives way to the outline as that comes in, so the sheet is never empty", () => {
+    const L = buildLayout(inputFor(written, at(written, 2, "go"), 1280, 800));
+    const [from, to] = PEEK_LEAVE.written;
+    for (const d of [1, 1.2, from]) expect(atDepth(L, d).peek).toBe(1);
+    expect(atDepth(L, to).peek).toBe(0);
+    // At every point between, the peek's rows or the outline's words are over half drawn.
+    for (let d = 1; d <= 2.0001; d += 0.025) {
+      const F = atDepth(L, Math.min(2, d));
+      const words = Math.max(0, ...F.labs2.map((b) => b.op));
+      expect(Math.max(F.peek ?? 0, words), `at ${d.toFixed(3)}`).toBeGreaterThan(0.5);
+    }
   });
 
   it("as written retires its band and its next steps' names: nothing of them shows at rest or under the peek", () => {

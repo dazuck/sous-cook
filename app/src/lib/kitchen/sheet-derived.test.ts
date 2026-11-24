@@ -215,6 +215,21 @@ describe("a derived plan's sheet: the transitions (SPEC §11)", () => {
     expect(atDepth(L, 1).header).toBe(1);
   });
 
+  it("1 → 2: one dish name at a time: the top line is gone before the whole cook's own header comes (asked 2026-11-24: two stood in the bar at 75%)", () => {
+    expect(atDepth(L, 1).derived!.head).toBe(0);
+    expect(atDepth(L, 2).derived!.head).toBe(1);
+    let both = 0;
+    let neither = 0;
+    for (let k = 0; k <= 200; k++) {
+      const F = atDepth(L, 1 + k / 200);
+      both = Math.max(both, Math.min(F.header ?? 0, F.derived!.head));
+      if ((F.header ?? 0) === 0 && F.derived!.head === 0) neither++;
+    }
+    expect(both).toBe(0);
+    // And no long gap with no name: the one hands over where the other ends.
+    expect(neither).toBeLessThanOrEqual(1);
+  });
+
   it("a glide straight between 0 and 2 passes level 1: no station shows, the line goes from track to track", () => {
     for (const d of [0.25, 0.5, 1, 1.2, 1.6]) expect(atDepth(L, d, { pass: 1 }).derived!.stations, `at ${d}`).toBe(0);
     // Through level 1's depth the line never turns Ink, nor shrinks to the rail.

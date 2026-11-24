@@ -31,7 +31,7 @@
 import { durationText } from "./time-line";
 import { COOK_COPY } from "./cook-view";
 import { cutToWidth, wrapLines, type Measure } from "./sheet-layout";
-import { PEEK_TYPE } from "./peek-layout";
+import { PEEK_TYPE, mainAt } from "./peek-layout";
 import { breakRows, runsOf, type LineRun, type LineStop, type MealLines } from "./meal-lines";
 
 /** Type and geometry of the columns form, in cpx (the drawing's px at 1280×800 ÷ 1.333). */
@@ -152,6 +152,8 @@ export interface DrawnStop {
   until: number | null;
   /** The labels inside a folded run, for its read. */
   folded: string[];
+  /** The marks inside a folded run (its own first): a peek row of any of them travels to this stop. */
+  foldedMarks: string[];
   /** Where a tap lands: at least `STOP_TARGET_PX` tall. Null for work done. */
   target: { x: number; y: number; w: number; h: number } | null;
   /** The step where lines meet: its words under the bar. */
@@ -222,6 +224,11 @@ export interface ListRow {
   target?: { x: number; y: number; w: number; h: number } | null;
   /** A break's three parts ("then", "50 min free", "while it roasts"). */
   words?: { lead: string; main: string; tail: string | null };
+  /** A break's stretch (`LineBreak.stretch`), and where its main words begin, px from the labels' edge. */
+  stretch?: number;
+  mainX?: number;
+  /** The line of the wrapped row its main words start on. */
+  mainLine?: number;
 }
 
 export interface ListDrawing {
@@ -722,6 +729,7 @@ function ladder(L0: MealLines, g: LinesGeo, measure: Measure, levels: readonly (
       more: q.more,
       until: q.until,
       folded,
+      foldedMarks: q.members ? q.members.map((m) => m.s.mark) : [],
       target: { x: colX[left], y: q.y + h / 2 - th / 2, w: (q.term ? usedW : colX[q.labCol + 1]) - colX[left], h: th },
       term: q.term,
       said: [folded.length ? `${listWords(folded)}` : q.s.label, !folded.length && q.s.pot && q.s.minutes ? durationText(q.s.minutes) : null]
@@ -821,7 +829,8 @@ export function layoutList(L: MealLines, g: LinesGeo, measure: Measure): ListDra
     const lines = wrapLines(one(tail), px.ruled, 500, right - labelX, measure, "text", / +/);
     y += 8 * c;
     const h = lines.length * lh * px.ruled + 2 * (g.narrow ? 14 : 8) * c;
-    rows.push({ kind: "break", y, h, lines, said: one(tail), words: { ...words, tail } });
+    const main = mainAt(lines, words.lead, px.ruled, 500, measure);
+    rows.push({ kind: "break", y, h, lines, said: one(tail), words: { ...words, tail }, stretch: b.stretch, mainX: main.x, mainLine: main.line });
     y += h;
   };
 

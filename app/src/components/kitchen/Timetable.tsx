@@ -128,6 +128,11 @@ export interface TimetableProps {
   stepper?: Omit<ServingStepperProps, "className"> | null;
   /** Text widths for the whole meal's lines, made fresh per layout pass; the page's canvas when not given. */
   measureText?: () => Measure;
+  /**
+   * The whole cook's lines as drawn (null on the opening, or with none): told after each drawing is on
+   * the page, so the sheet can turn the peek's rows into them on the pull. A stable function.
+   */
+  onWholeLines?: (drawing: LinesDrawing | null) => void;
 }
 
 interface Anim {
@@ -247,6 +252,7 @@ export function Timetable(props: TimetableProps) {
     portrait = false,
     stepper = null,
     measureText,
+    onWholeLines,
   } = props;
 
   /** The Ahead note's words, which its "Missed it?" button is described by: the button lies over them. */
@@ -481,8 +487,9 @@ export function Timetable(props: TimetableProps) {
   // is in the fade's key so it listens to the box on screen, whatever the heights.
   const linesMask = footMask(useMoreBelow(linesScrollRef, `${scrollKey}|${ov.timetable.mode}|${linesDrawing?.height ?? 0}`));
   const linesNowY = linesDrawing?.nowY ?? null;
-  // The step in hand starts in view when the whole meal scrolls.
-  useEffect(() => {
+  // The step in hand starts in view when the whole meal scrolls. Before the sheet is told of the
+  // lines (below): a pull in hand takes the lines where they stand.
+  useLayoutEffect(() => {
     const box = linesScrollRef.current;
     if (!box || !linesScroll || linesNowY === null) return;
     box.scrollTop = Math.max(0, linesNowY - box.clientHeight / 3);
@@ -503,6 +510,13 @@ export function Timetable(props: TimetableProps) {
       box.style.touchAction = "";
     };
   }, [linesScroll, linesDrawing]);
+  // The whole cook's lines, told to the sheet once they are on the page (and again when their box is a new one).
+  const wholeLines = ov.whole && !opening ? linesDrawing : null;
+  useLayoutEffect(() => {
+    onWholeLines?.(wholeLines);
+    // Gone from the page (or drawn anew): the sheet lets go of the old parts.
+    return () => onWholeLines?.(null);
+  }, [onWholeLines, wholeLines, ov.timetable.mode]);
   /** This commit is a step of the fit: the glide waits for the stack it lands in. */
   const refitting = useRef(false);
   /**
@@ -1403,7 +1417,8 @@ export function Timetable(props: TimetableProps) {
               top: px(wh.chart.y),
               width: px(wh.chart.w),
               height: px(Math.max(120, wholeLinesBottom(ov) - wh.chart.y)),
-              opacity: wordsOp,
+              // The pull from the peek draws the lines part by part (`pull-paint`): the box shows through it.
+              opacity: "var(--lines-op, 1)",
               maskImage: linesScroll ? linesMask : undefined,
               WebkitMaskImage: linesScroll ? linesMask : undefined,
             }}

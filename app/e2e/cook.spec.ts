@@ -361,7 +361,8 @@ test.describe("Cook mode", () => {
       strip.locator("[data-strip-seg] > span").evaluateAll((els) =>
         els.map((el) => Number(/scaleX\(([\d.]+)\)/.exec((el as HTMLElement).style.transform)?.[1] ?? 0).toFixed(3)).join(" "),
       );
-    const wellClock = page.locator("[data-foot] [data-ledge]:not([data-well-room] [data-ledge])");
+    // The well the cook sees: the held copies beside it carry `data-ledge-held`, not `data-ledge`.
+    const wellClock = page.locator("[data-foot] [data-ledge]");
     /** Every glide on the cook screen done: a step's change, a clock's flight, the sheet's move. */
     const still = () =>
       page.waitForFunction(() =>

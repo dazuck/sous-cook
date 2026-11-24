@@ -1392,15 +1392,18 @@ export function CookFlow({
   const ledge = timers?.ledge ?? [];
   const anyClock = stepTimer !== null || ledge.length > 0 || alarm;
   const now = useNow(anyClock);
-  // The room the well keeps on a step with a timer (DECISIONS 2026-11-24): null on one with none.
-  const room = timers ? wellRoom(timers, now) : null;
+  // The room the well keeps on a step with a timer (DECISIONS 2026-11-24): null on one with none, and
+  // on the last step, where Forward is the wide Done cooking and the foot has no room to hold ahead of
+  // time; the line there moves when its timer starts, as it did before (a release check found it).
+  const holdsRoom = timers !== undefined && !isLast;
+  const room = holdsRoom ? wellRoom(timers, now) : null;
   // Every way the well can stand on the step, each drawn unseen and still in its cell (review round 2),
   // worked out and drawn once per change of the step's timers: nothing in it moves with the clock, so
   // the tick never draws it again (review round 3).
-  const shapesKey = timers ? wellShapesKey(timers) : null;
+  const shapesKey = holdsRoom ? wellShapesKey(timers) : null;
   const onDismissClock = timers?.onDismiss;
   const heldWell = useMemo(() => {
-    const shapes = timers && onDismissClock ? wellShapes(timers, 0) : null;
+    const shapes = holdsRoom && onDismissClock ? wellShapes(timers, 0) : null;
     if (!shapes || !onDismissClock) return null;
     return (
       <span data-well-room aria-hidden="true" inert className="invisible contents">

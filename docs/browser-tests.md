@@ -181,6 +181,9 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | Cook mode: the bottom strip on a cooking step, filled to the step in hand and moving on with Next, a tap raising the peek on the step in hand, the peek's arrow putting it away | `app/e2e/cook.spec.ts` (COOK-5) |
 | Cook mode: the peek and the whole cook laid out again as Prep first's pages turn (the time to the table and the fill move with the page) | not covered in a browser: COOK-5 still passes when the sheet's hold reads only the step's mark and not its page (`inHandKey` in `app/src/lib/kitchen/sheet-strip.ts`). The unit test in `app/src/lib/kitchen/sheet-strip.test.ts` ("tells each page in hand apart") is its only guard. |
 | Cook mode: the whole meal drawn as lines on the opening and at the whole cook, the step in hand marked now, Esc back to the step | `app/e2e/cook.spec.ts` (COOK-6) |
+| Cook mode: the pull between the peek and the whole cook at rest: nothing of the pull left on the page at either level, the drawn set reachable, the step in hand's row and its stop in two places | `app/e2e/sheet-pull.spec.ts` (PULL-1) |
+| Cook mode: one drag from the peek to the whole cook: the step in hand's row travels to its stop, words to read at every depth, one dish name at a time, one set reachable (the drawn one, as the app ships it: see Known limits) and the way back taking a touch only then, and a let-go resting on a level with nothing left over | `app/e2e/sheet-pull.spec.ts` (PULL-2) |
+| Cook mode: as written, the peek's rows reachable between the levels until the outline is drawn, then the outline | `app/e2e/sheet-pull.spec.ts` (PULL-3) |
 | Cook mode: starting a step timer and persistence across reload | `app/e2e/cook.spec.ts` (COOK-2) |
 | Cook mode: walking to end, armed Done cooking finish, home and Made recently update | `app/e2e/cook.spec.ts` (COOK-3) |
 | Cook mode: on a step with a timer the progress line holds one length (the well beside it keeps its clocks' room from the start): before the timer starts, as it runs and loses a digit, at the whole cook with the clock in the well and back, and past the timer's end; a step with no timer keeps the whole line | `app/e2e/cook.spec.ts` (COOK-7) |
@@ -212,3 +215,23 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | Screenshot baseline: Thin White Sauce first cooking step | `app/e2e/visual.spec.ts` (VIS-3) |
 | Screenshots of every other screen | no baseline yet (not signed off) |
 | The phone width | not covered yet |
+
+## Known limits
+
+Behaviour the checks above hold as the app ships it, though it is not settled.
+
+### The pull: which controls can be reached while the sheet is moving
+
+Released as it stands. Nothing at rest. While the sheet is between the peek and the whole cook (a finger holding it, or the half-second glide):
+
+1. Upright, and for one-dish meals, for about a fifth of the pull the drawn list is switched off and the unseen peek rows are what a screen reader reads.
+2. On the wide tablet a tap in a 1 to 4% sliver of the pull can land on "Back to step" or the Prep first / As I go switch while it is under 5% drawn, or be ignored while it is 5 to 17% drawn.
+3. A recipe cooked as written has both the peek and the outline reachable for part of the pull, and an open read band's buttons stay live.
+4. On the straight pass from rest to the whole cook, and when the travel falls back to a fade, neither set is reachable for most of the change.
+5. "···", the Whole recipe ghost and the time to the table sit outside the part that is switched off.
+6. Keyboard focus inside the whole cook is dropped to the page if the sheet is pulled most of the way down and let spring back.
+7. A set-up that fails because a node is missing is retried every frame.
+
+**Where:** `app/src/components/kitchen/CookSheet.tsx` (`pullInert`, `inertly`, the bind retry) and `app/src/components/kitchen/pull-travel.ts`. The switching came in late in the pull's work; before it, both sets were reachable between the levels.
+
+**Severity:** low for touch on the tablet; real for keyboard and screen-reader use mid-pull. The simpler rule on offer: drop the switching and make the whole cook's buttons ignore taps until the sheet rests.

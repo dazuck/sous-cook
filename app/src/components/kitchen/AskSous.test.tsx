@@ -1084,10 +1084,11 @@ describe("Ask on the cook screen: the side panel and the sheet", () => {
     expect(onEngage).not.toHaveBeenCalled();
   });
 
-  it("a listen the cook started from the panel's mic, which then ends by itself beside a draft, moves no focus into the box: only a press that stops it does", () => {
+  it("a listen the cook started from the panel's mic, ending by itself beside a draft, moves no focus into the box: only the press that stops a listen does", () => {
     const { rerender, props } = panel({ voice: tapVoice("ready") });
     const talk = screen.getByRole("button", { name: "Talk to Sous" });
     talk.focus();
+    // This press starts the listen. It is not a stop, though it is a press of the same button.
     fireEvent.click(talk);
     rerender(<AskSous {...props} voice={tapVoice("hearing")} />);
     fireEvent.change(screen.getByRole("textbox", { name: ASK_COPY.field }), { target: { value: "How hot" } });
@@ -1107,10 +1108,11 @@ describe("Ask on the cook screen: the side panel and the sheet", () => {
     fireEvent.click(mic);
     rerender(<AskSous {...props} voice={tapVoice("ready")} />);
     expect(document.activeElement).toBe(box);
-    // A second listen, from the capsule this time, that ends in silence while its mic holds the focus.
+    // A second listen, the capsule's this time, ends in silence while its mic holds the focus.
     rerender(<AskSous {...props} voice={tapVoice("hearing")} />);
     screen.getByRole("button", { name: "Stop listening" }).focus();
     rerender(<AskSous {...props} voice={tapVoice("ready", { kind: "silence" })} />);
+    expect(screen.queryByRole("button", { name: "Stop listening" })).toBeNull();
     expect(document.activeElement).not.toBe(screen.getByRole("textbox", { name: ASK_COPY.field }));
   });
 
