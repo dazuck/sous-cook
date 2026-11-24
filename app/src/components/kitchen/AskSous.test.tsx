@@ -1054,6 +1054,19 @@ describe("Ask on the cook screen: the side panel and the sheet", () => {
     expect(row.querySelector("[data-voice]")!.getAttribute("data-voice")).toBe("blocked");
   });
 
+  it("a listen stopped from the mic beside a draft leaves the cook in the box, not on the page", () => {
+    const { rerender, props } = panel({ voice: tapVoice("ready") });
+    const box = screen.getByRole("textbox", { name: ASK_COPY.field });
+    fireEvent.change(box, { target: { value: "How hot" } });
+    rerender(<AskSous {...props} voice={tapVoice("hearing")} />);
+    screen.getByRole("button", { name: "Stop listening" }).focus();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Stop listening");
+    // The listen is over: the mic gives its place back to Send, and the focus it held goes to the box.
+    rerender(<AskSous {...props} voice={tapVoice("ready")} />);
+    expect(screen.queryByRole("button", { name: "Stop listening" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: ASK_COPY.field }));
+  });
+
   it("has no camera where there is none, and no mic where the browser cannot listen", () => {
     const { container } = panel({ voice: tapVoice("unsupported") });
     expect(container.querySelector("[data-ask-input]")!.querySelectorAll("button")).toHaveLength(0);
