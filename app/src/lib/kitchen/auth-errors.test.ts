@@ -5,7 +5,12 @@ import {
   QueryObserver,
   type QueryClient,
 } from "@tanstack/react-query";
-import { createTRPCClient, httpLink, TRPCClientError } from "@trpc/client";
+import {
+  createTRPCClient,
+  httpBatchLink,
+  httpLink,
+  TRPCClientError,
+} from "@trpc/client";
 import type { PGlite } from "@electric-sql/pglite";
 import { eq } from "drizzle-orm";
 import { Window } from "happy-dom";
@@ -204,6 +209,25 @@ function createRouteTrpcClient(options: {
       httpLink({
         url: `${TEST_AUTH_ENV.BETTER_AUTH_URL}/api/trpc`,
         fetch: createRouteFetch(options),
+      }),
+    ],
+  });
+}
+
+function createBatchRouteTrpcClient(options: {
+  cookieHeader?: string | null;
+  origin?: string;
+  onRequest?: () => void;
+} = {}) {
+  const routeFetch = createRouteFetch(options);
+  return createTRPCClient<AppRouter>({
+    links: [
+      httpBatchLink({
+        url: `${TEST_AUTH_ENV.BETTER_AUTH_URL}/api/trpc`,
+        fetch: async (input, init) => {
+          options.onRequest?.();
+          return routeFetch(input, init);
+        },
       }),
     ],
   });
@@ -413,6 +437,7 @@ describe("AUTHERR-2: handleAuthError navigates once per load and makeQueryClient
     await setWindowUrl(`${TEST_AUTH_ENV.BETTER_AUTH_URL}/kitchen/queue/q1`);
     handleAuthError(unauthorizedErr, { navigation });
     handleAuthError(unauthorizedErr, { navigation });
+    handleAuthError(unauthorizedErr, { navigation });
     expect(replaced).toEqual(["/sign-in"]);
 
     resetAuthErrorsForTests();
@@ -431,7 +456,7 @@ describe("AUTHERR-2: handleAuthError navigates once per load and makeQueryClient
         },
       },
     });
-    const signedOutClient = createRouteTrpcClient();
+    const signedOutClient = createBatchRouteTrpcClient();
     let fetches = 0;
 
     try {
@@ -452,6 +477,128 @@ describe("AUTHERR-2: handleAuthError navigates once per load and makeQueryClient
     }
   });
 
+  it("replaces with /sign-in once when two batched queries answer UNAUTHORIZED", async () => {
+    const replaced: string[] = [];
+    const queryClient = makeQueryClient({
+      navigation: {
+        replace(url: string) {
+          replaced.push(url);
+        },
+      },
+    });
+    let httpRequests = 0;
+    const signedOutClient = createBatchRouteTrpcClient({
+      onRequest: () => {
+        httpRequests += 1;
+      },
+    });
+
+    try {
+      const [firstErr, secondErr] = await Promise.all([
+        runObservedQuery(queryClient, ["kitchen-queue-batch-1"], () =>
+          signedOutClient.getKitchenQueue.query({}),
+        ),
+        runObservedQuery(queryClient, ["kitchen-queue-batch-2"], () =>
+          signedOutClient.getKitchenQueue.query({}),
+        ),
+      ]);
+      expect(firstErr).toBeInstanceOf(TRPCClientError);
+      expect(trpcErrorData(firstErr).code).toBe("UNAUTHORIZED");
+      expect(secondErr).toBeInstanceOf(TRPCClientError);
+      expect(trpcErrorData(secondErr).code).toBe("UNAUTHORIZED");
+      expect(httpRequests).toBe(1);
+      expect(replaced).toEqual(["/sign-in"]);
+    } finally {
+      queryClient.clear();
+    }
+  });
+
+  it("fetches not-invited FORBIDDEN once and navigates to /not-invited through makeQueryClient", async () => {
+    const strangerHeaders = await createUninvitedSessionHeaders();
+    const replaced: string[] = [];
+    const queryClient = makeQueryClient({
+      navigation: {
+        replace(url: string) {
+          replaced.push(url);
+        },
+      },
+    });
+    const uninvitedClient = createBatchRouteTrpcClient({
+      cookieHeader: strangerHeaders.get("cookie"),
+    });
+    let fetches = 0;
+
+    try {
+      const error = await runObservedQuery(
+        queryClient,
+        ["kitchen-queue-not-invited"],
+        () => {
+          fetches += 1;
+          return uninvitedClient.getKitchenQueue.query({});
+        },
+      );
+      expect(error).toBeInstanceOf(TRPCClientError);
+      expect(trpcErrorData(error)).toMatchObject({
+        code: "FORBIDDEN",
+        reason: "not-invited",
+      });
+      expect(fetches).toBe(1);
+      expect(replaced).toEqual(["/not-invited"]);
+    } finally {
+      queryClient.clear();
+    }
+  });
+
+  it("does not navigate on an AI allowance refusal, sends the mutation once, and retries that error three times on queries", async () => {
+    const headersA = await signedInHeaders(userA.id, db);
+    await db
+      .update(kitchens)
+      .set({ aiMonthlyCapMicros: 0 })
+      .where(eq(kitchens.id, kitchenA.id));
+
+    const replaced: string[] = [];
+    const queryClient = makeQueryClient({
+      navigation: {
+        replace(url: string) {
+          replaced.push(url);
+        },
+      },
+    });
+    const cappedClient = createBatchRouteTrpcClient({
+      cookieHeader: headersA.get("cookie"),
+      origin: TEST_AUTH_ENV.BETTER_AUTH_URL,
+    });
+    let calls = 0;
+
+    try {
+      const observer = new MutationObserver(queryClient, {
+        mutationFn: (recipeData: typeof TEST_RECIPE_NO_SERVES) => {
+          calls += 1;
+          return cappedClient.addToKitchenQueue.mutate({ recipeData });
+        },
+      });
+      const error = await catchRejection(observer.mutate(TEST_RECIPE_NO_SERVES));
+      expect(error).toBeInstanceOf(TRPCClientError);
+      expect(trpcErrorData(error).code).toBe("TOO_MANY_REQUESTS");
+      expect(trpcErrorData(error).allowance).toMatchObject({
+        scope: "kitchen",
+      });
+      expect(calls).toBe(1);
+      expect(replaced).toEqual([]);
+
+      const retry = queryClient.getDefaultOptions().queries?.retry;
+      expect(typeof retry).toBe("function");
+      if (typeof retry === "function") {
+        expect(retry(0, error as Error)).toBe(true);
+        expect(retry(1, error as Error)).toBe(true);
+        expect(retry(2, error as Error)).toBe(true);
+        expect(retry(3, error as Error)).toBe(false);
+      }
+    } finally {
+      queryClient.clear();
+    }
+  });
+
   it("sends a mutation answered UNAUTHORIZED to /sign-in once through makeQueryClient", async () => {
     const replaced: string[] = [];
     const queryClient = makeQueryClient({
@@ -461,7 +608,7 @@ describe("AUTHERR-2: handleAuthError navigates once per load and makeQueryClient
         },
       },
     });
-    const signedOutClient = createRouteTrpcClient({
+    const signedOutClient = createBatchRouteTrpcClient({
       origin: TEST_AUTH_ENV.BETTER_AUTH_URL,
     });
     let calls = 0;
@@ -495,7 +642,7 @@ describe("AUTHERR-2: handleAuthError navigates once per load and makeQueryClient
         },
       },
     });
-    const routeClient = createRouteTrpcClient();
+    const routeClient = createBatchRouteTrpcClient();
     let fetches = 0;
 
     try {
@@ -510,6 +657,41 @@ describe("AUTHERR-2: handleAuthError navigates once per load and makeQueryClient
       expect(error).toBeInstanceOf(TRPCClientError);
       expect(trpcErrorData(error).code).toBe("INTERNAL_SERVER_ERROR");
       expect(fetches).toBe(4);
+      expect(replaced).toEqual([]);
+    } finally {
+      queryClient.clear();
+    }
+  });
+
+  it("succeeds with no session cookie and does not navigate in single-kitchen mode", async () => {
+    await client.exec(
+      "delete from members; delete from kitchens where slug <> 'home';",
+    );
+    vi.stubEnv("SOUS_SIGN_IN", "off");
+    resetDeploymentCheckForTests(db);
+
+    const replaced: string[] = [];
+    const queryClient = makeQueryClient({
+      navigation: {
+        replace(url: string) {
+          replaced.push(url);
+        },
+      },
+    });
+    const routeClient = createBatchRouteTrpcClient();
+
+    try {
+      let data: unknown;
+      const error = await runObservedQuery(
+        queryClient,
+        ["kitchen-queue-single-mode"],
+        async () => {
+          data = await routeClient.getKitchenQueue.query({});
+          return data;
+        },
+      );
+      expect(error).toBeNull();
+      expect(data).toBeDefined();
       expect(replaced).toEqual([]);
     } finally {
       queryClient.clear();
@@ -554,6 +736,68 @@ describe("AUTHERR-3: a cook page with a saved session stays open and marks signe
 
     expect(replaced).toEqual([]);
     expect(isSignedOut()).toBe(true);
+  });
+
+  it("stays open and marks signed out on not-invited FORBIDDEN when a saved session exists for the route's queue id", async () => {
+    await setWindowUrl(`${TEST_AUTH_ENV.BETTER_AUTH_URL}/kitchen/queue/q1`);
+    const { fingerprint, session, snapshot } = createSavedCookFixtures();
+    expect(
+      saveSession("q1", fingerprint, session, snapshot, 1_700_000_000_000),
+    ).toBe(true);
+
+    const strangerHeaders = await createUninvitedSessionHeaders();
+    const uninvitedClient = createRouteTrpcClient({
+      cookieHeader: strangerHeaders.get("cookie"),
+    });
+    const notInvitedErr = await catchRejection(
+      uninvitedClient.getKitchenQueue.query({}),
+    );
+    expect(trpcErrorData(notInvitedErr)).toMatchObject({
+      code: "FORBIDDEN",
+      reason: "not-invited",
+    });
+    expect(authErrorKind(notInvitedErr)).toBe("not-invited");
+
+    const replaced: string[] = [];
+    const navigation = {
+      replace(url: string) {
+        replaced.push(url);
+      },
+    };
+
+    expect(isSignedOut()).toBe(false);
+    handleAuthError(notInvitedErr, { navigation });
+
+    expect(replaced).toEqual([]);
+    expect(isSignedOut()).toBe(true);
+  });
+
+  it("navigates to /sign-in once and does not mark signed out when a session is saved only for another queue id", async () => {
+    await setWindowUrl(`${TEST_AUTH_ENV.BETTER_AUTH_URL}/kitchen/queue/q1`);
+    const { fingerprint, session, snapshot } = createSavedCookFixtures();
+    expect(
+      saveSession("q2", fingerprint, session, snapshot, 1_700_000_000_000),
+    ).toBe(true);
+
+    const signedOutClient = createRouteTrpcClient();
+    const unauthorizedErr = await catchRejection(
+      signedOutClient.getKitchenQueue.query({}),
+    );
+    expect(authErrorKind(unauthorizedErr)).toBe("sign-in");
+
+    const replaced: string[] = [];
+    const navigation = {
+      replace(url: string) {
+        replaced.push(url);
+      },
+    };
+
+    expect(isSignedOut()).toBe(false);
+    handleAuthError(unauthorizedErr, { navigation });
+    handleAuthError(unauthorizedErr, { navigation });
+
+    expect(replaced).toEqual(["/sign-in"]);
+    expect(isSignedOut()).toBe(false);
   });
 });
 

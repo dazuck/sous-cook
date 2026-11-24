@@ -4,9 +4,13 @@ import {
   createContext,
   useContext,
   useEffect,
+  useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { QueryClientContext } from "@tanstack/react-query";
+import { reportOutbox } from "@/hooks/useReportOutbox";
+import { timerStore } from "@/lib/kitchen/timer-store";
 import { readSignInModeCookie } from "@/lib/kitchens/mode";
 
 const SignInModeContext = createContext<boolean>(false);
@@ -68,9 +72,25 @@ export function SignInModeProvider({
     readModeSnapshot,
     readModeServerSnapshot,
   );
+  const queryClient = useContext(QueryClientContext);
+  const [reloading, setReloading] = useState(false);
 
   useEffect(() => {
     if (!signInMode) return;
+
+    const prepareForReload = (clearSession: boolean) => {
+      reportOutbox().forget();
+      timerStore.reload();
+      if (queryClient) {
+        void queryClient.cancelQueries();
+        queryClient.clear();
+      }
+      setReloading(true);
+      if (clearSession) {
+        clearSessionStorage();
+      }
+      reload();
+    };
 
     const onStorage = (event: StorageEvent) => {
       if (event.key !== null) return;
@@ -82,13 +102,12 @@ export function SignInModeProvider({
         throw err;
       }
       if (event.storageArea !== local) return;
-      clearSessionStorage();
-      reload();
+      prepareForReload(true);
     };
 
     const onPageShow = (event: PageTransitionEvent) => {
       if (!event.persisted) return;
-      reload();
+      prepareForReload(false);
     };
 
     window.addEventListener("storage", onStorage);
@@ -97,11 +116,11 @@ export function SignInModeProvider({
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("pageshow", onPageShow);
     };
-  }, [signInMode, reload]);
+  }, [signInMode, queryClient, reload]);
 
   return (
     <SignInModeContext.Provider value={signInMode}>
-      {children}
+      {reloading ? null : children}
     </SignInModeContext.Provider>
   );
 }

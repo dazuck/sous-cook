@@ -29,6 +29,7 @@ import {
 } from "../__tests__/test-auth";
 import { homeKitchen } from "../__tests__/kitchens";
 import {
+  FORGET_MARKER_KEY,
   forgetDevice,
   signOutOfDevice,
   startSignIn,
@@ -298,6 +299,21 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 
+function spyLocalStorageCalls(): string[] {
+  const calls: string[] = [];
+  const origSetItem = window.localStorage.setItem.bind(window.localStorage);
+  const origClear = window.localStorage.clear.bind(window.localStorage);
+  vi.spyOn(window.localStorage, "setItem").mockImplementation((key, value) => {
+    calls.push(`setItem:${key}`);
+    return origSetItem(key, value);
+  });
+  vi.spyOn(window.localStorage, "clear").mockImplementation(() => {
+    calls.push("clear");
+    return origClear();
+  });
+  return calls;
+}
+
 describe("DEVICE-1: forgetDevice clears localStorage and sessionStorage", () => {
   it("empties all seeded keys from both localStorage and sessionStorage", () => {
     seedBrowserStorage();
@@ -306,6 +322,56 @@ describe("DEVICE-1: forgetDevice clears localStorage and sessionStorage", () => 
     forgetDevice();
 
     assertStorageEmpty();
+  });
+
+  it("writes the forget marker before clearing when localStorage is empty and leaves it empty", () => {
+    expect(window.localStorage.length).toBe(0);
+    const calls = spyLocalStorageCalls();
+
+    forgetDevice();
+
+    expect(calls).toEqual([`setItem:${FORGET_MARKER_KEY}`, "clear"]);
+    expect(window.localStorage.length).toBe(0);
+    expect(window.localStorage.getItem(FORGET_MARKER_KEY)).toBeNull();
+  });
+
+  it("writes the forget marker before clearing when keys are present and removes the marker too", () => {
+    seedBrowserStorage();
+    const calls = spyLocalStorageCalls();
+
+    forgetDevice();
+
+    expect(calls).toEqual([`setItem:${FORGET_MARKER_KEY}`, "clear"]);
+    assertStorageEmpty();
+    expect(window.localStorage.getItem(FORGET_MARKER_KEY)).toBeNull();
+  });
+
+  it("still clears localStorage when writing the marker throws QuotaExceededError", () => {
+    seedBrowserStorage();
+    const calls: string[] = [];
+    const origClear = window.localStorage.clear.bind(window.localStorage);
+    vi.spyOn(window.localStorage, "setItem").mockImplementation((key) => {
+      calls.push(`setItem:${key}`);
+      throw new DOMException("quota exceeded", "QuotaExceededError");
+    });
+    vi.spyOn(window.localStorage, "clear").mockImplementation(() => {
+      calls.push("clear");
+      return origClear();
+    });
+
+    expect(() => forgetDevice()).not.toThrow();
+    expect(calls).toEqual([`setItem:${FORGET_MARKER_KEY}`, "clear"]);
+    assertStorageEmpty();
+  });
+
+  it("rethrows a non-quota, non-security error thrown while writing the marker", () => {
+    seedBrowserStorage();
+    const unexpected = new TypeError("setItem failed");
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+      throw unexpected;
+    });
+
+    expect(() => forgetDevice()).toThrow(unexpected);
   });
 });
 

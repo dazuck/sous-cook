@@ -549,4 +549,78 @@ describe("SIGNOUT-1: Sign out in the kitchen home rail menu", () => {
     expect(screen.queryByRole("menuitem")).toBeNull();
     expect(subscribeSpy).not.toHaveBeenCalled();
   });
+
+  it("l. returns the label to Sign out when a waiting report finishes sending while armed, and signs out on the next tap", async () => {
+    setSignInCookie(true);
+    let releaseSubmit: () => void = () => {};
+    const outbox = createReportOutbox(memoryStore(), {
+      submit: () =>
+        new Promise<void>((resolve) => {
+          releaseSubmit = resolve;
+        }),
+      annotate: () => Promise.resolve(),
+    });
+
+    await expect(
+      outbox.add(makeReport("waiting-in-flight", "2026-10-04T18:00:00.000Z")),
+    ).resolves.toBe("flagged");
+    expect(outbox.list().map((entry) => entry.status)).toEqual(["waiting"]);
+
+    renderSignOutStandalone(outbox);
+    const item = screen.getByRole("menuitem", { name: SIGN_OUT_COPY.item });
+    fireEvent.click(item);
+    expect(item.textContent).toBe(SIGN_OUT_COPY.armed(1));
+    expect(signOutPostCount()).toBe(0);
+
+    await act(async () => {
+      releaseSubmit();
+      await outbox.flush();
+    });
+    expect(outbox.list().map((entry) => entry.status)).toEqual(["sent"]);
+    expect(item.textContent).toBe(SIGN_OUT_COPY.item);
+
+    fireEvent.click(item);
+    await vi.waitFor(() => {
+      expect(replaceSpy).toHaveBeenCalledWith("/sign-in");
+    });
+    expect(signOutPostCount()).toBe(1);
+  });
+
+  it("m. restores the Sign out label immediately on the second tap while sign-out is still pending", async () => {
+    setSignInCookie(true);
+    const { outbox, submits } = createControlledOutbox();
+    submits["waiting-1"] = "offline";
+    await outbox.add(makeReport("waiting-1", "2026-10-04T18:00:00.000Z"));
+    await outbox.flush();
+
+    let resolveSignOut: (res: Response) => void = () => {};
+    signOutResponder = () =>
+      new Promise<Response>((resolve) => {
+        resolveSignOut = resolve;
+      });
+
+    renderSignOutStandalone(outbox);
+    const item = screen.getByRole("menuitem", { name: SIGN_OUT_COPY.item });
+    fireEvent.click(item);
+    expect(item.textContent).toBe(SIGN_OUT_COPY.armed(1));
+    expect(signOutPostCount()).toBe(0);
+
+    fireEvent.click(item);
+    await vi.waitFor(() => {
+      expect(signOutPostCount()).toBe(1);
+    });
+    expect(item.textContent).toBe(SIGN_OUT_COPY.item);
+    expect(item.getAttribute("aria-disabled")).toBe("true");
+
+    resolveSignOut(
+      new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(replaceSpy).toHaveBeenCalledWith("/sign-in");
+    });
+    expect(signOutPostCount()).toBe(1);
+  });
 });

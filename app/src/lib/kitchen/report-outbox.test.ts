@@ -1236,3 +1236,123 @@ describe("outcomeOf", () => {
     expect(outcomeOf("weird")).toBe("retry");
   });
 });
+
+describe("forget", () => {
+  it("empties list() and notifies listeners once", () => {
+    const backing = memoryStore();
+    const outbox = createReportOutbox(backing, silent);
+    void outbox.add(report());
+    expect(outbox.list()).toHaveLength(1);
+
+    let notified = 0;
+    outbox.subscribe(() => {
+      notified += 1;
+    });
+
+    outbox.forget();
+    expect(outbox.list()).toEqual([]);
+    expect(notified).toBe(1);
+
+    outbox.forget();
+    expect(notified).toBe(1);
+  });
+
+  it("causes add to resolve failed and store nothing", async () => {
+    const backing = memoryStore();
+    const { sender, submits } = scripted();
+    const outbox = createReportOutbox(backing, sender);
+    outbox.forget();
+
+    await expect(outbox.add(report())).resolves.toBe("failed");
+    expect(outbox.list()).toEqual([]);
+    expect(backing.getItem(OUTBOX_KEY)).toBeNull();
+    expect(submits).toHaveLength(0);
+  });
+
+  it("makes annotate on an old id write nothing", () => {
+    const backing = memoryStore();
+    const { sender, submits, annotates } = scripted({ submit: [offline] });
+    const outbox = createReportOutbox(backing, sender);
+    const captured = report();
+    void outbox.add(captured);
+    backing.removeItem(OUTBOX_KEY);
+
+    outbox.forget();
+    outbox.annotate(captured.id, "typed after forget");
+
+    expect(backing.getItem(OUTBOX_KEY)).toBeNull();
+    expect(outbox.list()).toEqual([]);
+    expect(submits).toHaveLength(1);
+    expect(annotates).toEqual([]);
+  });
+
+  it("makes flush send nothing", async () => {
+    const backing = memoryStore();
+    const { sender, submits, annotates } = scripted({ submit: [offline] });
+    const outbox = createReportOutbox(backing, sender);
+    void outbox.add(report());
+    await settle();
+    expect(submits).toHaveLength(1);
+
+    backing.removeItem(OUTBOX_KEY);
+    outbox.forget();
+    await outbox.flush();
+
+    expect(submits).toHaveLength(1);
+    expect(annotates).toEqual([]);
+    expect(backing.getItem(OUTBOX_KEY)).toBeNull();
+  });
+
+  it("writes nothing and sends no further report when an in-flight send settles after forget", async () => {
+    let releaseFirst: () => void = () => {};
+    const { sender, submits } = scripted({
+      submit: [
+        () =>
+          new Promise<void>((resolve) => {
+            releaseFirst = resolve;
+          }),
+      ],
+    });
+    const backing = memoryStore();
+    const outbox = createReportOutbox(backing, sender);
+    const first = report();
+    const second = report();
+    void outbox.add(first);
+    await settle();
+    void outbox.add(second);
+    expect(submits.map((r) => r.id)).toEqual([first.id]);
+
+    backing.removeItem(OUTBOX_KEY);
+    outbox.forget();
+    releaseFirst();
+    await settle();
+
+    expect(backing.getItem(OUTBOX_KEY)).toBeNull();
+    expect(outbox.list()).toEqual([]);
+    expect(submits.map((r) => r.id)).toEqual([first.id]);
+  });
+
+  it("ignores storage events after forget", () => {
+    const backing = memoryStore();
+    const target = new EventTarget();
+    const here = createReportOutbox(backing, silent);
+    const stop = here.start(target as Window);
+    try {
+      let notified = 0;
+      here.subscribe(() => {
+        notified += 1;
+      });
+      here.forget();
+      expect(notified).toBe(1);
+
+      const other = createReportOutbox(backing, silent);
+      void other.add(report());
+      target.dispatchEvent(new StorageEvent("storage", { key: OUTBOX_KEY }));
+
+      expect(here.list()).toEqual([]);
+      expect(notified).toBe(1);
+    } finally {
+      stop();
+    }
+  });
+});

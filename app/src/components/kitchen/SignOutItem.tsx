@@ -95,7 +95,11 @@ function SignOutRow({
         className={rowClassName}
       >
         <SignOutGlyph />
-        <span>{armed ? SIGN_OUT_COPY.armed(unsent) : SIGN_OUT_COPY.item}</span>
+        <span>
+          {armed && unsent > 0
+            ? SIGN_OUT_COPY.armed(unsent)
+            : SIGN_OUT_COPY.item}
+        </span>
       </button>
       {message !== null && (
         <p

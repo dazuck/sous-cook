@@ -38,6 +38,7 @@ export function makeQueryClient(deps?: AuthErrorDeps): QueryClient {
     }),
     defaultOptions: {
       queries: {
+        // Imperative fetches (queryClient.fetchQuery, prefetchQuery, ensureQueryData, and tRPC's utils fetch, prefetch and ensureData) inherit this default, so they retry other errors three times; pass retry: false where no retry is meant. Nothing calls them today.
         retry: (failureCount, error) =>
           authErrorKind(error) === null && failureCount < 3,
       },

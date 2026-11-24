@@ -32,6 +32,12 @@ export type SignOutOutcome = "signed-out" | "network" | "refused";
 
 const GOOGLE_OAUTH_URL_PREFIX = "https://accounts.google.com/";
 
+/**
+ * Written to localStorage right before clear() so an already-empty store
+ * becomes non-empty and clear() broadcasts a storage event to other open tabs.
+ */
+export const FORGET_MARKER_KEY = "sous-forget";
+
 function isConfirmedSignOut(
   result: Awaited<ReturnType<DeviceAuthClient["signOut"]>>,
 ): boolean {
@@ -44,13 +50,40 @@ function isConfirmedSignOut(
   return (result.data as { success?: unknown }).success === true;
 }
 
-function isSecurityError(err: unknown): boolean {
+function isDomExceptionNamed(err: unknown, name: string): boolean {
   const isDomException =
     err instanceof DOMException ||
     (typeof window !== "undefined" &&
       typeof window.DOMException === "function" &&
       err instanceof window.DOMException);
-  return isDomException && err.name === "SecurityError";
+  return isDomException && err.name === name;
+}
+
+function isSecurityError(err: unknown): boolean {
+  return isDomExceptionNamed(err, "SecurityError");
+}
+
+function isQuotaExceededError(err: unknown): boolean {
+  return isDomExceptionNamed(err, "QuotaExceededError");
+}
+
+function clearLocalStorage(): void {
+  try {
+    const storage = window.localStorage;
+    try {
+      storage.setItem(FORGET_MARKER_KEY, String(Date.now()));
+    } catch (err) {
+      if (!isQuotaExceededError(err)) {
+        throw err;
+      }
+    }
+    storage.clear();
+  } catch (err) {
+    if (isSecurityError(err)) {
+      return;
+    }
+    throw err;
+  }
 }
 
 function clearStorage(getStorage: () => Storage): void {
@@ -66,11 +99,12 @@ function clearStorage(getStorage: () => Storage): void {
 
 /**
  * Empties all browser storage for this origin (localStorage and this tab's
- * sessionStorage). Skips a store if the browser blocks access with a
- * SecurityError; rethrows any other error.
+ * sessionStorage). Writes a marker before clearing localStorage so an empty
+ * store still broadcasts a storage event to other open tabs. Skips a store if
+ * the browser blocks access with a SecurityError; rethrows any other error.
  */
 export function forgetDevice(): void {
-  clearStorage(() => window.localStorage);
+  clearLocalStorage();
   clearStorage(() => window.sessionStorage);
 }
 

@@ -10,6 +10,7 @@ import {
   useSignInMode,
 } from "@/components/kitchen/SignInMode";
 import { reportOutbox } from "@/hooks/useReportOutbox";
+import { FORGET_MARKER_KEY } from "@/lib/auth/device";
 import type { CookReport } from "@/lib/kitchen/report-capture";
 import { timerStore } from "@/lib/kitchen/timer-store";
 import { SIGN_IN_MODE_COOKIE } from "@/lib/kitchens/mode";
@@ -102,10 +103,54 @@ function makeReport(): CookReport {
   };
 }
 
+async function loadFreshKitchenModules() {
+  vi.resetModules();
+  const [
+    { QueryClient, QueryClientProvider },
+    { default: FreshKitchenSectionLayout },
+    {
+      SignInModeProvider: FreshSignInModeProvider,
+      useSignInMode: freshUseSignInMode,
+    },
+    { reportOutbox: freshReportOutbox },
+    { timerStore: freshTimerStore },
+  ] = await Promise.all([
+    import("@tanstack/react-query"),
+    import("./layout"),
+    import("@/components/kitchen/SignInMode"),
+    import("@/hooks/useReportOutbox"),
+    import("@/lib/kitchen/timer-store"),
+  ]);
+
+  function FreshModeReader() {
+    const signInMode = freshUseSignInMode();
+    return <div data-testid="sign-in-mode">{String(signInMode)}</div>;
+  }
+
+  return {
+    QueryClient,
+    QueryClientProvider,
+    KitchenSectionLayout: FreshKitchenSectionLayout,
+    SignInModeProvider: FreshSignInModeProvider,
+    ModeReader: FreshModeReader,
+    reportOutbox: freshReportOutbox,
+    timerStore: freshTimerStore,
+  };
+}
+
+async function settleMicrotasks(): Promise<void> {
+  for (let i = 0; i < 20; i += 1) {
+    await Promise.resolve();
+  }
+}
+
 beforeEach(() => {
   storageWindow = new Window({ url: "https://app.example.com/kitchen" });
   vi.stubGlobal("localStorage", storageWindow.localStorage);
   vi.stubGlobal("sessionStorage", storageWindow.sessionStorage);
+  vi.spyOn(globalThis, "fetch").mockRejectedValue(
+    new TypeError("Failed to fetch"),
+  );
   window.localStorage.clear();
   window.sessionStorage.clear();
   setSignInCookie(false);
@@ -113,6 +158,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   cleanup();
   vi.restoreAllMocks();
   setSignInCookie(false);
@@ -177,14 +223,19 @@ describe("LAYOUT-1: KitchenSectionLayout provides sign-in mode and starts the re
 });
 
 describe("LAYOUT-2: SignInModeProvider reloads on cross-tab storage clear and bfcache restore", () => {
-  it("empties sessionStorage and reloads on localStorage clear, ignores other keys and areas, and reloads without clearing on persisted pageshow", () => {
+  it("empties sessionStorage and reloads on localStorage clear, ignores other keys and areas, and reloads without clearing on persisted pageshow", async () => {
     setSignInCookie(true);
+    const {
+      SignInModeProvider: FreshSignInModeProvider,
+      ModeReader: FreshModeReader,
+      reportOutbox: freshReportOutbox,
+    } = await loadFreshKitchenModules();
     const reload = vi.fn();
 
     render(
-      <SignInModeProvider reload={reload}>
-        <ModeReader />
-      </SignInModeProvider>,
+      <FreshSignInModeProvider reload={reload}>
+        <FreshModeReader />
+      </FreshSignInModeProvider>,
     );
 
     window.sessionStorage.setItem("sous.cook-scale.q1", "2");
@@ -194,6 +245,10 @@ describe("LAYOUT-2: SignInModeProvider reloads on cross-tab storage clear and bf
 
     window.sessionStorage.setItem("sous.cook-scale.q1", "2");
     dispatchStorageKey("sous-feedback", window.localStorage);
+    expect(window.sessionStorage.getItem("sous.cook-scale.q1")).toBe("2");
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    dispatchStorageKey(FORGET_MARKER_KEY, window.localStorage);
     expect(window.sessionStorage.getItem("sous.cook-scale.q1")).toBe("2");
     expect(reload).toHaveBeenCalledTimes(1);
 
@@ -208,26 +263,72 @@ describe("LAYOUT-2: SignInModeProvider reloads on cross-tab storage clear and bf
     dispatchPageShow(false);
     expect(window.sessionStorage.getItem("sous.cook-scale.q1")).toBe("2");
     expect(reload).toHaveBeenCalledTimes(2);
+    expect(freshReportOutbox().list()).toEqual([]);
   });
 
-  it("installs no listeners when the sign-in cookie is absent", () => {
+  it("leaves outbox, timers, rendered child, and query cache untouched in single-kitchen mode", async () => {
     setSignInCookie(false);
+    const {
+      QueryClient,
+      QueryClientProvider,
+      SignInModeProvider: FreshSignInModeProvider,
+      ModeReader: FreshModeReader,
+      reportOutbox: freshReportOutbox,
+      timerStore: freshTimerStore,
+    } = await loadFreshKitchenModules();
     const reload = vi.fn();
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(["kitchen", "queue"], [{ id: "q1" }]);
 
-    render(
-      <SignInModeProvider reload={reload}>
-        <ModeReader />
-      </SignInModeProvider>,
+    const outbox = freshReportOutbox();
+    const captured = makeReport();
+    await expect(outbox.add(captured)).resolves.toBe("flagged");
+    await outbox.flush();
+
+    freshTimerStore.start(
+      {
+        id: "timer-simmer",
+        queueId: "q1",
+        recipeName: "Mole",
+        stepId: "s1",
+        label: "Simmer",
+        durationMs: 60_000,
+      },
+      Date.now(),
     );
 
-    window.sessionStorage.setItem("sous.cook-scale.q1", "2");
-    dispatchStorageClear(window.localStorage);
-    dispatchStorageKey("sous-feedback", window.localStorage);
-    dispatchPageShow(true);
-    dispatchPageShow(false);
+    try {
+      render(
+        <QueryClientProvider client={queryClient}>
+          <FreshSignInModeProvider reload={reload}>
+            <FreshModeReader />
+          </FreshSignInModeProvider>
+        </QueryClientProvider>,
+      );
 
-    expect(reload).not.toHaveBeenCalled();
-    expect(window.sessionStorage.getItem("sous.cook-scale.q1")).toBe("2");
+      window.sessionStorage.setItem("sous.cook-scale.q1", "2");
+      window.localStorage.clear();
+      dispatchStorageClear(window.localStorage);
+      dispatchStorageKey("sous-feedback", window.localStorage);
+      dispatchPageShow(true);
+      dispatchPageShow(false);
+
+      expect(reload).not.toHaveBeenCalled();
+      expect(outbox.list().map((entry) => entry.id)).toEqual([captured.id]);
+      expect(freshTimerStore.getSnapshot().map((timer) => timer.id)).toEqual([
+        "timer-simmer",
+      ]);
+      expect(screen.getByTestId("sign-in-mode").textContent).toBe("false");
+      expect(queryClient.getQueryData(["kitchen", "queue"])).toEqual([
+        { id: "q1" },
+      ]);
+      expect(window.sessionStorage.getItem("sous.cook-scale.q1")).toBe("2");
+    } finally {
+      outbox.forget();
+      freshTimerStore.reload();
+      queryClient.clear();
+    }
+    expect(outbox.list()).toEqual([]);
   });
 
   it("removes listeners on unmount", () => {
@@ -249,16 +350,20 @@ describe("LAYOUT-2: SignInModeProvider reloads on cross-tab storage clear and bf
     expect(window.sessionStorage.getItem("sous.cook-scale.q1")).toBe("2");
   });
 
-  it("reloads the real kitchen layout when another tab clears localStorage while a report waits and a timer runs", async () => {
+  it("empties outbox and timers, unmounts children, stops write-backs, and reloads the real kitchen layout on clear", async () => {
+    vi.useFakeTimers();
     setSignInCookie(true);
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(
-      new TypeError("Failed to fetch"),
-    );
+    const {
+      KitchenSectionLayout: FreshKitchenSectionLayout,
+      ModeReader: FreshModeReader,
+      reportOutbox: freshReportOutbox,
+      timerStore: freshTimerStore,
+    } = await loadFreshKitchenModules();
     const reloadSpy = vi
       .spyOn(window.location, "reload")
       .mockImplementation(() => {});
 
-    const outbox = reportOutbox();
+    const outbox = freshReportOutbox();
     const captured = makeReport();
     await expect(outbox.add(captured)).resolves.toBe("flagged");
     await outbox.flush();
@@ -266,7 +371,7 @@ describe("LAYOUT-2: SignInModeProvider reloads on cross-tab storage clear and bf
       outbox.list().find((entry) => entry.id === captured.id)?.status,
     ).toBe("waiting");
 
-    timerStore.start(
+    freshTimerStore.start(
       {
         id: "timer-simmer",
         queueId: "q1",
@@ -277,12 +382,12 @@ describe("LAYOUT-2: SignInModeProvider reloads on cross-tab storage clear and bf
       },
       Date.now(),
     );
-    expect(timerStore.getSnapshot()).toHaveLength(1);
+    expect(freshTimerStore.getSnapshot()).toHaveLength(1);
 
     const { unmount } = render(
-      <KitchenSectionLayout>
-        <ModeReader />
-      </KitchenSectionLayout>,
+      <FreshKitchenSectionLayout>
+        <FreshModeReader />
+      </FreshKitchenSectionLayout>,
     );
     expect(screen.getByTestId("sign-in-mode").textContent).toBe("true");
 
@@ -290,27 +395,187 @@ describe("LAYOUT-2: SignInModeProvider reloads on cross-tab storage clear and bf
     window.localStorage.clear();
     dispatchStorageClear(window.localStorage);
 
+    expect(outbox.list()).toEqual([]);
+    expect(freshTimerStore.getSnapshot()).toEqual([]);
+    expect(screen.queryByTestId("sign-in-mode")).toBeNull();
     expect(reloadSpy).toHaveBeenCalledTimes(1);
     expect(window.sessionStorage.length).toBe(0);
 
+    outbox.annotate(captured.id, "written after clear");
+    await expect(outbox.add(makeReport())).resolves.toBe("failed");
+    expect(window.localStorage.getItem("sous-feedback")).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+    expect(window.localStorage.getItem("sous-chimer")).toBeNull();
+    expect(window.localStorage.getItem("sous-timers")).toBeNull();
+
     unmount();
-    timerStore.dismiss("timer-simmer");
+    expect(outbox.list()).toEqual([]);
   });
 
-  it("skips clearing sessionStorage on SecurityError and still reloads", () => {
+  it("writes nothing and makes no second send when an in-flight outbox request settles after clear", async () => {
     setSignInCookie(true);
+    const {
+      KitchenSectionLayout: FreshKitchenSectionLayout,
+      ModeReader: FreshModeReader,
+      reportOutbox: freshReportOutbox,
+    } = await loadFreshKitchenModules();
+    const reloadSpy = vi
+      .spyOn(window.location, "reload")
+      .mockImplementation(() => {});
+
+    let fetchCalls = 0;
+    let resolveFirst: (response: Response) => void = () => {};
+    vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+      fetchCalls += 1;
+      return new Promise<Response>((resolve) => {
+        if (fetchCalls === 1) {
+          resolveFirst = resolve;
+        }
+      });
+    });
+
+    const outbox = freshReportOutbox();
+    const first = makeReport();
+    const second = makeReport();
+    await expect(outbox.add(first)).resolves.toBe("flagged");
+    await settleMicrotasks();
+    await expect(outbox.add(second)).resolves.toBe("flagged");
+    expect(fetchCalls).toBe(1);
+
+    const { unmount } = render(
+      <FreshKitchenSectionLayout>
+        <FreshModeReader />
+      </FreshKitchenSectionLayout>,
+    );
+
+    window.localStorage.clear();
+    dispatchStorageClear(window.localStorage);
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+
+    resolveFirst(
+      new Response(
+        JSON.stringify({ result: { data: { id: first.id, duplicate: false } } }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    await settleMicrotasks();
+
+    expect(window.localStorage.getItem("sous-feedback")).toBeNull();
+    expect(fetchCalls).toBe(1);
+    expect(outbox.list()).toEqual([]);
+
+    unmount();
+  });
+
+  it("clears the real QueryClient cache on cross-tab clear", async () => {
+    setSignInCookie(true);
+    const {
+      QueryClient,
+      QueryClientProvider,
+      SignInModeProvider: FreshSignInModeProvider,
+      ModeReader: FreshModeReader,
+      reportOutbox: freshReportOutbox,
+    } = await loadFreshKitchenModules();
+    const reload = vi.fn();
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(["kitchen", "queue"], [{ id: "q1" }]);
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(1);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <FreshSignInModeProvider reload={reload}>
+          <FreshModeReader />
+        </FreshSignInModeProvider>
+      </QueryClientProvider>,
+    );
+
+    window.localStorage.clear();
+    dispatchStorageClear(window.localStorage);
+
+    expect(queryClient.getQueryData(["kitchen", "queue"])).toBeUndefined();
+    expect(queryClient.getQueryCache().getAll()).toEqual([]);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(freshReportOutbox().list()).toEqual([]);
+  });
+
+  it("runs the same preparation on persisted pageshow while keeping sessionStorage", async () => {
+    setSignInCookie(true);
+    const {
+      QueryClient,
+      QueryClientProvider,
+      SignInModeProvider: FreshSignInModeProvider,
+      ModeReader: FreshModeReader,
+      reportOutbox: freshReportOutbox,
+      timerStore: freshTimerStore,
+    } = await loadFreshKitchenModules();
+    const reload = vi.fn();
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(["kitchen", "queue"], [{ id: "q1" }]);
+
+    const outbox = freshReportOutbox();
+    await expect(outbox.add(makeReport())).resolves.toBe("flagged");
+    await outbox.flush();
+    expect(outbox.list()).toHaveLength(1);
+
+    freshTimerStore.start(
+      {
+        id: "timer-simmer",
+        queueId: "q1",
+        recipeName: "Mole",
+        stepId: "s1",
+        label: "Simmer",
+        durationMs: 60_000,
+      },
+      Date.now(),
+    );
+    expect(freshTimerStore.getSnapshot()).toHaveLength(1);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <FreshSignInModeProvider reload={reload}>
+          <FreshModeReader />
+        </FreshSignInModeProvider>
+      </QueryClientProvider>,
+    );
+
+    window.sessionStorage.setItem("sous.cook-scale.q1", "2");
+    window.localStorage.clear();
+    dispatchPageShow(true);
+
+    expect(outbox.list()).toEqual([]);
+    expect(freshTimerStore.getSnapshot()).toEqual([]);
+    expect(queryClient.getQueryCache().getAll()).toEqual([]);
+    expect(screen.queryByTestId("sign-in-mode")).toBeNull();
+    expect(window.sessionStorage.getItem("sous.cook-scale.q1")).toBe("2");
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips clearing sessionStorage on SecurityError and still reloads", async () => {
+    setSignInCookie(true);
+    const {
+      SignInModeProvider: FreshSignInModeProvider,
+      ModeReader: FreshModeReader,
+      reportOutbox: freshReportOutbox,
+    } = await loadFreshKitchenModules();
     const reload = vi.fn();
     vi.spyOn(window, "sessionStorage", "get").mockImplementation(() => {
       throw new DOMException("blocked", "SecurityError");
     });
 
     render(
-      <SignInModeProvider reload={reload}>
-        <ModeReader />
-      </SignInModeProvider>,
+      <FreshSignInModeProvider reload={reload}>
+        <FreshModeReader />
+      </FreshSignInModeProvider>,
     );
 
     expect(() => dispatchStorageClear(window.localStorage)).not.toThrow();
     expect(reload).toHaveBeenCalledTimes(1);
+    expect(freshReportOutbox().list()).toEqual([]);
   });
 });

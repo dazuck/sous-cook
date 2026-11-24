@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createTRPCClient, httpLink, TRPCClientError } from "@trpc/client";
 import type { PGlite } from "@electric-sql/pglite";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/db", async () =>
@@ -8,7 +9,7 @@ vi.mock("@/lib/db", async () =>
 );
 
 import * as dbModule from "@/lib/db";
-import { cookReports, db } from "@/lib/db";
+import { cookReports, db, members } from "@/lib/db";
 import { GET as trpcGet, POST as trpcPost } from "@/app/api/trpc/[trpc]/route";
 import { resetAuthForTests } from "@/lib/auth/auth";
 import { REPORTS_PER_DAY } from "@/lib/cook-reports";
@@ -319,5 +320,56 @@ describe("OUTBOX-1: report outbox outcomes against the real tRPC route", () => {
     await outbox.flush();
     expect(routeCalls).toBe(1);
     expect(outbox.list()[0]?.status).toBe("refused");
+  });
+
+  it("classifies not-invited FORBIDDEN from a session whose member row was removed as retry", async () => {
+    const { user } = await seedKitchen(db, {
+      slug: `removed-${randomUUID().slice(0, 8)}`,
+      name: "Removed Kitchen",
+    });
+    const strangerHeaders = await signedInHeaders(user.id, db);
+    await db.delete(members).where(eq(members.userId, user.id));
+
+    const uninvitedClient = createRouteTrpcClient({
+      cookieHeader: strangerHeaders.get("cookie"),
+      origin: TEST_AUTH_ENV.BETTER_AUTH_URL,
+    });
+    const notInvitedErr = await catchRejection(
+      uninvitedClient.submitCookReport.mutate(makeReport()),
+    );
+    expect(notInvitedErr).toBeInstanceOf(TRPCClientError);
+    expect(
+      (notInvitedErr as TRPCClientError<AppRouter>).data as {
+        code?: unknown;
+        reason?: unknown;
+      },
+    ).toMatchObject({
+      code: "FORBIDDEN",
+      reason: "not-invited",
+    });
+    expect(outcomeOf(notInvitedErr)).toBe("retry");
+  });
+
+  it("answers duplicate rather than CONFLICT when the same report id is submitted twice in single-kitchen mode", async () => {
+    await client.exec(
+      "delete from members; delete from kitchens where slug <> 'home';",
+    );
+    vi.stubEnv("SOUS_SIGN_IN", "off");
+    resetDeploymentCheckForTests(db);
+
+    const singleClient = createRouteTrpcClient();
+    const report = makeReport();
+    await expect(singleClient.submitCookReport.mutate(report)).resolves.toEqual(
+      {
+        id: report.id,
+        duplicate: false,
+      },
+    );
+    await expect(singleClient.submitCookReport.mutate(report)).resolves.toEqual(
+      {
+        id: report.id,
+        duplicate: true,
+      },
+    );
   });
 });
