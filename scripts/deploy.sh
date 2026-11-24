@@ -871,7 +871,7 @@ if ! (cd "${worktree_dir}" && "${host_cli}" deploy --prod --skip-domain --yes --
 fi
 cat "${stage_out}"
 
-parse_staged_url_json() {
+parse_staged_url() {
   local stage_file="$1"
   node -e '
 const fs = require("node:fs");
@@ -886,92 +886,151 @@ function fail(message) {
   process.exit(1);
 }
 
-const raw = fs.readFileSync(stagePath, "utf8").trim();
-if (!raw) {
+function isDnsHostname(hostname) {
+  if (hostname.length === 0 || hostname.length > 253 || hostname.endsWith(".")) {
+    return false;
+  }
+  const labels = hostname.split(".");
+  if (labels.length < 2) {
+    return false;
+  }
+  for (const label of labels) {
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function validateStagedUrl(rawUrl, allowBareHostname) {
+  if (typeof rawUrl !== "string" || rawUrl.length === 0) {
+    fail(noUrlMsg);
+  }
+  if (/[\x00-\x1f\x7f\s]/.test(rawUrl) || rawUrl.includes("%")) {
+    fail(invalidUrlMsg);
+  }
+
+  let rest;
+  if (rawUrl.includes("://")) {
+    if (!rawUrl.startsWith("https://")) {
+      fail(invalidUrlMsg);
+    }
+    rest = rawUrl.slice("https://".length);
+  } else {
+    if (!allowBareHostname) {
+      fail(invalidUrlMsg);
+    }
+    rest = rawUrl;
+  }
+
+  if (
+    !rest ||
+    rest.includes("@") ||
+    rest.includes(":") ||
+    rest.includes("?") ||
+    rest.includes("#") ||
+    rest.includes("\\")
+  ) {
+    fail(invalidUrlMsg);
+  }
+
+  // Check path on the raw text before URL normalization so dot segments such
+  // as host/. or host/a/.. are refused rather than normalized away.
+  const firstSlash = rest.indexOf("/");
+  if (firstSlash !== -1) {
+    if (firstSlash !== rest.length - 1) {
+      fail(invalidUrlMsg);
+    }
+    rest = rest.slice(0, -1);
+  }
+  if (!rest) {
+    fail(invalidUrlMsg);
+  }
+
+  let urlObj;
+  try {
+    urlObj = new URL(`https://${rest}`);
+  } catch {
+    fail(invalidUrlMsg);
+  }
+  if (
+    urlObj.protocol !== "https:" ||
+    !urlObj.hostname ||
+    urlObj.username !== "" ||
+    urlObj.password !== "" ||
+    urlObj.port !== "" ||
+    urlObj.search !== "" ||
+    urlObj.hash !== "" ||
+    urlObj.pathname !== "/" ||
+    !isDnsHostname(urlObj.hostname)
+  ) {
+    fail(invalidUrlMsg);
+  }
+
+  return `https://${urlObj.hostname}`;
+}
+
+const content = fs.readFileSync(stagePath, "utf8");
+const trimmed = content.trim();
+if (!trimmed) {
   fail(noUrlMsg);
 }
 
+let isJson = false;
 let parsed;
 try {
-  parsed = JSON.parse(raw);
+  parsed = JSON.parse(trimmed);
+  isJson = true;
 } catch {
-  fail(noUrlMsg);
-}
-if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-  fail(noUrlMsg);
+  isJson = false;
 }
 
-const hasDeployment =
-  parsed.deployment !== null &&
-  typeof parsed.deployment === "object" &&
-  !Array.isArray(parsed.deployment);
-const source = hasDeployment ? parsed.deployment : parsed;
+let candidate = null;
+let allowBareHostname = false;
 
-if (
-  Object.prototype.hasOwnProperty.call(source, "readyState") &&
-  source.readyState !== undefined &&
-  source.readyState !== null
-) {
-  if (source.readyState !== "READY") {
-    fail(
-      `deploy: staged deployment reported readyState "${String(source.readyState)}" (expected "READY"); nothing was promoted`,
-    );
+if (isJson) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    fail(noUrlMsg);
   }
+
+  const hasDeployment =
+    parsed.deployment !== null &&
+    typeof parsed.deployment === "object" &&
+    !Array.isArray(parsed.deployment);
+  const source = hasDeployment ? parsed.deployment : parsed;
+
+  if (Object.prototype.hasOwnProperty.call(source, "readyState")) {
+    if (source.readyState !== "READY") {
+      fail(
+        `deploy: staged deployment reported readyState ${JSON.stringify(source.readyState)} (expected "READY"); nothing was promoted`,
+      );
+    }
+  }
+
+  if (typeof source.url !== "string" || source.url.length === 0) {
+    fail(noUrlMsg);
+  }
+  candidate = source.url;
+  allowBareHostname = true;
+} else {
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (line.startsWith("https://")) {
+      candidate = line;
+    }
+  }
+  if (candidate === null) {
+    fail(noUrlMsg);
+  }
+  allowBareHostname = false;
 }
 
-const rawUrl = source.url;
-if (typeof rawUrl !== "string" || rawUrl.length === 0) {
-  fail(noUrlMsg);
-}
-if (/[\x00-\x1f\x7f\s]/.test(rawUrl)) {
-  fail(invalidUrlMsg);
-}
-
-const hasScheme = rawUrl.includes("://");
-if (hasScheme && !rawUrl.startsWith("https://")) {
-  fail(invalidUrlMsg);
-}
-const afterScheme = hasScheme ? rawUrl.slice("https://".length) : rawUrl;
-if (
-  !afterScheme ||
-  afterScheme.startsWith("/") ||
-  afterScheme.includes("@") ||
-  afterScheme.includes(":") ||
-  afterScheme.includes("?") ||
-  afterScheme.includes("#") ||
-  afterScheme.includes("\\")
-) {
-  fail(invalidUrlMsg);
-}
-
-let urlObj;
-try {
-  urlObj = new URL(hasScheme ? rawUrl : `https://${rawUrl}`);
-} catch {
-  fail(invalidUrlMsg);
-}
-if (
-  urlObj.protocol !== "https:" ||
-  !urlObj.hostname ||
-  urlObj.username !== "" ||
-  urlObj.password !== "" ||
-  urlObj.port !== "" ||
-  urlObj.search !== "" ||
-  urlObj.hash !== "" ||
-  urlObj.pathname !== "/"
-) {
-  fail(invalidUrlMsg);
-}
-
-process.stdout.write(`https://${urlObj.hostname}`);
+process.stdout.write(validateStagedUrl(candidate, allowBareHostname));
 ' "${stage_file}"
 }
 
-staged_url="$(awk '{ sub(/\r$/, ""); if ($0 ~ /^https:\/\//) url = $0 } END { print url }' "${stage_out}")"
-if [ -z "${staged_url}" ]; then
-  if ! staged_url="$(parse_staged_url_json "${stage_out}")"; then
-    exit 1
-  fi
+if ! staged_url="$(parse_staged_url "${stage_out}")"; then
+  exit 1
 fi
 if [ -z "${staged_url}" ]; then
   printf 'deploy: host staging output contained no https:// URL (neither a bare https:// line nor a JSON document with a deployment URL was found); nothing was promoted\n' >&2

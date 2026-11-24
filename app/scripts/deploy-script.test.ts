@@ -2265,56 +2265,88 @@ describe("release scripts", () => {
   });
 
   it(
-    "DEPLOY-22: refuses missing or invalid SOUS_EXPECT_SIGN_IN in dry run and real run before calling host, and dry run prints expected mode",
+    "DEPLOY-22: refuses missing or invalid SOUS_EXPECT_SIGN_IN in dry run and real run before any git, network, or host call, and dry run prints expected mode",
     async () => {
-      const h = makeHarness();
-      recordPass(h, h.commit2);
-      recordRelease(h, 1, h.commit1, "https://previous.example.com");
-      const liveSrv = await makeLiveServer(h, h.commit1);
+      // Use a harness with no recorded pass and an unresolvable commit name
+      // so any step after env validation would fail differently or hit network/host.
+      // Put git and curl shims first on PATH so any git or network call is logged
+      // and fails immediately, and remove stateDir so lock creation is observable.
+      const hRefuse = makeHarness();
+      const refuseLiveSrv = await makeLiveServer(hRefuse, hRefuse.commit1);
+      for (const tool of ["git", "curl"] as const) {
+        const shimPath = path.join(hRefuse.binDir, tool);
+        writeFileSync(
+          shimPath,
+          [
+            "#!/usr/bin/env bash",
+            "{ set +x; } 2>/dev/null",
+            "set -euo pipefail",
+            `printf '%s %s\\n' ${JSON.stringify(tool)} "$*" >> ${JSON.stringify(hRefuse.callLogFile)}`,
+            "exit 99",
+            "",
+          ].join("\n"),
+          "utf8",
+        );
+        chmodSync(shimPath, 0o755);
+      }
+      rmSync(hRefuse.stateDir, { recursive: true, force: true });
+
+      function assertRefusedEarly(res: RunResult): void {
+        expect(res.status).not.toBe(0);
+        expect(res.stderr).toContain("SOUS_EXPECT_SIGN_IN");
+        expect(res.stderr).not.toContain("release-check");
+        expect(res.stderr).not.toContain("unknown commit");
+        expect(res.stderr).not.toContain("failed to fetch");
+        expect(res.stderr).not.toContain("api/version");
+        expect(res.stderr).not.toContain("failed to read");
+        expect(refuseLiveSrv.receivedHeaders).toEqual([]);
+        expect(hostCalls(hRefuse)).toEqual([]);
+        expect(readCallLog(hRefuse)).toEqual([]);
+        expect(existsSync(hRefuse.lockDir)).toBe(false);
+        expect(existsSync(hRefuse.stateDir)).toBe(false);
+      }
 
       // Missing SOUS_EXPECT_SIGN_IN is reported together with other missing required variables.
       for (const args of [
-        ["--dry-run", h.commit2],
-        [h.commit2],
+        ["--dry-run", "not-even-resolved"],
+        ["not-even-resolved"],
       ] as const) {
-        const missingTogether = await runDeploy(h, args, {
+        const missingTogether = await runDeploy(hRefuse, args, {
           SOUS_LIVE_URL: undefined,
           SOUS_EXPECT_SIGN_IN: undefined,
         });
-        expect(missingTogether.status).not.toBe(0);
+        assertRefusedEarly(missingTogether);
         expect(missingTogether.stderr).toContain("SOUS_LIVE_URL");
-        expect(missingTogether.stderr).toContain("SOUS_EXPECT_SIGN_IN");
-        expect(hostCalls(h)).toEqual([]);
 
-        const missingAlone = await runDeploy(h, args, {
-          SOUS_LIVE_URL: liveSrv.url,
+        const missingAlone = await runDeploy(hRefuse, args, {
+          SOUS_LIVE_URL: refuseLiveSrv.url,
           SOUS_EXPECT_SIGN_IN: undefined,
         });
-        expect(missingAlone.status).not.toBe(0);
-        expect(missingAlone.stderr).toContain("SOUS_EXPECT_SIGN_IN");
-        expect(hostCalls(h)).toEqual([]);
+        assertRefusedEarly(missingAlone);
       }
 
-      // Invalid values are refused in both dry run and real run without calling host.
+      // Invalid values are refused in both dry run and real run before git, network, or host.
       const invalidValues = ["", "ON", "Off", "true", "1", "yes", "on "];
       for (const badVal of invalidValues) {
         for (const args of [
-          ["--dry-run", h.commit2],
-          [h.commit2],
+          ["--dry-run", "not-even-resolved"],
+          ["not-even-resolved"],
         ] as const) {
-          const res = await runDeploy(h, args, {
-            SOUS_LIVE_URL: liveSrv.url,
+          const res = await runDeploy(hRefuse, args, {
+            SOUS_LIVE_URL: refuseLiveSrv.url,
             SOUS_EXPECT_SIGN_IN: badVal,
           });
-          expect(res.status).not.toBe(0);
-          expect(res.stderr).toContain("SOUS_EXPECT_SIGN_IN");
+          assertRefusedEarly(res);
           expect(res.stderr).toContain('"on"');
           expect(res.stderr).toContain('"off"');
-          expect(hostCalls(h)).toEqual([]);
         }
       }
 
       // Dry run prints expected sign-in mode and includes SMOKE_EXPECT_SIGN_IN on both smoke lines.
+      const h = makeHarness();
+      recordPass(h, h.commit2);
+      recordRelease(h, 1, h.commit1, "https://previous.example.com");
+      const liveSrv = await makeLiveServer(h, h.commit1);
       for (const mode of ["on", "off"] as const) {
         const dryRes = await runDeploy(h, ["--dry-run", h.commit2], {
           SOUS_LIVE_URL: liveSrv.url,
@@ -2418,15 +2450,43 @@ describe("release scripts", () => {
   it(
     "DEPLOY-24: refuses JSON staging stdout with non-READY readyState, missing url, or invalid url before version check, smoke, or promote",
     async () => {
-      // Case A: readyState BUILDING stops before staged version check, smoke, or promote.
-      const hBuilding = makeHarness();
-      recordPass(hBuilding, hBuilding.commit2);
-      recordRelease(hBuilding, 4, hBuilding.commit1, "https://previous.example.com");
-      const beforeLogBuilding = readFileSync(hBuilding.releasesLogFile, "utf8");
-      const liveSrvBuilding = await makeLiveServer(hBuilding, hBuilding.commit1);
-      const stagedSrvBuilding = await makeStagedServer(hBuilding, hBuilding.commit1);
-      writeFileSync(
-        hBuilding.hostStdoutFile,
+      const h = makeHarness();
+      recordPass(h, h.commit2);
+      recordRelease(h, 4, h.commit1, "https://previous.example.com");
+      const beforeLog = readFileSync(h.releasesLogFile, "utf8");
+      const liveSrv = await makeLiveServer(h, h.commit1);
+      const stagedSrv = await makeStagedServer(h, h.commit1);
+
+      async function expectJsonRefused(
+        payload: string,
+        expectedStderrSnippets: readonly string[],
+      ): Promise<RunResult> {
+        writeFileSync(h.hostStdoutFile, payload, "utf8");
+        rmSync(h.callLogFile, { force: true });
+        stagedSrv.receivedHeaders.length = 0;
+
+        const res = await runDeploy(h, [h.commit2], {
+          SOUS_LIVE_URL: liveSrv.url,
+        });
+        expect(res.status).not.toBe(0);
+        for (const snippet of expectedStderrSnippets) {
+          expect(res.stderr).toContain(snippet);
+        }
+        expect(stagedSrv.receivedHeaders).toEqual([]);
+        expect(readCallLog(h).some((line) => line.includes("e2e:smoke"))).toBe(
+          false,
+        );
+        expect(readCallLog(h).some((line) => line.includes("promote"))).toBe(
+          false,
+        );
+        expect(readFileSync(h.releasesLogFile, "utf8")).toBe(beforeLog);
+        expect(existsSync(h.lockDir)).toBe(false);
+        return res;
+      }
+
+      // Non-READY readyState values: BUILDING (including when the JSON text
+      // contains an https:// URL), null, and ERROR.
+      await expectJsonRefused(
         `${JSON.stringify({
           deployment: {
             id: "test-deployment-building",
@@ -2435,43 +2495,52 @@ describe("release scripts", () => {
           },
           outcome: "created",
         })}\n`,
-        "utf8",
+        ["BUILDING", "nothing was promoted"],
       );
 
-      const buildingRes = await runDeploy(hBuilding, [hBuilding.commit2], {
-        SOUS_LIVE_URL: liveSrvBuilding.url,
-      });
-      expect(buildingRes.status).not.toBe(0);
-      expect(buildingRes.stderr).toContain("BUILDING");
-      expect(buildingRes.stderr).toContain("nothing was promoted");
-      expect(stagedSrvBuilding.receivedHeaders).toEqual([]);
-      expect(readCallLog(hBuilding).some((line) => line.includes("e2e:smoke"))).toBe(
-        false,
-      );
-      expect(readCallLog(hBuilding).some((line) => line.includes("promote"))).toBe(
-        false,
-      );
-      expect(readFileSync(hBuilding.releasesLogFile, "utf8")).toBe(
-        beforeLogBuilding,
+      await expectJsonRefused(
+        `${JSON.stringify(
+          {
+            deployment: {
+              id: "test-deployment-building-https",
+              url: "https://staged.example.com",
+              inspectorUrl: "https://inspect.example.com",
+              readyState: "BUILDING",
+            },
+            outcome: "created",
+          },
+          null,
+          2,
+        )}\n`,
+        ["BUILDING", "nothing was promoted"],
       );
 
-      // Case B: JSON document with no deployment url stops with the no-URL message.
-      const hMissingUrl = makeHarness();
-      recordPass(hMissingUrl, hMissingUrl.commit2);
-      recordRelease(
-        hMissingUrl,
-        4,
-        hMissingUrl.commit1,
-        "https://previous.example.com",
+      await expectJsonRefused(
+        `${JSON.stringify({
+          deployment: {
+            id: "test-deployment-null-state",
+            url: "staged.example.com",
+            readyState: null,
+          },
+          outcome: "created",
+        })}\n`,
+        ["readyState", "null", "nothing was promoted"],
       );
-      const beforeLogMissing = readFileSync(hMissingUrl.releasesLogFile, "utf8");
-      const liveSrvMissing = await makeLiveServer(hMissingUrl, hMissingUrl.commit1);
-      const stagedSrvMissing = await makeStagedServer(
-        hMissingUrl,
-        hMissingUrl.commit1,
+
+      await expectJsonRefused(
+        `${JSON.stringify({
+          deployment: {
+            id: "test-deployment-error-state",
+            url: "staged.example.com",
+            readyState: "ERROR",
+          },
+          outcome: "created",
+        })}\n`,
+        ["ERROR", "nothing was promoted"],
       );
-      writeFileSync(
-        hMissingUrl.hostStdoutFile,
+
+      // JSON document with no deployment url stops with the no-URL message.
+      await expectJsonRefused(
         `${JSON.stringify({
           deployment: {
             id: "test-deployment-nourl",
@@ -2479,46 +2548,44 @@ describe("release scripts", () => {
           },
           outcome: "created",
         })}\n`,
-        "utf8",
+        ["host staging output contained no https:// URL", "nothing was promoted"],
       );
 
-      const missingUrlRes = await runDeploy(hMissingUrl, [hMissingUrl.commit2], {
-        SOUS_LIVE_URL: liveSrvMissing.url,
-      });
-      expect(missingUrlRes.status).not.toBe(0);
-      expect(missingUrlRes.stderr).toContain(
-        "host staging output contained no https:// URL",
+      // Invalid URLs in JSON: non-https, port, query, fragment, dot-segment paths,
+      // path, non-DNS or percent-encoded hostnames, user@host without password,
+      // and user plus password (built at run time).
+      const userOnlyUrl = ["https://", "deployuser", "@", "staged.example.com"].join(
+        "",
       );
-      expect(stagedSrvMissing.receivedHeaders).toEqual([]);
-      expect(
-        readCallLog(hMissingUrl).some((line) => line.includes("e2e:smoke")),
-      ).toBe(false);
-      expect(
-        readCallLog(hMissingUrl).some((line) => line.includes("promote")),
-      ).toBe(false);
-      expect(readFileSync(hMissingUrl.releasesLogFile, "utf8")).toBe(
-        beforeLogMissing,
-      );
-
-      // Cases C, D, E: http:// url, url with credentials, and url with a path are each refused.
+      const bareUserOnly = ["deployuser", "@", "staged.example.com"].join("");
       const credUrl = new URL("https://staged.example.com");
       credUrl.username = "deployuser";
       credUrl.password = "credsecret";
+
       const badUrls = [
         "http://staged.example.com",
-        credUrl.toString(),
+        "https://staged.example.com:8443",
+        "staged.example.com:8443",
+        "https://staged.example.com?foo=bar",
+        "https://staged.example.com#section",
+        "https://staged.example.com/.",
+        "staged.example.com/.",
+        "https://staged.example.com/a/..",
+        "staged.example.com/a/..",
         "https://staged.example.com/extra",
+        ".",
+        "..",
+        "a..b.example.com",
+        "staged.example.com.",
+        "staged%2eexample.com",
+        "staged.example.com)",
+        userOnlyUrl,
+        bareUserOnly,
+        credUrl.toString(),
       ];
 
       for (const badUrl of badUrls) {
-        const hBad = makeHarness();
-        recordPass(hBad, hBad.commit2);
-        recordRelease(hBad, 4, hBad.commit1, "https://previous.example.com");
-        const beforeLogBad = readFileSync(hBad.releasesLogFile, "utf8");
-        const liveSrvBad = await makeLiveServer(hBad, hBad.commit1);
-        const stagedSrvBad = await makeStagedServer(hBad, hBad.commit1);
-        writeFileSync(
-          hBad.hostStdoutFile,
+        const res = await expectJsonRefused(
           `${JSON.stringify({
             deployment: {
               id: "test-deployment-badurl",
@@ -2527,26 +2594,130 @@ describe("release scripts", () => {
             },
             outcome: "created",
           })}\n`,
-          "utf8",
+          ["invalid deployment URL", "nothing was promoted"],
         );
-
-        const badRes = await runDeploy(hBad, [hBad.commit2], {
-          SOUS_LIVE_URL: liveSrvBad.url,
-        });
-        expect(badRes.status).not.toBe(0);
-        expect(badRes.stderr).toContain("nothing was promoted");
-        expect(badRes.stderr).not.toContain("credsecret");
-        expect(stagedSrvBad.receivedHeaders).toEqual([]);
-        expect(readCallLog(hBad).some((line) => line.includes("e2e:smoke"))).toBe(
-          false,
-        );
-        expect(readCallLog(hBad).some((line) => line.includes("promote"))).toBe(
-          false,
-        );
-        expect(readFileSync(hBad.releasesLogFile, "utf8")).toBe(beforeLogBad);
+        expect(res.stderr).not.toContain("credsecret");
       }
     },
-    REAL_RUN_TIMEOUT_MS,
+    REAL_RUN_TIMEOUT_MS * 2,
+  );
+
+  it(
+    "DEPLOY-26: validates bare staging URL lines with the shared rules and normalizes a single trailing slash",
+    async () => {
+      const h = makeHarness();
+      recordPass(h, h.commit2);
+      recordRelease(h, 4, h.commit1, "https://previous.example.com");
+      const beforeLog = readFileSync(h.releasesLogFile, "utf8");
+      const liveSrv = await makeLiveServer(h, h.commit1);
+      const stagedSrv = await makeStagedServer(h, h.commit1);
+
+      const credUrl = new URL("https://staged.example.com");
+      credUrl.username = "deployuser";
+      credUrl.password = "baresecret";
+
+      const refusedPayloads: Array<{ stdout: string; expectedSnippet: string }> = [
+        {
+          stdout: "https://staged.example.com/extra\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "https://staged.example.com:8443\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "https://staged.example.com?foo=bar\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: `${credUrl.toString()}\n`,
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "https://staged.example.com (production)\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "https://staged.example.com,\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "https://staged.example.com)\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "https://staged.example.com;\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "https://%2e\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "https://$(id)\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "http://staged.example.com\n",
+          expectedSnippet: "host staging output contained no https:// URL",
+        },
+      ];
+
+      for (const tc of refusedPayloads) {
+        writeFileSync(h.hostStdoutFile, tc.stdout, "utf8");
+        rmSync(h.callLogFile, { force: true });
+        stagedSrv.receivedHeaders.length = 0;
+
+        const res = await runDeploy(h, [h.commit2], {
+          SOUS_LIVE_URL: liveSrv.url,
+        });
+        expect(res.status).not.toBe(0);
+        expect(res.stderr).toContain(tc.expectedSnippet);
+        expect(res.stderr).toContain("nothing was promoted");
+        expect(res.stderr).not.toContain("baresecret");
+        expect(stagedSrv.receivedHeaders).toEqual([]);
+        expect(readCallLog(h).some((line) => line.includes("e2e:smoke"))).toBe(
+          false,
+        );
+        expect(readCallLog(h).some((line) => line.includes("promote"))).toBe(
+          false,
+        );
+        expect(readFileSync(h.releasesLogFile, "utf8")).toBe(beforeLog);
+      }
+
+      // A bare line with a single trailing slash (and trailing CR) is accepted
+      // and normalized to https://<hostname> without the slash everywhere.
+      writeFileSync(
+        h.hostStdoutFile,
+        "Deploying project\nhttps://staged.example.com/\r\n",
+        "utf8",
+      );
+      rmSync(h.callLogFile, { force: true });
+      stagedSrv.receivedHeaders.length = 0;
+
+      const okRes = await runDeploy(h, [h.commit2], {
+        SOUS_LIVE_URL: liveSrv.url,
+      });
+      expect(okRes.status).toBe(0);
+      expect(stagedSrv.receivedHeaders.length).toBeGreaterThanOrEqual(1);
+
+      const calls = readCallLog(h);
+      expect(calls).toHaveLength(5);
+      expect(calls[2]).toContain("SMOKE_BASE_URL=https://staged.example.com |");
+      expect(calls[3]).toBe("fake-host promote https://staged.example.com --yes");
+      expect(calls[4]).toContain(`SMOKE_BASE_URL=${liveSrv.url} |`);
+
+      const releaseLines = readFileSync(h.releasesLogFile, "utf8")
+        .split("\n")
+        .filter((line) => line.length > 0);
+      expect(releaseLines).toHaveLength(2);
+      expect(releaseLines[1]).toMatch(
+        new RegExp(
+          `^5 ${h.commit2} https://staged\\.example\\.com \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$`,
+        ),
+      );
+    },
+    REAL_RUN_TIMEOUT_MS * 2,
   );
 
   it(
