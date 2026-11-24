@@ -588,6 +588,24 @@ describe("a session saved before Prep became step pages (version 1)", () => {
     expect(consumeCorruptionNotices().map((n) => n.text)).toEqual([SESSION_RESET_COPY, SESSION_RESET_COPY]);
   });
 
+  it("a version-1 session whose plan can't be walked (a needs cycle) is cleared with the notice, never thrown", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store = memoryStorage();
+    const [first, second] = ZUCCHINI_PLAN.tasks;
+    const cyclic = {
+      ...ZUCCHINI_PLAN,
+      tasks: ZUCCHINI_PLAN.tasks.map((t) =>
+        t.id === first.id ? { ...t, needs: [second.id] } : t.id === second.id ? { ...t, needs: [first.id] } : t,
+      ),
+    };
+    storeV1(store, { mode: "first", pos: 0, ticked: [], passed: [] }, cyclic);
+    expect(() => loadSession("q1", store)).not.toThrow();
+    expect(store.data.has(sessionKey("q1"))).toBe(false);
+    expect(consumeCorruptionNotices().map((n) => n.text)).toEqual([SESSION_RESET_COPY]);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it("a session from a version the app doesn't know is cleared with the notice", () => {
     const store = memoryStorage();
     storeV1(store, { mode: "first", pos: 0, ticked: ["onion"], passed: [] });

@@ -612,6 +612,16 @@ function migrateStoredSession(key: string, backing: StringStore): void {
   const v1 = v1Schema.safeParse(envelope);
   if (!v1.success) return;
   const { plan, state } = v1.data.state.session;
+  let pos: number;
+  try {
+    pos = placeFromV1(plan as CookPlan, state);
+  } catch (err) {
+    // A plan its steps can't be walked on (a needs cycle) is no version-1
+    // session this can read: left as it is, the read below clears it with the
+    // notice, rather than the cook page failing as it opens.
+    console.warn(`Could not renumber stored ${key}:`, err);
+    return;
+  }
   const migrated = {
     ...v1.data,
     version: SESSION_VERSION,
@@ -619,7 +629,7 @@ function migrateStoredSession(key: string, backing: StringStore): void {
       ...v1.data.state,
       session: {
         ...v1.data.state.session,
-        state: { ...state, pos: placeFromV1(plan as CookPlan, state) },
+        state: { ...state, pos },
       },
     },
   };
