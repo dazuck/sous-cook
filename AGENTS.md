@@ -52,6 +52,10 @@ Put any further test that needs a real PostgreSQL database into `app/src/lib/kit
 
 The Playwright browser test suite needs Docker and a Chromium browser, so it is not part of the gates above; see `docs/browser-tests.md` for prerequisites and how to run it.
 
+## Deploying
+
+A commit goes live only through `scripts/deploy.sh`, after `scripts/release-check.sh` has recorded a pass for it. See `docs/deploy.md` for the release, migration, and rollback steps.
+
 ## Things to leave alone unless asked
 
 - **The pack format.** `pack/` implements `design/pack-format-v0.md`, a versioned specification that pack files are written against. Don't change the schema to make a pack or a test pass. A change to one is a change to the other, made together and on purpose.

@@ -55,6 +55,14 @@ function buildBaseEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
+function buildBuildEnv(): NodeJS.ProcessEnv {
+  const env = buildBaseEnv();
+  if (process.env.SOUS_RELEASE_COMMIT !== undefined) {
+    env.SOUS_RELEASE_COMMIT = process.env.SOUS_RELEASE_COMMIT;
+  }
+  return env;
+}
+
 function buildServerEnv(): NodeJS.ProcessEnv {
   assertLocalDatabase(E2E_DATABASE_URL);
   return {
@@ -113,7 +121,7 @@ async function runNextBuild(appDir: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(process.execPath, [nextBin, "build"], {
       cwd: appDir,
-      env: buildBaseEnv(),
+      env: buildBuildEnv(),
       stdio: "inherit",
     });
     child.on("error", reject);

@@ -15,9 +15,45 @@ const tabletLaunchOptions = {
   args: ["--disable-partial-raster"],
 };
 
-export default defineConfig({
+const smokeBaseUrl = process.env.SMOKE_BASE_URL;
+const bypassHeader = process.env.SMOKE_BYPASS_HEADER;
+const bypassValue = process.env.SMOKE_BYPASS_VALUE;
+const smokeExtraHeaders: Record<string, string> | undefined =
+  bypassHeader && bypassValue ? { [bypassHeader]: bypassValue } : undefined;
+
+const smokeConfig = defineConfig({
+  testDir: "./e2e",
+  testMatch: "smoke.spec.ts",
+  workers: 1,
+  fullyParallel: false,
+  retries: 0,
+  forbidOnly: Boolean(process.env.CI),
+  outputDir: "test-results",
+  reporter: "list",
+  projects: [
+    {
+      name: "smoke",
+      use: {
+        baseURL: smokeBaseUrl,
+        serviceWorkers: "block",
+        timezoneId: E2E_TIMEZONE,
+        locale: E2E_LOCALE,
+        trace: "retain-on-failure",
+        viewport: { width: 1280, height: 800 },
+        hasTouch: true,
+        isMobile: false,
+        deviceScaleFactor: 1,
+        launchOptions: tabletLaunchOptions,
+        ...(smokeExtraHeaders ? { extraHTTPHeaders: smokeExtraHeaders } : {}),
+      },
+    },
+  ],
+});
+
+const localConfig = defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.spec.ts",
+  testIgnore: "**/smoke.spec.ts",
   workers: 1,
   fullyParallel: false,
   retries: 0,
@@ -65,3 +101,7 @@ export default defineConfig({
     },
   },
 });
+
+export default smokeBaseUrl !== undefined && smokeBaseUrl !== ""
+  ? smokeConfig
+  : localConfig;

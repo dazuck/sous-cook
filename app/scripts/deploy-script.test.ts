@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import http from "node:http";
 import https from "node:https";
-import type { AddressInfo } from "node:net";
+import net, { type AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1959,6 +1959,490 @@ describe("release scripts", () => {
       const visRes = await runReleaseCheck(hVis, hVis.commit1);
       expect(visRes.status).not.toBe(0);
       expect(existsSync(hVis.passLogFile)).toBe(false);
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it(
+    "DEPLOY-18: waits for live /api/version to answer the new commit after promote before recording the release",
+    async () => {
+      const h = makeHarness();
+      recordPass(h, h.commit2);
+      recordRelease(h, 4, h.commit1, "https://previous.example.com");
+      await makeStagedServer(h, h.commit1);
+      // Leave the stand-in promote from switching the live version file so the
+      // live server controls when the new commit appears.
+      writeFileSync(h.promoteNoSwitchMarker, "1\n", "utf8");
+
+      let postPromoteRequests = 0;
+      const delayedLiveServer = http.createServer((req, res) => {
+        if (req.url !== "/api/version") {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+        const promoted = readCallLog(h).some((line) =>
+          line.startsWith("fake-host promote "),
+        );
+        let commit = h.commit1;
+        if (promoted) {
+          postPromoteRequests += 1;
+          if (postPromoteRequests >= 2) {
+            commit = h.commit2;
+          }
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ commit }));
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        delayedLiveServer.once("error", reject);
+        delayedLiveServer.listen(0, "127.0.0.1", () => resolve());
+      });
+
+      try {
+        const addr = delayedLiveServer.address() as AddressInfo;
+        const liveUrl = `http://127.0.0.1:${addr.port}`;
+
+        const res = await runDeploy(h, [h.commit2], {
+          SOUS_LIVE_URL: liveUrl,
+          SOUS_LIVE_WAIT_SECONDS: "12",
+        });
+
+        expect(res.status).toBe(0);
+        expect(postPromoteRequests).toBeGreaterThanOrEqual(2);
+
+        const releaseLines = readFileSync(h.releasesLogFile, "utf8")
+          .split("\n")
+          .filter((line) => line.length > 0);
+        expect(releaseLines).toHaveLength(2);
+        expect(releaseLines[1]).toMatch(
+          new RegExp(
+            `^5 ${h.commit2} https://staged\\.example\\.com \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$`,
+          ),
+        );
+      } finally {
+        await new Promise<void>((resolve, reject) => {
+          delayedLiveServer.close((err) => (err ? reject(err) : resolve()));
+        });
+      }
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it(
+    "DEPLOY-19: bypass header value reaches staged and live servers without ever appearing on curl's command line",
+    async () => {
+      const realCurl = execFileSync("bash", ["-c", "command -v curl"], {
+        encoding: "utf8",
+      }).trim();
+      expect(realCurl.length).toBeGreaterThan(0);
+
+      const h = makeHarness();
+      recordPass(h, h.commit2);
+      recordRelease(h, 4, h.commit1, "https://previous.example.com");
+      const liveSrv = await makeLiveServer(h, h.commit1);
+      const stagedSrv = await makeStagedServer(h, h.commit1);
+
+      const curlArgLog = path.join(h.rootDir, "curl-args.log");
+      const recordingCurlPath = path.join(h.binDir, "curl");
+      writeFileSync(
+        recordingCurlPath,
+        [
+          "#!/usr/bin/env bash",
+          "{ set +x; } 2>/dev/null",
+          "set -euo pipefail",
+          'for arg in "$@"; do',
+          `  printf '%s\\n' "\${arg}" >> ${JSON.stringify(curlArgLog)}`,
+          "done",
+          `exec ${JSON.stringify(realCurl)} "$@"`,
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      chmodSync(recordingCurlPath, 0o755);
+
+      const bypassVal = "bypass-argv-secret-7711";
+      const res = await runDeploy(h, [h.commit2], {
+        SOUS_LIVE_URL: liveSrv.url,
+        SMOKE_BYPASS_HEADER: "x-test-bypass",
+        SMOKE_BYPASS_VALUE: bypassVal,
+      });
+
+      expect(res.status).toBe(0);
+
+      const loggedArgs = readFileSync(curlArgLog, "utf8")
+        .split("\n")
+        .filter((line) => line.length > 0);
+      expect(loggedArgs).toContain(`${liveSrv.url}/api/version`);
+      expect(loggedArgs).toContain("https://staged.example.com/api/version");
+      for (const arg of loggedArgs) {
+        expect(arg).not.toContain(bypassVal);
+      }
+
+      expect(stagedSrv.receivedHeaders.length).toBeGreaterThanOrEqual(1);
+      for (const headers of stagedSrv.receivedHeaders) {
+        expect(headers["x-test-bypass"]).toBe(bypassVal);
+      }
+      expect(liveSrv.receivedHeaders.length).toBeGreaterThanOrEqual(2);
+      for (const headers of liveSrv.receivedHeaders) {
+        expect(headers["x-test-bypass"]).toBe(bypassVal);
+      }
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it("DEPLOY-20: first release stops when git cannot list target migrations instead of reporting none", async () => {
+    const h = makeHarness();
+    git(h.repoDir, ["checkout", "-b", "mig-branch", h.commit1]);
+    writeFileSync(
+      path.join(h.repoDir, "app/drizzle/migrations/0001_corrupt_first.sql"),
+      "ALTER TABLE items ADD COLUMN note text;\n",
+      "utf8",
+    );
+    git(h.repoDir, ["add", "app/drizzle/migrations/0001_corrupt_first.sql"]);
+    git(h.repoDir, ["commit", "-m", "branch migration commit"]);
+    const targetCommit = git(h.repoDir, ["rev-parse", "HEAD"]);
+    git(h.repoDir, ["push", "--force", "origin", "HEAD:main"]);
+    git(h.repoDir, ["checkout", h.commit1]);
+
+    const migTreeHash = git(h.repoDir, [
+      "rev-parse",
+      `${targetCommit}:app/drizzle/migrations`,
+    ]);
+    const looseObjPath = path.join(
+      h.repoDir,
+      ".git/objects",
+      migTreeHash.slice(0, 2),
+      migTreeHash.slice(2),
+    );
+    expect(existsSync(looseObjPath)).toBe(true);
+    rmSync(looseObjPath);
+
+    recordPass(h, targetCommit);
+    const srv = await makeLiveServer(h, null);
+
+    const res = await runDeploy(
+      h,
+      ["--dry-run", "--first-release", "1", targetCommit],
+      {
+        SOUS_LIVE_URL: srv.url,
+        SOUS_DEPLOY_ENV_FILE: h.deployEnvFile,
+        SOUS_BACKUP_DIR: h.backupDir,
+      },
+    );
+
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain("failed to list migrations");
+    expect(res.stdout).not.toContain("New migrations: none");
+    expect(hostCalls(h)).toEqual([]);
+  });
+
+  it("DEPLOY-21: refuses new migrations whose timestamps do not increase among themselves", async () => {
+    const h = makeHarness();
+    const srv = await makeLiveServer(h, h.commit1);
+    recordRelease(h, 1, h.commit1);
+
+    const cases = [
+      { branch: "equal-when", secondWhen: 1700000002000 },
+      { branch: "decreasing-when", secondWhen: 1700000001500 },
+    ] as const;
+
+    for (const tc of cases) {
+      git(h.repoDir, ["checkout", "-b", tc.branch, h.commit1]);
+      writeFileSync(
+        path.join(h.repoDir, "app/drizzle/migrations/0001_first.sql"),
+        "ALTER TABLE items ADD COLUMN first_col text;\n",
+        "utf8",
+      );
+      writeFileSync(
+        path.join(h.repoDir, "app/drizzle/migrations/0002_second.sql"),
+        "ALTER TABLE items ADD COLUMN second_col text;\n",
+        "utf8",
+      );
+      writeFileSync(
+        path.join(h.repoDir, "app/drizzle/migrations/meta/_journal.json"),
+        JSON.stringify(
+          {
+            version: "7",
+            dialect: "postgresql",
+            entries: [
+              {
+                idx: 0,
+                version: "7",
+                when: 1700000000000,
+                tag: "0000_init",
+                breakpoints: true,
+              },
+              {
+                idx: 1,
+                version: "7",
+                when: 1700000002000,
+                tag: "0001_first",
+                breakpoints: true,
+              },
+              {
+                idx: 2,
+                version: "7",
+                when: tc.secondWhen,
+                tag: "0002_second",
+                breakpoints: true,
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      git(h.repoDir, [
+        "add",
+        "app/drizzle/migrations/0001_first.sql",
+        "app/drizzle/migrations/0002_second.sql",
+        "app/drizzle/migrations/meta/_journal.json",
+      ]);
+      git(h.repoDir, ["commit", "-m", `append two migrations (${tc.branch})`]);
+      const badCommit = git(h.repoDir, ["rev-parse", "HEAD"]);
+      git(h.repoDir, ["push", "--force", "origin", "HEAD:main"]);
+      recordPass(h, badCommit);
+
+      const res = await runDeploy(h, ["--dry-run", badCommit], {
+        SOUS_LIVE_URL: srv.url,
+        SOUS_DEPLOY_ENV_FILE: h.deployEnvFile,
+        SOUS_BACKUP_DIR: h.backupDir,
+      });
+
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toContain("does not increase");
+      expect(res.stderr).toContain("0002_second");
+      expect(hostCalls(h)).toEqual([]);
+    }
+  });
+
+  function runReleaseCheckWithEnv(
+    harness: ReleaseCheckHarness,
+    commitArg: string,
+    envOverrides: Record<string, string | undefined>,
+  ): Promise<RunResult> {
+    const env: NodeJS.ProcessEnv = {
+      PATH: `${harness.binDir}:${process.env.PATH ?? ""}`,
+      HOME: harness.rootDir,
+      TMPDIR: harness.tmpDir,
+      SOUS_RELEASE_STATE_DIR: harness.stateDir,
+    };
+    for (const [k, v] of Object.entries(envOverrides)) {
+      if (v === undefined) {
+        delete env[k];
+      } else {
+        env[k] = v;
+      }
+    }
+    return new Promise<RunResult>((resolve, reject) => {
+      const child = spawn("bash", ["scripts/release-check.sh", commitArg], {
+        cwd: harness.repoDir,
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => {
+        stdout += chunk;
+      });
+      child.stderr.on("data", (chunk: string) => {
+        stderr += chunk;
+      });
+      child.on("error", reject);
+      child.on("close", (status) => {
+        resolve({ status, stdout, stderr });
+      });
+    });
+  }
+
+  function wrapReleaseCheckPnpmEnvLog(harness: ReleaseCheckHarness): string {
+    const envLogFile = path.join(harness.rootDir, "pnpm-e2e-env.log");
+    const pnpmPath = path.join(harness.binDir, "pnpm");
+    const origPnpmPath = path.join(harness.binDir, "pnpm.orig");
+    copyFileSync(pnpmPath, origPnpmPath);
+    chmodSync(origPnpmPath, 0o755);
+    writeFileSync(
+      pnpmPath,
+      [
+        "#!/usr/bin/env bash",
+        "{ set +x; } 2>/dev/null",
+        "set -euo pipefail",
+        `printf '%s | E2E_APP_PORT=%s | E2E_PG_PORT=%s | E2E_PG_CONTAINER=%s\\n' "$*" "\${E2E_APP_PORT-<unset>}" "\${E2E_PG_PORT-<unset>}" "\${E2E_PG_CONTAINER-<unset>}" >> ${JSON.stringify(envLogFile)}`,
+        `exec ${JSON.stringify(origPnpmPath)} "$@"`,
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    chmodSync(pnpmPath, 0o755);
+    return envLogFile;
+  }
+
+  it(
+    "RCHECK-3: release-check.sh rejects invalid E2E_APP_PORT, E2E_PG_PORT, or E2E_PG_CONTAINER before running any step",
+    async () => {
+      const invalidCases: Array<{
+        varName: "E2E_APP_PORT" | "E2E_PG_PORT" | "E2E_PG_CONTAINER";
+        badValue: string;
+      }> = [
+        { varName: "E2E_APP_PORT", badValue: "80" },
+        { varName: "E2E_APP_PORT", badValue: "65536" },
+        { varName: "E2E_APP_PORT", badValue: "04131" },
+        { varName: "E2E_APP_PORT", badValue: "abc" },
+        { varName: "E2E_PG_PORT", badValue: "1023" },
+        { varName: "E2E_PG_PORT", badValue: "not-a-port" },
+        { varName: "E2E_PG_CONTAINER", badValue: "-leading-dash" },
+        { varName: "E2E_PG_CONTAINER", badValue: "bad name" },
+      ];
+
+      for (const tc of invalidCases) {
+        const h = makeReleaseCheckHarness();
+        const res = await runReleaseCheckWithEnv(h, h.commit1, {
+          [tc.varName]: tc.badValue,
+        });
+        expect(res.status).not.toBe(0);
+        expect(res.stderr).toContain(tc.varName);
+        expect(existsSync(h.callLogFile)).toBe(false);
+        expect(existsSync(h.passLogFile)).toBe(false);
+      }
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it.skipIf(process.platform !== "darwin")(
+    "RCHECK-4: release-check.sh passes E2E_APP_PORT, E2E_PG_PORT, and E2E_PG_CONTAINER to every step (including cleanup) when set and omits them when unset",
+    async () => {
+      // Case A: all three unset -> absent from every step and cleanup.
+      const hUnset = makeReleaseCheckHarness();
+      const unsetEnvLog = wrapReleaseCheckPnpmEnvLog(hUnset);
+      const unsetRes = await runReleaseCheckWithEnv(hUnset, hUnset.commit1, {
+        E2E_APP_PORT: undefined,
+        E2E_PG_PORT: undefined,
+        E2E_PG_CONTAINER: undefined,
+      });
+      expect(unsetRes.status).toBe(0);
+      const unsetLines = readFileSync(unsetEnvLog, "utf8")
+        .split("\n")
+        .filter((line) => line.length > 0);
+      expect(unsetLines.length).toBeGreaterThanOrEqual(13);
+      expect(unsetLines.some((line) => line.includes("e2e:db:down"))).toBe(true);
+      for (const line of unsetLines) {
+        expect(line).toContain("E2E_APP_PORT=<unset>");
+        expect(line).toContain("E2E_PG_PORT=<unset>");
+        expect(line).toContain("E2E_PG_CONTAINER=<unset>");
+      }
+
+      // Pick a free ephemeral port for E2E_APP_PORT.
+      const probe = net.createServer();
+      await new Promise<void>((resolve, reject) => {
+        probe.once("error", reject);
+        probe.listen(0, "127.0.0.1", () => resolve());
+      });
+      const freeAppPort = (probe.address() as AddressInfo).port;
+      await new Promise<void>((resolve, reject) => {
+        probe.close((err) => (err ? reject(err) : resolve()));
+      });
+
+      // Case B: all three set -> present with exact values in every step and cleanup.
+      const hSet = makeReleaseCheckHarness();
+      const setEnvLog = wrapReleaseCheckPnpmEnvLog(hSet);
+      const setRes = await runReleaseCheckWithEnv(hSet, hSet.commit1, {
+        E2E_APP_PORT: String(freeAppPort),
+        E2E_PG_PORT: "55741",
+        E2E_PG_CONTAINER: "override-pg",
+      });
+      expect(setRes.status).toBe(0);
+      const setLines = readFileSync(setEnvLog, "utf8")
+        .split("\n")
+        .filter((line) => line.length > 0);
+      expect(setLines.length).toBeGreaterThanOrEqual(13);
+      expect(setLines.some((line) => line.includes("e2e:db:down"))).toBe(true);
+      for (const line of setLines) {
+        expect(line).toContain(`E2E_APP_PORT=${freeAppPort}`);
+        expect(line).toContain("E2E_PG_PORT=55741");
+        expect(line).toContain("E2E_PG_CONTAINER=override-pg");
+      }
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it.skipIf(process.platform !== "darwin")(
+    "RCHECK-5: release-check.sh refuses when the override E2E_APP_PORT is busy, and succeeds with an override when default port 4131 is busy",
+    async () => {
+      // Case A: listener on override port -> refused naming that port before any step runs.
+      const busyOverrideServer = net.createServer();
+      await new Promise<void>((resolve, reject) => {
+        busyOverrideServer.once("error", reject);
+        busyOverrideServer.listen(0, "127.0.0.1", () => resolve());
+      });
+      const busyOverridePort = (busyOverrideServer.address() as AddressInfo).port;
+
+      try {
+        const hBusy = makeReleaseCheckHarness();
+        const busyRes = await runReleaseCheckWithEnv(hBusy, hBusy.commit1, {
+          E2E_APP_PORT: String(busyOverridePort),
+        });
+        expect(busyRes.status).not.toBe(0);
+        expect(busyRes.stderr).toContain(String(busyOverridePort));
+        expect(existsSync(hBusy.callLogFile)).toBe(false);
+        expect(existsSync(hBusy.passLogFile)).toBe(false);
+      } finally {
+        await new Promise<void>((resolve, reject) => {
+          busyOverrideServer.close((err) => (err ? reject(err) : resolve()));
+        });
+      }
+
+      // Case B: default port 4131 is busy, but E2E_APP_PORT points to a free port -> succeeds.
+      const defaultPortBlocker = net.createServer();
+      let boundDefaultPort = false;
+      await new Promise<void>((resolve, reject) => {
+        defaultPortBlocker.once("error", (err: NodeJS.ErrnoException) => {
+          if (err.code === "EADDRINUSE") {
+            resolve();
+          } else {
+            reject(err);
+          }
+        });
+        defaultPortBlocker.listen(4131, "127.0.0.1", () => {
+          boundDefaultPort = true;
+          resolve();
+        });
+      });
+
+      const freeProbe = net.createServer();
+      await new Promise<void>((resolve, reject) => {
+        freeProbe.once("error", reject);
+        freeProbe.listen(0, "127.0.0.1", () => resolve());
+      });
+      const freeOverridePort = (freeProbe.address() as AddressInfo).port;
+      await new Promise<void>((resolve, reject) => {
+        freeProbe.close((err) => (err ? reject(err) : resolve()));
+      });
+
+      try {
+        const hOverride = makeReleaseCheckHarness();
+        const overrideRes = await runReleaseCheckWithEnv(
+          hOverride,
+          hOverride.commit1,
+          {
+            E2E_APP_PORT: String(freeOverridePort),
+            E2E_PG_PORT: "55742",
+            E2E_PG_CONTAINER: "port-override-pg",
+          },
+        );
+        expect(overrideRes.status).toBe(0);
+        expect(existsSync(hOverride.passLogFile)).toBe(true);
+      } finally {
+        if (boundDefaultPort) {
+          await new Promise<void>((resolve, reject) => {
+            defaultPortBlocker.close((err) => (err ? reject(err) : resolve()));
+          });
+        }
+      }
     },
     REAL_RUN_TIMEOUT_MS,
   );

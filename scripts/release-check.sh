@@ -29,6 +29,48 @@ if [ -z "${sha}" ]; then
   exit 1
 fi
 
+validate_port() {
+  local name="$1"
+  local val="$2"
+  case "${val}" in
+    *[!0123456789]*|0*)
+      printf 'FAILED: %s must be a whole number from 1024 to 65535 (got "%s").\n' "${name}" "${val}" >&2
+      exit 1
+      ;;
+  esac
+  if [ "${#val}" -lt 4 ] || [ "${#val}" -gt 5 ] || [ "${val}" -lt 1024 ] || [ "${val}" -gt 65535 ]; then
+    printf 'FAILED: %s must be a whole number from 1024 to 65535 (got "%s").\n' "${name}" "${val}" >&2
+    exit 1
+  fi
+}
+
+validate_container() {
+  local name="$1"
+  local val="$2"
+  case "${val}" in
+    [!0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ]*|*[!0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-]*)
+      printf 'FAILED: %s must start with a letter or digit and contain only letters, digits, ".", "_" and "-" (got "%s").\n' "${name}" "${val}" >&2
+      exit 1
+      ;;
+  esac
+}
+
+e2e_env_args=()
+app_port="4131"
+if [ -n "${E2E_APP_PORT:-}" ]; then
+  validate_port "E2E_APP_PORT" "${E2E_APP_PORT}"
+  app_port="${E2E_APP_PORT}"
+  e2e_env_args+=("E2E_APP_PORT=${E2E_APP_PORT}")
+fi
+if [ -n "${E2E_PG_PORT:-}" ]; then
+  validate_port "E2E_PG_PORT" "${E2E_PG_PORT}"
+  e2e_env_args+=("E2E_PG_PORT=${E2E_PG_PORT}")
+fi
+if [ -n "${E2E_PG_CONTAINER:-}" ]; then
+  validate_container "E2E_PG_CONTAINER" "${E2E_PG_CONTAINER}"
+  e2e_env_args+=("E2E_PG_CONTAINER=${E2E_PG_CONTAINER}")
+fi
+
 os_name="$(uname -s)"
 if [ "${os_name}" != "Darwin" ]; then
   printf 'FAILED: the screenshot suite only runs on macOS (found %s); no pass was recorded.\n' "${os_name}" >&2
@@ -36,10 +78,11 @@ if [ "${os_name}" != "Darwin" ]; then
 fi
 
 check_port_free() {
+  local port="$1"
   node -e '
 const net = require("node:net");
 const host = "127.0.0.1";
-const port = 4131;
+const port = Number(process.argv[1]);
 
 const socket = net.createConnection({ host, port });
 socket.setTimeout(500);
@@ -69,11 +112,11 @@ socket.once("error", (err) => {
     process.exit(1);
   }
 });
-'
+' "${port}"
 }
 
-if ! check_port_free; then
-  printf 'FAILED: port 4131 is already in use (another release check or server may be running).\n' >&2
+if ! check_port_free "${app_port}"; then
+  printf 'FAILED: port %s is already in use (another release check or server may be running).\n' "${app_port}" >&2
   exit 1
 fi
 
@@ -88,6 +131,7 @@ db_started=0
 cleanup() {
   if [ "${db_started}" -eq 1 ] && [ -d "${worktree_dir}/app" ]; then
     env -i PATH="${PATH}" HOME="${HOME}" TMPDIR="${tmp_base}" \
+      ${e2e_env_args[@]+"${e2e_env_args[@]}"} \
       pnpm --dir "${worktree_dir}/app" e2e:db:down >/dev/null 2>&1 || true
   fi
   if [ "${worktree_added}" -eq 1 ]; then
@@ -118,7 +162,7 @@ run_clean() {
   local step_name="$1"
   shift
   printf '==> %s\n' "${step_name}"
-  if ! (cd "${worktree_dir}" && env -i CI=1 PATH="${PATH}" HOME="${HOME}" TMPDIR="${tmp_base}" "$@"); then
+  if ! (cd "${worktree_dir}" && env -i CI=1 PATH="${PATH}" HOME="${HOME}" TMPDIR="${tmp_base}" ${e2e_env_args[@]+"${e2e_env_args[@]}"} "$@"); then
     fail_step "${step_name}"
   fi
 }

@@ -56,6 +56,26 @@ E2E_APP_PORT=4141 E2E_PG_CONTAINER=port-pg E2E_PG_PORT=55741 pnpm --dir app e2e
 E2E_APP_PORT=4141 E2E_PG_CONTAINER=port-pg E2E_PG_PORT=55741 pnpm --dir app e2e:db:down
 ```
 
+## Smoke check of a deployed copy
+
+`app/e2e/smoke.spec.ts` is a read-only check of any running Sous copy. It does not start a local server or connect to a database, and it never writes: it never clicks Start, queues a recipe, imports, or calls Ask, and it fails if any page issues a request with a method other than `GET` or `HEAD`.
+
+It checks three things:
+
+- `SMOKE-1`: `GET /api/version` answers 200 with only `commit`; when `SMOKE_EXPECT_COMMIT` is set, the commit must equal it exactly (and a malformed `SMOKE_EXPECT_COMMIT` fails the test with a plain message).
+- `SMOKE-2`: `/kitchen` loads with no 5xx response, no unexpected console or page error, and shows the home screen heading.
+- `SMOKE-3`: `/kitchen/cookpacks` loads with at least one book, and opening that book loads its page.
+
+`scripts/deploy.sh` runs `pnpm --dir app e2e:smoke` twice on every real deploy: once against the staged URL before promotion, and once against `SOUS_LIVE_URL` after promotion, passing `SMOKE_BASE_URL`, `SMOKE_EXPECT_COMMIT`, and (when configured) `SMOKE_BYPASS_HEADER` and `SMOKE_BYPASS_VALUE`.
+
+To run it by hand against a deployed URL:
+
+```sh
+SMOKE_BASE_URL=https://sous.example.com pnpm --dir app e2e:smoke
+```
+
+Set `SMOKE_EXPECT_COMMIT=<40-char lowercase sha>` to assert the exact running commit, and set `SMOKE_BYPASS_HEADER` together with `SMOKE_BYPASS_VALUE` if the host requires a deployment protection bypass header.
+
 ## What the harness does
 
 - **Isolated PostgreSQL container:** `app/e2e/db-up.sh` runs container `rails-pg` (`postgres:17`, overridable via `E2E_PG_CONTAINER`) published only on `127.0.0.1:55731` (port overridable via `E2E_PG_PORT`) using trust authentication (`POSTGRES_HOST_AUTH_METHOD=trust`, no password), user `postgres`, and database `sous_e2e` (`postgres://postgres@127.0.0.1:55731/sous_e2e`). The container holds only invented test data and must never be used for anything else. It drops and recreates `sous_e2e` empty, then runs `pnpm db:migrate` from `app/`. `app/e2e/db-down.sh` removes only the container named by `E2E_PG_CONTAINER` (default `rails-pg`). Every database entry point checks `assertLocalDatabase` so it refuses any host other than `127.0.0.1` or `localhost`.
@@ -101,6 +121,8 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | No model key: local JSON-LD URL import extracts and queues recipe | `app/e2e/no-key.spec.ts` (NOKEY-4) |
 | No model key: Ask Sous shows unreachable message when model key is absent | `app/e2e/no-key.spec.ts` (NOKEY-5) |
 | Single-kitchen mode: `/` redirect, `/api/auth/get-session` 404, no sign-in/out controls | `app/e2e/single-kitchen.spec.ts` (SINGLE-1) |
+| Version endpoint: `/api/version` answers 200 with only `commit` and matches `SOUS_RELEASE_COMMIT` when set | `app/e2e/version.spec.ts` (VERSION-2) |
+| Deployed copy smoke check: `/api/version`, `/kitchen`, `/kitchen/cookpacks`, and a book page (read-only) | `app/e2e/smoke.spec.ts` (SMOKE-1, SMOKE-2, SMOKE-3) |
 | Flagging a screen and the reports panel | not covered yet |
 | Voice commands | not covered yet |
 | The look-ahead sheet | not covered yet |
