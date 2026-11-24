@@ -31,7 +31,10 @@ import type { OverviewChrome, OverviewPlace } from "./overview-place";
 import type { GetOutItem } from "./timetable-layout";
 import type { Timetable } from "./timetable-model";
 import type { CookTask } from "./cook-plan";
-import { derivedFrame, layoutDerived, type DerivedFrame, type DerivedSheet } from "./sheet-derived";
+import { LINE_FILL_NOW, derivedFrame, layoutDerived, type DerivedFrame, type DerivedSheet } from "./sheet-derived";
+import { stripFrame, withStrip, type StripLineLayout } from "./sheet-strip";
+import type { PeekDrawing } from "./peek-layout";
+import type { PeekInput } from "./cook-peek";
 
 // ---------------------------------------------------------------------------
 // Inputs
@@ -103,6 +106,10 @@ export interface LayoutInput {
   topLine?: boolean;
   /** The plan's tasks, by id: a derived plan's strip map names its steps by them. */
   tasks?: ReadonlyMap<string, CookTask>;
+  /** The peek's rows (look-ahead slice 1): the cook view's screens, timed by the strip. */
+  peek?: PeekInput | null;
+  /** The strip's line: the foot's middle cell on screen, px (its ends and its centre); null with no strip. */
+  lineBox?: { x0: number; x1: number; y: number } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +303,10 @@ export type DerivedLayout = Extract<SheetLayout, { asWritten: false }>;
 
 interface SheetLayoutCommon {
   geo: SheetGeo;
+  /** The peek, laid (`sheet-strip.ts`); absent with no strip (the opening). */
+  peek?: PeekDrawing;
+  /** The strip's progress line, laid in the foot's middle cell. */
+  stripLine?: StripLineLayout;
   /** The sheet's edge at each pull depth: Now, the stretch, the chart. */
   detents: [number, number, number];
   band: number;
@@ -457,8 +468,7 @@ export function buildLayout(input: LayoutInput): SheetLayout {
     L = layoutAt(input, rung);
     firstFit ??= L.summary.fits2 ? L : null;
   }
-  if (L.summary.fits2 && !readShed(L)) return L;
-  return firstFit ?? L;
+  return withStrip(L.summary.fits2 && !readShed(L) ? L : (firstFit ?? L), input);
 }
 
 function layoutAt(input: LayoutInput, readRung: number): SheetLayout {
@@ -923,6 +933,10 @@ export interface Frame {
   hint: number;
   /** A derived plan's line, strip map, Paper and timetable growth (T3); null as written. */
   derived: DerivedFrame | null;
+  /** The peek's rows shown (0 to 1); absent with no strip. */
+  peek?: number;
+  /** The minute the strip's line is filled to. */
+  fillMin?: number;
 }
 
 export function depthOf(L: SheetLayout, Y: number): number {
@@ -944,6 +958,16 @@ export function depthOf(L: SheetLayout, Y: number): number {
  * level, so nothing between levels needs to judge collisions.
  */
 export function frameAt(L: SheetLayout, s: FrameState): Frame {
+  const F = frameOwn(L, s);
+  if (!L.stripLine) return F;
+  // The strip's fill: the end of the step in hand at rest and under the peek; a derived plan's
+  // glides to the clock's minute on the way to the whole cook (v1.54).
+  const progress = s.progress ?? L.stripLine.progress;
+  const fill = L.asWritten ? progress : lerp(progress, s.now ?? L.now, sstep(1, LINE_FILL_NOW, F.d));
+  return stripFrame(L, F, s, fill);
+}
+
+function frameOwn(L: SheetLayout, s: FrameState): Frame {
   if (!L.asWritten) return derivedFrame(L, s);
   const g = L.geo;
   const c = g.c;

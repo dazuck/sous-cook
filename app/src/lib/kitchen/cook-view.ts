@@ -198,6 +198,22 @@ export const COOK_COPY = {
   freeDivider: (n: number) => `about ${n} min free`,
   /** The nudge on the last step before a break (N2-8). */
   stepAway: (n: number) => `After this step: about ${n} min free. Step away.`,
+  /**
+   * The walk-away line in the step's meta (look-ahead slice 1, DS v1.62; the approved drawing's
+   * words): the break's minutes as said, with no "Step away." (the ruled row in the peek says it).
+   */
+  stepAwayMeta: (n: number) => `After this step: about ${n} min free.`,
+  /** The peek's ruled rows (DS v1.62). One wording for a fold: "N more steps, then". */
+  peekThen: "then",
+  peekMore: (n: number) => `${n} more ${n === 1 ? "step" : "steps"}, then`,
+  peekFree: (n: number) => `${n} min free`,
+  peekWhile: (verb: string) => `while it ${verb}`,
+  peekTable: "on the table",
+  peekIn: (time: string) => `in about ${time}`,
+  peekAfter: (label: string) => `after that: ${label}`,
+  /** The strip's controls (DS v1.62): the line's own target, and the arrows on the sheet's edge. */
+  peekExpand: "Show the whole cook",
+  peekCollapse: "Put away",
   /** A running step's time left on the chart (N2-2): `time` as `hm` says it. */
   timeLeft: (time: string) => `${time} left`,
   /** A stretch over its span on the chart (N2-4). */

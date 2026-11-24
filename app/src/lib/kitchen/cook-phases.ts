@@ -3,11 +3,8 @@ import { flow, taskMinutes, timeline, type FlowItem } from "./cook-schedule";
 import {
   aheadGroups,
   miseBefore,
-  screensOf,
   stepKey,
-  type CookView,
   type PrepAheadGroup,
-  type StackLine,
 } from "./cook-view";
 
 export type AheadGroup = PrepAheadGroup;
@@ -57,14 +54,6 @@ export interface CookPhasesModel {
   phases: CookPhaseRow[];
 }
 
-export interface PeekStepRow {
-  key: string;
-  text: string;
-  minutes: number;
-  isMeanwhile: boolean;
-  taskId: string;
-}
-
 function stripParens(text: string): string {
   return text.replace(/\s*\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -90,17 +79,6 @@ function ensurePeriod(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) return "";
   return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
-}
-
-function truncateText(text: string, maxLen = 65): string {
-  const clean = stripParens(text).replace(/\.$/, "").trim();
-  if (clean.length <= maxLen) return clean;
-  const cut = clean.slice(0, maxLen - 1);
-  const lastSpace = cut.lastIndexOf(" ");
-  if (lastSpace > 20) {
-    return `${cut.slice(0, lastSpace).replace(/[,:;–-]$/, "")}…`;
-  }
-  return `${cut}…`;
 }
 
 function sumTaskMinutes(tasks: readonly CookTask[]): number {
@@ -735,80 +713,4 @@ export function buildCookPhases(
     ahead,
     phases,
   };
-}
-
-function parseMinutesLabel(mins: string | null): number {
-  if (!mins) return 1;
-  const m = mins.match(/(\d+)/);
-  return m ? Math.max(1, Number(m[1])) : 1;
-}
-
-function stackLineToPeekRow(line: StackLine): PeekStepRow {
-  const firstId = line.key.split("+")[0] || line.key;
-  const rawLabel = line.name || line.glance || line.text;
-  return {
-    key: line.key,
-    text: truncateText(capFirst(rawLabel), 65),
-    minutes: parseMinutesLabel(line.minutes),
-    isMeanwhile: line.kind === "mise",
-    taskId: firstId,
-  };
-}
-
-function flowItemToPeekRow(item: FlowItem): PeekStepRow {
-  const key = stepKey(item);
-  const taskId = item.tasks[0]?.id ?? key;
-  const isMeanwhile = item.tasks.every((t) => t.kind === "mise");
-  const minutes = sumTaskMinutes(item.tasks);
-  const joinedLabels = joinClauses(
-    item.tasks.map((t) => stripParens(t.label || t.text)),
-  );
-  return {
-    key,
-    text: truncateText(capFirst(joinedLabels), 65),
-    minutes,
-    isMeanwhile,
-    taskId,
-  };
-}
-
-export function buildPeekSteps(
-  view: CookView & {
-    plan?: CookPlan;
-    mode?: PrepMode;
-    ticked?: ReadonlySet<string>;
-  },
-  _nowMin: number = 0,
-  plan?: CookPlan,
-  mode?: PrepMode,
-  ticked?: ReadonlySet<string>,
-): PeekStepRow[] {
-  const targetPlan = plan ?? view.plan;
-  if (targetPlan) {
-    const targetMode: PrepMode =
-      mode ?? view.mode ?? (view.onPrep ? "first" : "go");
-    const targetTicked = ticked ?? view.ticked ?? new Set<string>();
-    const screens = screensOf(targetPlan, targetMode, targetTicked);
-    let currentIdx = view.pos;
-    if (view.now && !view.onPrep) {
-      const byKey = screens.findIndex(
-        (s) => s.kind === "step" && stepKey(s.item) === view.now!.key,
-      );
-      if (byKey !== -1) currentIdx = byKey;
-    }
-    return screens
-      .slice(currentIdx + 1)
-      .filter((s): s is Extract<typeof s, { kind: "step" }> => s.kind === "step")
-      .slice(0, 3)
-      .map((s) => flowItemToPeekRow(s.item));
-  }
-
-  if (view.stack && view.stack.length > 1) {
-    return view.stack
-      .slice(1, 4)
-      .filter((line) => line.kind !== "prep")
-      .map(stackLineToPeekRow);
-  }
-
-  return [];
 }

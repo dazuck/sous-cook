@@ -1,17 +1,18 @@
 "use client";
 
 /**
- * The cook sheet: one look-ahead at three depths, pulled up from under the
- * step (P58; slice N2). For a derived plan (overview slice T3, SPEC §10–§11)
- * the three levels hang from one line that never moves: at rest the progress
- * line alone (`ProgressLine`); pulled one level a Paper sheet rises and the
- * line becomes the strip map's rail (`StripMap`); pulled again the sheet
- * reaches the top and the timetable (`Timetable`) grows up out of the line,
- * the top line giving way to it, a touched step read in its header. As written
- * the levels are the strip, the next steps a row each, and the outline with
- * its read band. The opening is the timetable over the whole screen. Whole
- * recipe (level 3) is a borrowed screen over it, entered by a cross-fade; the
- * sheet's edge stays where it was.
+ * The cook sheet: one look-ahead at three depths, pulled up from the bottom
+ * strip (look-ahead slice 1, DS v1.62). At rest the strip alone: Back and
+ * Forward with the progress line between them, drawn as work segments with
+ * gaps at breaks (`sheet-strip.ts`, `strip-line.ts`). Pulled one level, the
+ * peek: a drawer of the next steps rising from the strip's top edge, with ⌄
+ * and ^ on its edge (`cook-peek.ts`, `peek-layout.ts`, `PeekRows`). Pulled
+ * again, the whole cook: for a derived plan the timetable (`Timetable`) grows
+ * up, the top line giving way to it, a touched step read in its header; as
+ * written the outline with its read band. The whole cook has no arrow: the
+ * strip, Back to step, the down key or Esc leave it. The opening is the
+ * timetable over the whole screen. Whole recipe (level 3) is a borrowed screen
+ * over it, entered by a cross-fade; the sheet's edge stays where it was.
  *
  * The drawing is `sheet-layout.ts` (where everything stands at each level and
  * between); the motion is `sheet-motion.ts` (the finger, the spring, the
@@ -29,11 +30,13 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { COOK_COPY, cookView, initialCookState, levelSaid, type PrepAheadGroup } from "@/lib/kitchen/cook-view";
+import { createPortal } from "react-dom";
+import { COOK_COPY, initialCookState, levelSaid, type PrepAheadGroup } from "@/lib/kitchen/cook-view";
 import { strip as stripOf, type Strip } from "@/lib/kitchen/cook-strip";
 import { hitOutline, readStepDetails, type Nudge } from "@/lib/kitchen/cook-levels";
 import { prepWords, timedKey, timedStrip, type PotTimer } from "@/lib/kitchen/cook-overview";
-import { buildPeekSteps } from "@/lib/kitchen/cook-phases";
+import { peekOf } from "@/lib/kitchen/cook-peek";
+import { keyLevel, sheetArrowTargets, stripTap } from "@/lib/kitchen/sheet-strip";
 import type { PrepMode } from "@/lib/kitchen/cook-plan";
 import type { GetOutItem } from "@/lib/kitchen/timetable-layout";
 import { buildTimetable } from "@/lib/kitchen/timetable-model";
@@ -41,16 +44,18 @@ import {
   advanceFrame,
   buildLayout,
   capFirst,
+  clamp,
   frameAt,
+  sstep,
   hm,
   tableWords,
   type Frame,
   type Measure,
   type SheetLayout,
 } from "@/lib/kitchen/sheet-layout";
-import { GRAB, PAPER_R } from "@/lib/kitchen/sheet-derived";
+import { LINE_H, PAPER_R, TRACK_INK } from "@/lib/kitchen/sheet-derived";
 import { JUMP_MS, JUMP_REDUCED_MS, SheetMotion, type Level } from "@/lib/kitchen/sheet-motion";
-import { LINE_HIT, type StripMapDrawing } from "@/lib/kitchen/strip-map";
+import type { StripMapDrawing } from "@/lib/kitchen/strip-map";
 import { SHEET_CONSTANTS, type PointerZone } from "@/lib/kitchen/sheet-release";
 import { ease } from "@/lib/kitchen/spring";
 import { keyBelongsToTarget } from "@/lib/kitchen/key-target";
@@ -58,8 +63,7 @@ import type { VoiceEcho, VoiceStatus } from "@/hooks/useKitchenVoiceCommands";
 import { BorrowedChrome, LEDGE_BAR_CPX } from "./BorrowedChrome";
 import { TIMETABLE_MOVE_MS, Timetable } from "./Timetable";
 import { EDGE_X } from "./cook-edge";
-import { ProgressLine, paintLine } from "./ProgressLine";
-import { StripMap } from "./StripMap";
+import { PeekRows, SheetArrow } from "./PeekRows";
 import { WholeRecipe, type WholeRecipeProps } from "./WholeRecipe";
 
 export type { Level };
@@ -99,6 +103,8 @@ export interface CookSheetProps {
   stackRef: RefObject<HTMLDivElement | null>;
   footRef: RefObject<HTMLDivElement | null>;
   slotRef: RefObject<HTMLDivElement | null>;
+  /** The foot's middle cell: the strip's line is drawn there, and is the way in (look-ahead slice 1). */
+  middleRef?: RefObject<HTMLDivElement | null>;
   /** The step's fit at rest, and what makes its block change (its words, its part, its clock). */
   fit: number;
   /**
@@ -207,6 +213,17 @@ function sameStations(a: StripMapDrawing, b: StripMapDrawing): boolean {
   return st(a) === st(b);
 }
 
+/**
+ * The peek's rows said the same and the strip's line cut the same (a minute at rest at the peek lays
+ * out again only where either changes: a running timer moves the plan's minutes, and with them the
+ * line's segments, so a held line would draw the clock's minute at the old place on the way up).
+ */
+function samePeek(a: SheetLayout, b: SheetLayout): boolean {
+  const said = (L: SheetLayout) => (L.peek ? L.peek.rows.map((r) => r.said).join("|") : "");
+  const cut = (L: SheetLayout) => (L.stripLine ? L.stripLine.parts.map((p) => `${p.kind}:${p.from.toFixed(2)}-${p.to.toFixed(2)}`).join("|") : "");
+  return said(a) === said(b) && cut(a) === cut(b);
+}
+
 /** Text placed by a frame: on whole tenths, hidden when clear. */
 function place(el: HTMLElement | null | undefined, f: { x: number; y: number; op: number }) {
   if (!el) return;
@@ -241,6 +258,7 @@ export function CookSheet(props: CookSheetProps) {
     stackRef,
     footRef,
     slotRef,
+    middleRef,
     fit,
     fitReady,
     stepText,
@@ -283,9 +301,20 @@ export function CookSheet(props: CookSheetProps) {
   /** A derived plan's parts (T3): what stands on the screen's own place, the Paper, the line, the strip map. */
   const derivedRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
-  const lineTrackRef = useRef<HTMLDivElement>(null);
-  const lineFillRef = useRef<HTMLDivElement>(null);
-  const stripMapRef = useRef<HTMLDivElement>(null);
+  /** The strip's line (its work segments' fills), the arrow over it, the peek and the arrows on the sheet's edge. */
+  const segEls = useRef<(HTMLElement | null)[]>([]);
+  const restArrowRef = useRef<HTMLSpanElement>(null);
+  const peekRef = useRef<HTMLDivElement>(null);
+  const arrows1Ref = useRef<HTMLDivElement>(null);
+  /** The foot's middle cell, once mounted: the strip's line is drawn into it. */
+  const [cell, setCell] = useState<HTMLDivElement | null>(null);
+  // Every commit: the cell is the foot's, a sibling committed after the sheet, so its ref is read
+  // once it is there; set only when it changed, so this settles in one pass.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const el = middleRef?.current ?? null;
+    if (el !== cell) setCell(el);
+  });
   const ghostRef = useRef<HTMLButtonElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
   const overviewRef = useRef<HTMLDivElement>(null);
@@ -347,7 +376,7 @@ export function CookSheet(props: CookSheetProps) {
    * `owed` keeps a minute that came while a finger was down for when it lifts (`lifted`).
    */
   const probe = useRef(-1);
-  const [mapGlide, setMapGlide] = useState(0);
+  const [, setMapGlide] = useState(0);
   const owed = useRef(false);
   const [lifted, setLifted] = useState(0);
   /**
@@ -576,11 +605,6 @@ export function CookSheet(props: CookSheetProps) {
     whole.recipe && whole.scales !== false && whole.servings !== undefined && whole.servings !== whole.recipe.serves_base
       ? COOK_COPY.scaleNote(whole.servings)
       : null;
-  const peekSteps = useMemo(() => {
-    if (!plan || drawn.asWritten) return undefined;
-    const view = cookView(plan, { kind: "derived" }, state);
-    return buildPeekSteps(view, timed.now);
-  }, [plan, drawn.asWritten, state, timed.now]);
 
   // ---- the layout: measured from the page ----
   const [rebuild, setRebuild] = useState(0);
@@ -686,6 +710,15 @@ export function CookSheet(props: CookSheetProps) {
       controls: opening && cw ? { w: cw.offsetWidth, h: cw.offsetHeight } : null,
       hint: sayBack && !opening,
     };
+    // The strip's line: the foot's middle cell, where the sheet draws it (look-ahead slice 1).
+    // FIXME(look-ahead slice 1): when the step's own running clock walks into the well on landing
+    // at the whole cook (N10, `clockInWell`), the cell narrows and the line is laid again in one
+    // step, so its left end jumps by the clock's width (about 245 px at 1280 wide), and back on
+    // leaving it. The fill holds its minute through it; a glide of the line's box (or the well's
+    // room kept while the step's clock runs) is the fix, left for a later design round
+    // (DECISIONS 2026-11-23, look-ahead slice 1, "the line makes room for the well's clock").
+    const cellR = opening ? null : (middleRef?.current?.getBoundingClientRect() ?? null);
+    const lineBox = cellR && cellR.width > 0 ? { x0: cellR.left, x1: cellR.right, y: cellR.top + cellR.height / 2 } : null;
     const L = buildLayout({
       strip: drawn,
       geo: {
@@ -709,13 +742,15 @@ export function CookSheet(props: CookSheetProps) {
       chrome,
       topLine,
       tasks,
+      peek: plan && !opening ? peekOf(plan, state, drawn) : null,
+      lineBox,
     });
     const prev = layoutRef.current;
     // A minute at rest at level 1 (T3 follow-up): laid out again only where its stations change;
     // the map is held as it was where they don't (the counting words say the minute in their boxes).
     const probing = probe.current === cap;
     if (probing) probe.current = -1;
-    if (probing && prev?.derived && L.derived && sameStations(prev.derived.map, L.derived.map)) return;
+    if (probing && prev?.derived && L.derived && sameStations(prev.derived.map, L.derived.map) && samePeek(prev, L)) return;
     // How the new look arrives: Next at a pinned stretch glides the rows
     // (N2-3; a cross-fade under reduced motion); a read arriving or leaving at
     // the whole cook cross-fades (N2-4).
@@ -788,13 +823,13 @@ export function CookSheet(props: CookSheetProps) {
     const ro = new ResizeObserver(again);
     if (stageRef.current) ro.observe(stageRef.current);
     // More and the opening's controls change size (a well arriving, "Noted"): place them again.
-    for (const el of [moreWrapRef.current, controlsWrapRef.current]) if (el) ro.observe(el);
+    for (const el of [moreWrapRef.current, controlsWrapRef.current, cell]) if (el) ro.observe(el);
     return () => {
       window.removeEventListener("resize", turned);
       document.fonts.removeEventListener("loadingdone", again);
       ro.disconnect();
     };
-  }, [stageRef, hasMore, hasControls]);
+  }, [stageRef, hasMore, hasControls, cell]);
 
   // A new layout drawn into the DOM: stand at the pinned level (or glide the rows there).
   useLayoutEffect(() => {
@@ -985,15 +1020,6 @@ export function CookSheet(props: CookSheetProps) {
     if (D && DF) {
       if (derivedRef.current) derivedRef.current.style.transform = `translateY(${(L.detents[2] - Y).toFixed(1)}px)`;
       if (paperRef.current) paperRef.current.style.transform = `translateY(${(DF.paperTop - L.detents[2]).toFixed(1)}px)`;
-      // The line never moves; its fill is the frame's: the end of the step in hand at rest and under
-      // the peek, the clock's minute at the whole cook (v1.54).
-      paintLine(lineTrackRef.current, lineFillRef.current, {
-        x: D.line0.x0,
-        w: D.line0.x1 - D.line0.x0,
-        fill: DF.fill,
-        ink: 0,
-      });
-      shown(stripMapRef.current, DF.stations);
       const ov = overviewRef.current;
       shownOverview(ov, DF.lanes);
       ov?.style.setProperty("--grow", DF.grow.toFixed(4));
@@ -1001,6 +1027,27 @@ export function CookSheet(props: CookSheetProps) {
     } else {
       // As written: the outline (level 2's lanes are a derived plan's only).
       shownOverview(overviewRef.current, F.lanes);
+    }
+    // The strip's line (look-ahead slice 1): each work segment filled to the frame's minute (the end
+    // of the step in hand at rest and under the peek; a derived plan's glides to the clock's minute on
+    // the way to the whole cook); the arrow over it while the sheet rests; the peek's rows; the arrows
+    // on the sheet's edge, on the Paper's top.
+    const SL = L.stripLine;
+    if (SL && F.fillMin !== undefined) {
+      let k = 0;
+      for (const p of SL.parts) {
+        if (p.kind !== "work") continue;
+        const el = segEls.current[k++];
+        if (el) el.style.transform = `scaleX(${clamp((F.fillMin - p.from) / Math.max(1e-9, p.to - p.from), 0, 1).toFixed(4)})`;
+      }
+    }
+    shown(restArrowRef.current, L.peek ? 1 - sstep(0, 0.3, F.d) : 0);
+    shown(peekRef.current, F.peek ?? 0);
+    const edge = DF ? DF.paperTop - Y : 0;
+    const arrows = arrows1Ref.current;
+    if (arrows) {
+      arrows.style.transform = `translateY(${edge.toFixed(1)}px)`;
+      shown(arrows, 1 - clamp(Math.abs(F.d - 1) / 0.25, 0, 1));
     }
     if (nowRef.current) {
       nowRef.current.style.transform = `translate(${(F.now.x - 1).toFixed(1)}px, ${F.now.y0.toFixed(1)}px)`;
@@ -1108,13 +1155,20 @@ export function CookSheet(props: CookSheetProps) {
       m.clearClaim();
       // More and its menu are the top line's, hosted here: a touch there is theirs, never a pull.
       if (e.target instanceof Element && e.target.closest("[data-sheet-more]")) return;
+      // In the foot, the strip's line is the way in (the band, at every level); Back, Forward and the
+      // clocks beside them are buttons, and a drag that starts on one is never a pull.
+      let at = el;
+      if (el === "foot" && e.target instanceof Element) {
+        if (e.target.closest("[data-strip]")) at = "band";
+        else if (e.target.closest("button, a, [role=button]")) return;
+      }
       // The stage is the steps' own at Now: the sheet doesn't listen there (N3a).
       if (el === "stage" && m.pinned === 0) return;
       // While a timer rings, the sheet is not armed (N10); on the opening the pull is disarmed (N2-10).
       if (live.current.alarm || live.current.opening) return;
       // A touch lands the rows' glide where it was going.
       if (tweenRaf.current) finishTween();
-      m.down({ id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, zone: zoneFor(el, e.clientX, e.clientY) });
+      m.down({ id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, zone: zoneFor(at, e.clientX, e.clientY) });
       const target = e.currentTarget as HTMLElement;
       let last = { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp };
       const move = (ev: PointerEvent) => {
@@ -1224,16 +1278,15 @@ export function CookSheet(props: CookSheetProps) {
       }
       // The opening's keys are Start's (CookScreen): the levels are disarmed (N2-10).
       if (lv.opening || !lv.keysLive || lv.alarm || document.querySelector("[data-holds-keys]")) return;
-      if (e.key === "ArrowUp") {
+      if (e.key === "Escape" && lv.readMark !== null) {
         e.preventDefault();
-        lv.onLevel(Math.min(3, k + 1) as Level);
-      } else if (e.key === "ArrowDown" && k > 0) {
+        lv.onReadMark(null);
+        return;
+      }
+      const to = keyLevel(e.key, k);
+      if (to !== null) {
         e.preventDefault();
-        lv.onLevel((k - 1) as Level);
-      } else if (e.key === "Escape" && (k > 0 || lv.readMark !== null)) {
-        e.preventDefault();
-        if (lv.readMark !== null) lv.onReadMark(null);
-        else lv.onLevel(0);
+        lv.onLevel(to);
       }
     };
     // Capture: before the borrowed screen's own Escape, so a read goes first.
@@ -1258,10 +1311,10 @@ export function CookSheet(props: CookSheetProps) {
     }
     if (opening) return;
     const k = motion.current?.pinned ?? 0;
-    if (k <= 1) {
-      onLevel((k + 1) as Level);
-      return;
-    }
+    // At rest the sheet is shut: a tap on it opens the peek. The peek's rows are words to read, not
+    // targets (call 4): a tap there does nothing (its arrows and a pull are the ways on).
+    if (k === 0) onLevel(1);
+    if (k <= 1) return;
     const L = layoutRef.current;
     const F = frameRef.current;
     // Mid-glide nothing reads: the marks under the finger are not yet where they land (T3 fix round).
@@ -1441,13 +1494,7 @@ export function CookSheet(props: CookSheetProps) {
                       aria-hidden
                       className="absolute left-0 w-full bg-paper ring-1 ring-ink/[.11] ring-inset"
                       style={{ top: 0, height: L.geo.H, borderRadius: PAPER_R * L.geo.c }}
-                    >
-                      <div
-                        data-grabber
-                        className="absolute rounded-full bg-ink/[.22]"
-                        style={{ left: L.geo.W / 2 - (GRAB.w / 2) * L.geo.c, top: GRAB.top * L.geo.c, width: GRAB.w * L.geo.c, height: GRAB.h * L.geo.c }}
-                      />
-                    </div>
+                    />
                   )}
                   <Timetable
                     ov={L.overview}
@@ -1475,21 +1522,51 @@ export function CookSheet(props: CookSheetProps) {
                     steps={whole.steps}
                     onAskAhead={onAskAhead}
                   />
-                  {!L.opening && (
-                    <>
-                      <ProgressLine lineTop={D.lineY - L.detents[2]} c={L.geo.c} trackRef={lineTrackRef} fillRef={lineFillRef} />
-                      <StripMap
-                        map={D.map}
-                        c={L.geo.c}
-                        lineTop={D.lineY - L.detents[2]}
-                        now={timed.now}
-                        glide={mapGlide}
-                        rootRef={stripMapRef}
-                        peekSteps={peekSteps}
-                        portrait={L.geo.portrait}
-                      />
-                    </>
+                </div>
+              )}
+              {/* The peek (look-ahead slice 1): the next steps, to the next time the hands come free.
+                  As written has no Paper of its own: the peek brings one. */}
+              {L?.peek && (
+                <div
+                  ref={peekRef}
+                  data-peek
+                  data-limit={L.peek.limit}
+                  className="pointer-events-none absolute inset-x-0 top-0 z-[5]"
+                  style={{ height: L.peek.height, opacity: 0, visibility: "hidden" }}
+                >
+                  {L.asWritten && (
+                    <div
+                      aria-hidden
+                      className="absolute inset-x-0 top-0 bg-paper ring-1 ring-ink/[.11] ring-inset"
+                      style={{ height: L.geo.H, borderRadius: PAPER_R * L.geo.c }}
+                    />
                   )}
+                  <PeekRows d={L.peek} c={L.geo.c} label={COOK_COPY.lookAhead} />
+                </div>
+              )}
+              {/* The arrows on the sheet's top edge, at the peek only: ⌄ puts it away and ^ opens
+                  the whole cook. Each a full 80 cpx target. The whole cook has none (DS v1.62):
+                  its top holds Back to step, the title and the read. */}
+              {L?.peek && (
+                <div ref={arrows1Ref} className="pointer-events-none absolute top-0 left-0 z-[7] w-full" style={{ opacity: 0, visibility: "hidden" }}>
+                  {sheetArrowTargets(1, L.geo.W, L.geo.c).map((a) => (
+                    <button
+                      key={a.mark}
+                      type="button"
+                      data-sheet-arrow={a.mark}
+                      tabIndex={settled === 1 ? 0 : -1}
+                      aria-label={a.mark === "collapse" ? COOK_COPY.peekCollapse : COOK_COPY.peekExpand}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!restsOn(1) || opening) return;
+                        onLevel(a.to);
+                      }}
+                      style={{ left: a.x, top: a.y, width: a.w, height: a.h }}
+                      className="pointer-events-auto absolute grid cursor-pointer place-items-center rounded-full text-ink active:bg-sand focus-visible:outline-3 focus-visible:-outline-offset-4 focus-visible:outline-ink"
+                    >
+                      <SheetArrow dir={a.dir} />
+                    </button>
+                  ))}
                 </div>
               )}
               {/* More, hosted where the top line gives way (N3-4(d), (f)); measured always, shown with the lanes. */}
@@ -1700,26 +1777,71 @@ export function CookSheet(props: CookSheetProps) {
             </div>
           </div>
 
-          {/* The band: the way in at rest, one target the height of the band (≥ 80 cpx). */}
-          <button
-            ref={bandRef}
-            type="button"
-            data-cook-band
-            data-no-swipe
-            hidden={!L || settled !== 0 || pinned !== 0}
-            onClick={deeper}
-            aria-label={tw ? `${ttNum}${ttWordsLive ? ` ${ttWordsLive}` : ""}. Show ${names[1]}` : names[1]}
-            aria-describedby="cook-sheet-marks"
-            // A derived plan's way in is the line: a target about 52 tall on it (SPEC §10); as written, the band.
-            style={
-              L
-                ? D
-                  ? { top: D.lineY - (LINE_HIT / 2) * L.geo.c, height: LINE_HIT * L.geo.c, touchAction: "none" }
-                  : { top: L.detents[0], height: L.geo.footTop - L.detents[0], touchAction: "none" }
-                : undefined
-            }
-            className="pointer-events-auto absolute inset-x-0 cursor-pointer bg-transparent outline-none focus-visible:outline-3 focus-visible:-outline-offset-4 focus-visible:outline-ink"
-          />
+          {/* The strip's line, drawn into the foot's middle cell (look-ahead slice 1): work in
+              segments, a gap at each break, filled to the end of the step in hand. The whole cell
+              is one target: a tap goes rest ↔ the peek (call 3), a pull moves the sheet. */}
+          {cell &&
+            L?.stripLine &&
+            !opening &&
+            createPortal(
+              <button
+                ref={bandRef}
+                type="button"
+                data-cook-band
+                data-strip
+                data-no-swipe
+                onClick={() => {
+                  if (alarm) {
+                    onAlarmTap();
+                    return;
+                  }
+                  if (opening) return;
+                  onLevel(stripTap((motion.current?.pinned ?? 0) as Level));
+                }}
+                // Said as the band was (the time to the table, then the way in), so a screen reader
+                // still hears where the cook stands; under the peek it puts the peek away.
+                aria-label={
+                  pinned === 1 ? COOK_COPY.peekCollapse : tw ? `${ttNum}${ttWordsLive ? ` ${ttWordsLive}` : ""}. Show ${names[1]}` : names[1]
+                }
+                aria-expanded={pinned === 1 || pinned === 2}
+                aria-describedby="cook-sheet-marks"
+                style={{ touchAction: "none" }}
+                className="absolute inset-0 cursor-pointer rounded-[var(--radius-2)] bg-transparent outline-none focus-visible:outline-3 focus-visible:-outline-offset-4 focus-visible:outline-ink"
+              >
+                <span
+                  ref={restArrowRef}
+                  aria-hidden
+                  data-strip-arrow
+                  className="absolute left-1/2 grid -translate-x-1/2 place-items-center text-ink-soft"
+                  style={{ bottom: `calc(50% + ${(8 * L.geo.c).toFixed(1)}px)` }}
+                >
+                  <SheetArrow dir="up" />
+                </span>
+                <span aria-hidden data-strip-line className="absolute inset-x-0 top-1/2 block" style={{ height: LINE_H * L.geo.c, marginTop: (-LINE_H * L.geo.c) / 2 }}>
+                  {L.stripLine.parts
+                    .filter((p) => p.kind === "work")
+                    .map((p, k) => (
+                      <span
+                        key={`${p.from}-${p.to}`}
+                        data-strip-seg
+                        data-from={p.from}
+                        data-to={p.to}
+                        className="absolute top-0 block h-full overflow-hidden rounded-full"
+                        style={{ left: p.x0, width: p.x1 - p.x0, background: `color-mix(in oklab, var(--ink) ${TRACK_INK * 100}%, transparent)` }}
+                      >
+                        <span
+                          ref={(el) => {
+                            segEls.current[k] = el;
+                          }}
+                          className="absolute inset-0 block origin-left bg-ink"
+                          style={{ transform: "scaleX(0)" }}
+                        />
+                      </span>
+                    ))}
+                </span>
+              </button>,
+              cell,
+            )}
 
           {/* What a screen reader hears of the strip and the level. */}
           <div className="sr-only">

@@ -12,7 +12,6 @@ import {
   hitOutline,
   nudge,
   readStepDetails,
-  restNudge,
   STRETCH_HORIZON_CAP,
   writtenRows,
   walkAway,
@@ -351,38 +350,4 @@ describe("cook-levels", () => {
       expect(walkAway(strip(asWritten, initialCookState("first")))).toBeNull();
     });
   });
-
-  describe("restNudge (N2-8)", () => {
-    const withBreak = (s: Strip): Strip => ({
-      ...s,
-      stretches: [{ screens: [0, 1], free: null }],
-      marks: s.marks.map((m) => ({ ...m, stretch: 0 })),
-    });
-
-    it("prefers the start nudge, which counts down, over the walk-away line", () => {
-      const base = makeStrip({ inHandDur: 15, otherStrandStart: 10 });
-      const s: Strip = {
-        ...base,
-        stretches: [{ screens: [0], free: { from: 15, to: 40, minutes: 25 } }],
-        marks: base.marks.map((m) => ({ ...m, stretch: m.key === "cur" ? 0 : null })),
-      };
-      expect(walkAway(s)).not.toBeNull();
-      expect(restNudge(s, 0)?.kind).toBe("start");
-    });
-
-    it("falls to the walk-away line when no start nudge applies", () => {
-      const base = makeStrip({ inHandPot: false, otherStrandExists: false });
-      const s: Strip = {
-        ...base,
-        stretches: [{ screens: [0], free: { from: 10, to: 40, minutes: 30 } }],
-      };
-      expect(nudge(s, 0)).toBeNull();
-      expect(restNudge(s, 0)?.kind).toBe("step-away");
-    });
-
-    it("is null with neither", () => {
-      expect(restNudge(withBreak(makeStrip({ inHandPot: false })), 0)).toBeNull();
-    });
-  });
 });
-

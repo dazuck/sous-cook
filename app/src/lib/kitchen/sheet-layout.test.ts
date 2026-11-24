@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { COOK_COPY, initialCookState, next, cookView, prepPages, type CookState } from "./cook-view";
 import { identityPlan, parseCookPlan, type CookPlan } from "./cook-plan";
 import { strip } from "./cook-strip";
-import { restNudge } from "./cook-levels";
+import { nudge } from "./cook-levels";
 import { SIDE } from "./overview-place";
 import { buildTimetable } from "./timetable-model";
 import type { GetOutItem, Rect } from "./timetable-layout";
@@ -107,7 +107,8 @@ function inputFor(plan: CookPlan, state: CookState, W: number, H: number, extra:
   const s = strip(plan, state, null);
   const view = cookView(plan, { kind: "derived" }, state);
   const text = extra.stepText ?? (view.onPrep ? "" : (view.stack[0]?.text ?? ""));
-  const nd = restNudge(s, s.now);
+  // The nudge's slot as CookScreen fills it: the start nudge (the walk-away line is on the step, v1.62).
+  const nd = nudge(s, s.now);
   const inHand = s.marks.find((m) => m.state === "in-hand");
   // The timetable as the sheet builds it: this mode's live strip, the other mode from the top.
   const mode = state.mode ?? "first";

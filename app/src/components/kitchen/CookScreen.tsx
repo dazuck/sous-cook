@@ -22,7 +22,7 @@ import {
   type CookSession,
 } from "@/lib/kitchen/cook-session";
 import { strip, type Strip } from "@/lib/kitchen/cook-strip";
-import { restNudge } from "@/lib/kitchen/cook-levels";
+import { nudge as startNudge, walkAway } from "@/lib/kitchen/cook-levels";
 import { hasOpening, opensOnChart } from "@/lib/kitchen/cook-opening";
 import {
   askInHand,
@@ -424,7 +424,13 @@ export function CookScreen({
         : null,
     [plan, state, stepRunning, elapsedMin],
   );
-  const nudgeData = useMemo(() => (stripData ? restNudge(stripData, stripData.now) : null), [stripData]);
+  // The nudge's slot holds the start nudge; the walk-away line moved onto the step's meta (look-ahead
+  // slice 1, DS v1.62), shown where the start nudge doesn't apply (its free time is then shorter, N2-8).
+  const nudgeData = useMemo(() => (stripData ? startNudge(stripData, stripData.now) : null), [stripData]);
+  const awayLine = useMemo(() => {
+    const w = stripData && !nudgeData ? walkAway(stripData) : null;
+    return w ? COOK_COPY.stepAwayMeta(w.minutes) : null;
+  }, [stripData, nudgeData]);
 
   // Quiet lines (a reset, B5b's) are drawn here, so a reset line need not
   // wait in the tab for a later page; they are read once the cook moves on.
@@ -1283,6 +1289,7 @@ export function CookScreen({
           }
           main={
             <CookFlow
+              away={awayLine}
               view={view}
               mode={state.mode}
               times={prepTimes}

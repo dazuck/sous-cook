@@ -115,6 +115,49 @@ test.describe("Cook mode", () => {
     await expect(liveNowLine(page).locator("[data-prep-rows]")).toHaveCount(0);
   });
 
+  test("COOK-5: on a cooking step the bottom strip draws the cook as work segments, a tap raises the peek on the step in hand, and Put away lowers it", async ({
+    page,
+  }) => {
+    const p1 = await readQueueRowByName(RECIPE_NAMES.thinWhiteSauce);
+    expect(p1).not.toBeNull();
+
+    await page.goto(`/kitchen/queue/${p1!.id}`);
+    await page.locator("[data-opening-start]").click();
+    // Past the prep page to the first cooking step
+    await page.getByRole("button", { name: "Next step" }).click();
+    const nowLine = liveNowLine(page);
+    await expect(nowLine.locator("[data-prep-eyebrow]")).toHaveCount(0);
+    const stepKey = await nowLine.getAttribute("data-line");
+    expect(stepKey).not.toBeNull();
+
+    // The strip at the foot: the whole cook folded flat, a segment per run of
+    // work (CookSheet.tsx; strip-line.ts). The sheet rests at level 0.
+    const strip = page.locator("[data-strip]");
+    await expect(strip).toBeVisible();
+    expect(await strip.locator("[data-strip-seg]").count()).toBeGreaterThan(0);
+    const sheet = page.locator("[data-cook-sheet]");
+    await expect(sheet).toHaveAttribute("data-level", "0");
+    await expect(strip).toHaveAttribute("aria-expanded", "false");
+
+    // A tap on the strip raises the peek (level 1): the step in hand first,
+    // then the steps up to the next break (cook-peek.ts; PeekRows.tsx)
+    await strip.click();
+    await expect(sheet).toHaveAttribute("data-level", "1");
+    await expect(strip).toHaveAttribute("aria-expanded", "true");
+    const peek = page.locator("[data-peek]");
+    await expect(peek).toBeVisible();
+    const inHand = peek.locator('[data-peek-row="step"][data-peek-now]');
+    await expect(inHand).toHaveCount(1);
+    await expect(inHand).toHaveAttribute("data-peek-key", stepKey!);
+    expect(await peek.locator("[data-peek-row]").count()).toBeGreaterThan(1);
+
+    // Put away lowers it again; the step in hand has not moved
+    await page.getByRole("button", { name: "Put away" }).first().click();
+    await expect(sheet).toHaveAttribute("data-level", "0");
+    await expect(peek).toBeHidden();
+    await expect(liveNowLine(page)).toHaveAttribute("data-line", stepKey!);
+  });
+
   test("COOK-2: starting a timer offer shows a running timer that stays running after reload", async ({
     page,
   }) => {

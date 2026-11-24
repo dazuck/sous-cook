@@ -106,7 +106,9 @@ function flow(
     askOpen,
     restInert,
     opening,
+    away,
   }: {
+    away?: string | null;
     ingredients?: StoredIngredientLines;
     finish?: FinishState;
     navEnabled?: boolean;
@@ -140,6 +142,7 @@ function flow(
       notices={notices}
       restInert={restInert}
       opening={opening}
+      away={away}
       {...flowHandlers}
     />
   );
@@ -1725,5 +1728,26 @@ describe("CookFlow: timers", () => {
     const note = document.querySelector("[data-marginalia]");
     expect(note).not.toBeNull();
     expect(note!.textContent).toContain("Oct 2026: less lemon next time");
+  });
+});
+
+describe("CookFlow: the walk-away line on the step's meta (look-ahead slice 1, DS v1.62)", () => {
+  it("says 'After this step: about 50 min free.' under the step's minutes, at the meta's size in ink-soft, and goes with the meta as the sheet rises", () => {
+    flow(SECOND, { away: COOK_COPY.stepAwayMeta(50) });
+    const meta = document.querySelector<HTMLElement>('[data-role="now"] [data-meta]')!;
+    const away = meta.querySelector<HTMLElement>("[data-step-away]")!;
+    expect(away.textContent).toBe("After this step: about 50 min free.");
+    expect(away.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-[length:var(--type-meta)]", "text-ink-soft"]));
+    expect(away.style.opacity).toBe("var(--look-meta, 1)");
+    // Under the minutes, before the step's amounts.
+    const time = meta.querySelector("[data-time]");
+    if (time) expect(time.compareDocumentPosition(away) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const pairs = meta.querySelector("[data-pairs]");
+    if (pairs) expect(away.compareDocumentPosition(pairs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("is absent where it doesn't apply", () => {
+    flow(SECOND);
+    expect(document.querySelector("[data-step-away]")).toBeNull();
   });
 });

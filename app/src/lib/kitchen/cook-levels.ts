@@ -140,15 +140,6 @@ export function walkAway(strip: Strip): Nudge | null {
   };
 }
 
-/**
- * The one line on the nudge's slot at rest: the start nudge when it applies,
- * since it counts down and the free time is then shorter (N2-8), else the
- * walk-away line.
- */
-export function restNudge(strip: Strip, now: number): Nudge | null {
-  return nudge(strip, now) ?? walkAway(strip);
-}
-
 // ---------------------------------------------------------------------------
 // 9. As written, the outline's hits (N8)
 // ---------------------------------------------------------------------------

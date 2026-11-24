@@ -110,6 +110,8 @@ interface CookFlowProps {
    * pulls up into. Absent on a recipe with no steps, which has no band.
    */
   look?: LookProps | null;
+  /** "After this step: about 50 min free.", on the step's meta (look-ahead slice 1); null where it doesn't apply. */
+  away?: string | null;
   /** Whole recipe has the screen: the stage and the foot are inert under it. */
   restInert?: boolean;
   resumePart?: number;
@@ -302,8 +304,15 @@ function Meta({
   ringing = false,
   acts,
   discussed = null,
+  away = null,
 }: {
   line: Pick<StackLine, "minutes" | "implied" | "ingredientIdx">;
+  /**
+   * "After this step: about 50 min free." (look-ahead slice 1, DS v1.62): the
+   * walk-away line, on the step's meta under its minutes, where the start
+   * nudge doesn't take the nudge's slot. It goes with the meta as the sheet rises.
+   */
+  away?: string | null;
   /**
    * The step's own acts after its time (slice B5d, D8): a checkpoint's
    * "Checked" and "Not yet", where B5a's offer stands.
@@ -331,7 +340,7 @@ function Meta({
   const pairs = line.ingredientIdx
     .map((i) => ({ i, line: ingredients[i] }))
     .filter((pair): pair is { i: number; line: IngredientLine } => pair.line !== undefined && pair.line !== null);
-  if (!timer && !acts && !line.minutes && !line.implied && pairs.length === 0) return null;
+  if (!timer && !acts && !line.minutes && !line.implied && !away && pairs.length === 0) return null;
   return (
     <div data-meta data-ringing={ringing ? "1" : undefined} hidden={hidden || ringing} className="pt-[var(--space-4)]">
       {(timer || acts || line.minutes || line.implied) && (
@@ -345,6 +354,15 @@ function Meta({
           {line.implied && <span>{COOK_COPY.assumed}</span>}
           {acts}
         </div>
+      )}
+      {away && (
+        <p
+          data-step-away
+          style={{ opacity: "var(--look-meta, 1)" }}
+          className="m-0 mb-[var(--space-2)] text-[length:var(--type-meta)] leading-[1.3] font-medium tracking-normal text-ink-soft"
+        >
+          {away}
+        </p>
       )}
       {pairs.length > 0 && (
         // A pair's amount opens its conversions: the pairs are not the page.
@@ -951,9 +969,6 @@ function useFitStack(
   return { scale: fitOut.scale, nudge: fitOut.nudge, ready: fitOut.owner === owner };
 }
 
-/** The band's place in the flow, right above the foot: the stage fits above it (`data-band-slot`). */
-const BAND_SLOT = "calc(80 * var(--cpx))";
-
 /**
  * The foot (V4): one row in the frame's bottom band, in every layout and on
  * every recipe, under the stage and never over it. Back at the start, forward
@@ -971,6 +986,12 @@ const FOOT_PAD = "px-[calc(20*var(--cpx))] pt-[calc(6*var(--cpx))] pb-[calc(10*v
 // its words runs past its edge, which `useFootFit` reads, rather than one
 // control standing over the next.
 const FOOT = `group/foot grid shrink-0 grid-cols-[minmax(max-content,1fr)_auto_minmax(max-content,1fr)] items-center gap-x-[calc(8*var(--cpx))] ${FOOT_PAD}`;
+/**
+ * The strip (look-ahead slice 1, DS v1.62): the foot with the progress line in its middle, Back
+ * and Forward at its ends. The line takes what the ends leave, never under 120 cpx (call 6): a
+ * row too short for that runs past its edge, and `useFootFit`'s give-way runs first.
+ */
+const FOOT_STRIP = `group/foot grid shrink-0 grid-cols-[max-content_minmax(calc(120*var(--cpx)),1fr)_max-content] items-center gap-x-[calc(8*var(--cpx))] ${FOOT_PAD}`;
 
 /**
  * What the foot gives up to stay one row, in order, marked on the row for
@@ -1076,13 +1097,13 @@ function FootWords({ text, breaks }: { text: string; breaks: string }) {
  * borrowed ledge), the opening. It takes no taps and is said once, by the
  * voice's own live region (`VoiceSaid`).
  */
-function HeardLift({ text, overBand }: { text: string; overBand: boolean }) {
+function HeardLift({ text }: { text: string }) {
   return (
     <p
       key={text}
       data-heard
       aria-hidden="true"
-      style={{ bottom: `calc(100% + ${overBand ? `${BAND_SLOT} + ` : ""}var(--space-2))` }}
+      style={{ bottom: "calc(100% + var(--space-2))" }}
       className="pointer-events-none absolute left-1/2 m-0 w-max max-w-[calc(100%-2*var(--space-4))] -translate-x-1/2 animate-dot-in rounded-[var(--radius-2)] border border-ink/[.11] bg-paper px-[calc(24*var(--cpx))] py-[calc(14*var(--cpx))] text-[length:var(--type-meta)] leading-[1.3] font-medium whitespace-normal [overflow-wrap:anywhere] text-ink-soft motion-reduce:animate-none"
     >
       {text}
@@ -1259,6 +1280,7 @@ export function CookFlow({
   timers,
   notices = [],
   look = null,
+  away = null,
   restInert = false,
   stepType,
   answer = null,
@@ -1380,6 +1402,7 @@ export function CookFlow({
   const level = look?.level ?? 0;
   const footRef = useRef<HTMLDivElement>(null);
   const slotRef = useRef<HTMLDivElement>(null);
+  const middleRef = useRef<HTMLDivElement>(null);
   const sheetHandle = look?.handleRef;
 
   // Swipe never finishes: finishing is a deliberate tap, not a stray gesture.
@@ -1683,6 +1706,7 @@ export function CookFlow({
                       // Tick rows carry their own minutes and amounts, and the eyebrow the page's time.
                       line={line.rows ? { minutes: null, implied: false, ingredientIdx: [] } : line}
                       ingredients={ingredients}
+                      away={away}
                       ringing={alarm}
                       keepTime={stepTimer !== null}
                       discussed={discussedIdx}
@@ -1739,7 +1763,7 @@ export function CookFlow({
 
       {/* The band's place in the flow: the stage fits above it. The sheet
           (fixed, over it) draws the band and everything it pulls up into. */}
-      {look && <div ref={slotRef} data-band-slot aria-hidden className="w-full shrink-0" style={{ height: BAND_SLOT }} />}
+      {look && <div ref={slotRef} data-band-slot aria-hidden className="w-full shrink-0" style={{ height: 0 }} />}
       {look && (
         <CookSheet
           {...look}
@@ -1751,6 +1775,7 @@ export function CookFlow({
           stackRef={stackRef}
           footRef={footRef}
           slotRef={slotRef}
+          middleRef={middleRef}
           fit={fitScale}
           fitReady={fitReady}
           stepText={stepText}
@@ -1768,7 +1793,7 @@ export function CookFlow({
         inert={restInert || opening !== null}
         data-no-swipe={look ? "" : undefined}
         style={look ? { touchAction: "none" } : undefined}
-        className={`${FOOT} relative z-40 mr-[var(--ask-room,0px)]${opening ? " invisible" : ""}`}
+        className={`${look ? FOOT_STRIP : FOOT} relative z-40 mr-[var(--ask-room,0px)]${opening ? " invisible" : ""}`}
       >
         {/* Back, then the well: a running timer whose step isn't on screen
             sits at the counter's edge, a place of its own that the middle's
@@ -1791,9 +1816,10 @@ export function CookFlow({
             />
           )}
         </div>
-        {/* The middle is empty (v1.60: Ask Sous is in the top line); the
-            cell keeps the forward in its own track. */}
-        <div data-foot-middle aria-hidden="true" />
+        {/* The middle is the strip's line (look-ahead slice 1): the sheet
+            draws it here, and it is the way into the look-ahead (a pull or
+            a tap). With no sheet it is empty and keeps Forward in its track. */}
+        <div ref={middleRef} data-foot-middle aria-hidden={look ? undefined : "true"} className={look ? "relative min-w-0 self-stretch" : undefined} />
         <ForwardButton
           lastScreen={view.isLast}
           finish={finish}
@@ -1806,7 +1832,7 @@ export function CookFlow({
             quantity chips), so what was heard yields to it; and it stands down
             where something else says it or the foot steps aside. */}
         {heard !== null && !(answerLifted && answer) && !askOpen && !restInert && opening === null && (
-          <HeardLift text={heard} overBand={!!look} />
+          <HeardLift text={heard} />
         )}
         {answerLifted && answer && <AnswerLift answer={answer} anchorRef={look ? slotRef : footRef} rowRef={footRef} />}
       </div>

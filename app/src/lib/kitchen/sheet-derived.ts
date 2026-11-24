@@ -373,7 +373,7 @@ export function derivedFrame(L: DerivedLayout, s: FrameState): Frame {
     wx: lerp(a.wx, b.wx, t),
     wy: lerp(a.wy, b.wy, t),
   });
-  const ownTt = d <= 1 ? ttOf(A, B, d, sstep(0.5, 1, d)) : ttOf(B, C, d - 1, lerp(B.op, C.op, d - 1));
+  const ownTt = d <= 1 ? ttOf(A, B, d, sstep(0.5, 1, d) * B.op) : ttOf(B, C, d - 1, lerp(B.op, C.op, d - 1));
   const tt = L.opening ? ttOf(C, C, 1, C.op) : pw === 0 ? ownTt : mixTt(ownTt, ttOf(head, head, 1, C.op * sstep(1.5, 2, d)), pw);
 
   // The top line gives way to the timetable's words (N3-4(f)); it is gone on the opening.

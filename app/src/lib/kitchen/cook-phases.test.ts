@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildCookPhases, buildPeekSteps } from "./cook-phases";
+import { buildCookPhases } from "./cook-phases";
 import { parseCookPlan, type CookPlan } from "./cook-plan";
-import { cookView, initialCookState, next } from "./cook-view";
 import { loadKitchenPlans } from "./__tests__/load-kitchen-plans";
 import {
   loadCookPlanFixtures,
@@ -247,47 +246,5 @@ describe("buildCookPhases", () => {
         expect(res.phases.length).toBeLessThanOrEqual(6);
       }
     }
-  });
-});
-
-describe("buildPeekSteps", () => {
-  const kitchenPlans = loadKitchenPlans();
-
-  it("returns up to 3 upcoming step rows after view.now and flags inline mise steps as isMeanwhile", () => {
-    const skillet = kitchenPlans.find(
-      (p) => p.name === "skillet-eggs-potatoes-greens",
-    )!.plan;
-
-    // Leave Prep in "go" mode onto Step 1 ("cook-potatoes")
-    const state = next(skillet, initialCookState("go"));
-    buildCookPhases(skillet, "go", state.ticked, 8, "cook-potatoes");
-    const view = cookView(skillet, { kind: "derived" }, state);
-
-    expect(view.now?.key).toBe("cook-potatoes");
-
-    const peek = buildPeekSteps(view, 8);
-    expect(peek).toHaveLength(3);
-    expect(peek[0]).toEqual({
-      key: "slice-garlic+slice-chile+prep-spinach+prep-escarole",
-      text: "Slice garlic, slice chile, prep spinach, and prep escarole",
-      minutes: 10,
-      isMeanwhile: true,
-      taskId: "slice-garlic",
-    });
-    expect(peek[1]).toEqual({
-      key: "saute-aromatics",
-      text: "Saute aromatics",
-      minutes: 2,
-      isMeanwhile: false,
-      taskId: "saute-aromatics",
-    });
-    expect(peek[2]).toEqual({
-      key: "wilt-greens",
-      text: "Wilt greens",
-      minutes: 3,
-      isMeanwhile: false,
-      taskId: "wilt-greens",
-    });
-    expect(peek.every((r) => r.text.length <= 65)).toBe(true);
   });
 });
