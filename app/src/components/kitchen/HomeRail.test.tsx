@@ -623,4 +623,70 @@ describe("SIGNOUT-1: Sign out in the kitchen home rail menu", () => {
     });
     expect(signOutPostCount()).toBe(1);
   });
+
+  it("n. shows the connection line, stays usable, and leaves storage and outbox unchanged when loading sign-out code fails", async () => {
+    setSignInCookie(true);
+    window.localStorage.setItem("sous-keep", "value");
+    window.sessionStorage.setItem("sous-tab", "value");
+
+    const { outbox } = createControlledOutbox();
+    await outbox.add(makeReport("sent-1", "2026-10-04T18:00:00.000Z"));
+    await outbox.flush();
+    expect(
+      outbox.list().map((entry) => ({ id: entry.id, status: entry.status })),
+    ).toEqual([{ id: "sent-1", status: "sent" }]);
+
+    vi.resetModules();
+    let loadAttempts = 0;
+    vi.doMock("@/lib/auth/device", () => {
+      loadAttempts += 1;
+      throw new TypeError("Failed to fetch dynamically imported module");
+    });
+
+    try {
+      const [
+        { SignInModeProvider: FreshProvider },
+        { SIGN_OUT_COPY: freshCopy, SignOutItem: FreshSignOutItem },
+      ] = await Promise.all([
+        import("./SignInMode"),
+        import("./SignOutItem"),
+      ]);
+
+      render(
+        <FreshProvider>
+          <div role="menu">
+            <FreshSignOutItem rowClassName="tab-row" outbox={() => outbox} />
+          </div>
+        </FreshProvider>,
+      );
+
+      const item = screen.getByRole("menuitem", { name: freshCopy.item });
+      fireEvent.click(item);
+
+      const status = await screen.findByRole("status");
+      expect(status.textContent).toBe(freshCopy.network);
+      expect(item.getAttribute("aria-disabled")).toBeNull();
+      expect(loadAttempts).toBe(1);
+      expect(window.localStorage.getItem("sous-keep")).toBe("value");
+      expect(window.sessionStorage.getItem("sous-tab")).toBe("value");
+      expect(
+        outbox.list().map((entry) => ({ id: entry.id, status: entry.status })),
+      ).toEqual([{ id: "sent-1", status: "sent" }]);
+      expect(signOutPostCount()).toBe(0);
+      expect(replaceSpy).not.toHaveBeenCalled();
+      expect(assignSpy).not.toHaveBeenCalled();
+
+      fireEvent.click(item);
+      await vi.waitFor(() => {
+        expect(loadAttempts).toBe(2);
+      });
+      expect((await screen.findByRole("status")).textContent).toBe(
+        freshCopy.network,
+      );
+      expect(item.getAttribute("aria-disabled")).toBeNull();
+    } finally {
+      vi.doUnmock("@/lib/auth/device");
+      vi.resetModules();
+    }
+  });
 });

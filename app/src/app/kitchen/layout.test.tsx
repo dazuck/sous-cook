@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 import { randomUUID } from "node:crypto";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { Window } from "happy-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers } from "@/app/providers";
 import {
   SignInModeProvider,
+  useLetGo,
   useSignInMode,
 } from "@/components/kitchen/SignInMode";
 import { reportOutbox } from "@/hooks/useReportOutbox";
@@ -110,14 +111,17 @@ async function loadFreshKitchenModules() {
     { default: FreshKitchenSectionLayout },
     {
       SignInModeProvider: FreshSignInModeProvider,
+      useLetGo: freshUseLetGo,
       useSignInMode: freshUseSignInMode,
     },
+    { SIGN_OUT_COPY: freshSignOutCopy, SignOutItem: FreshSignOutItem },
     { reportOutbox: freshReportOutbox },
     { timerStore: freshTimerStore },
   ] = await Promise.all([
     import("@tanstack/react-query"),
     import("./layout"),
     import("@/components/kitchen/SignInMode"),
+    import("@/components/kitchen/SignOutItem"),
     import("@/hooks/useReportOutbox"),
     import("@/lib/kitchen/timer-store"),
   ]);
@@ -132,6 +136,9 @@ async function loadFreshKitchenModules() {
     QueryClientProvider,
     KitchenSectionLayout: FreshKitchenSectionLayout,
     SignInModeProvider: FreshSignInModeProvider,
+    SignOutItem: FreshSignOutItem,
+    SIGN_OUT_COPY: freshSignOutCopy,
+    useLetGo: freshUseLetGo,
     ModeReader: FreshModeReader,
     reportOutbox: freshReportOutbox,
     timerStore: freshTimerStore,
@@ -219,6 +226,38 @@ describe("LAYOUT-1: KitchenSectionLayout provides sign-in mode and starts the re
       </KitchenSectionLayout>,
     );
     expect(startSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("exposes null from useLetGo in single-kitchen mode and outside the provider, and a function in sign-in mode", () => {
+    function LetGoReader() {
+      const letGo = useLetGo();
+      return (
+        <div data-testid="let-go">
+          {letGo === null ? "null" : typeof letGo}
+        </div>
+      );
+    }
+
+    const bare = render(<LetGoReader />);
+    expect(screen.getByTestId("let-go").textContent).toBe("null");
+    bare.unmount();
+
+    setSignInCookie(false);
+    const single = render(
+      <KitchenSectionLayout>
+        <LetGoReader />
+      </KitchenSectionLayout>,
+    );
+    expect(screen.getByTestId("let-go").textContent).toBe("null");
+    single.unmount();
+
+    setSignInCookie(true);
+    render(
+      <KitchenSectionLayout>
+        <LetGoReader />
+      </KitchenSectionLayout>,
+    );
+    expect(screen.getByTestId("let-go").textContent).toBe("function");
   });
 });
 
@@ -504,7 +543,7 @@ describe("LAYOUT-2: SignInModeProvider reloads on cross-tab storage clear and bf
     expect(freshReportOutbox().list()).toEqual([]);
   });
 
-  it("runs the same preparation on persisted pageshow while keeping sessionStorage", async () => {
+  it("runs the same preparation on persisted pageshow after storage was emptied by another tab while keeping sessionStorage", async () => {
     setSignInCookie(true);
     const {
       QueryClient,
@@ -641,5 +680,360 @@ describe("LAYOUT-2: SignInModeProvider reloads on cross-tab storage clear and bf
     expect(() => dispatchStorageClear(window.localStorage)).not.toThrow();
     expect(reload).toHaveBeenCalledTimes(1);
     expect(freshReportOutbox().list()).toEqual([]);
+  });
+});
+
+function readAllLocalStorage(): [string, string | null][] {
+  const entries: [string, string | null][] = [];
+  for (let i = 0; i < window.localStorage.length; i += 1) {
+    const key = window.localStorage.key(i);
+    if (key !== null) {
+      entries.push([key, window.localStorage.getItem(key)]);
+    }
+  }
+  return entries.sort(([a], [b]) => a.localeCompare(b));
+}
+
+function requestPathname(input: string | URL | Request): string {
+  const raw =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url;
+  return new URL(raw, window.location.href).pathname;
+}
+
+describe("LAYOUT-3: signing-out tab lets go before emptying storage", () => {
+  it("lets go synchronously before emptying so in-flight outbox and timer chime ticks never write back", async () => {
+    vi.useFakeTimers();
+    setSignInCookie(true);
+    const {
+      KitchenSectionLayout: FreshKitchenSectionLayout,
+      SignOutItem: FreshSignOutItem,
+      SIGN_OUT_COPY: freshSignOutCopy,
+      ModeReader: FreshModeReader,
+      reportOutbox: freshReportOutbox,
+      timerStore: freshTimerStore,
+    } = await loadFreshKitchenModules();
+
+    let reportSendCalls = 0;
+    let resolveReportSend: (response: Response) => void = () => {};
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const path = requestPathname(input);
+      if (path.startsWith("/api/trpc")) {
+        reportSendCalls += 1;
+        return new Promise<Response>((resolve) => {
+          resolveReportSend = resolve;
+        });
+      }
+      if (path.endsWith("/api/auth/sign-out")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ success: true }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      return Promise.reject(new TypeError(`Unexpected request: ${path}`));
+    });
+
+    const replaceCalls: Array<{
+      url: string;
+      localLength: number;
+      childMounted: boolean;
+    }> = [];
+    let resolveReplaced: () => void = () => {};
+    const replaced = new Promise<void>((resolve) => {
+      resolveReplaced = resolve;
+    });
+    vi.spyOn(window.location, "replace").mockImplementation((url) => {
+      replaceCalls.push({
+        url: String(url),
+        localLength: window.localStorage.length,
+        childMounted:
+          document.querySelector('[data-testid="sign-in-mode"]') !== null,
+      });
+      resolveReplaced();
+    });
+
+    const outbox = freshReportOutbox();
+    const captured = makeReport();
+    await expect(outbox.add(captured)).resolves.toBe("flagged");
+    await settleMicrotasks();
+    expect(reportSendCalls).toBe(1);
+    expect(outbox.list().map((entry) => entry.status)).toEqual(["waiting"]);
+
+    freshTimerStore.start(
+      {
+        id: "timer-simmer",
+        queueId: "q1",
+        recipeName: "Mole",
+        stepId: "s1",
+        label: "Simmer",
+        durationMs: 60_000,
+      },
+      Date.now(),
+    );
+
+    const { unmount } = render(
+      <FreshKitchenSectionLayout>
+        <FreshModeReader />
+        <div role="menu">
+          <FreshSignOutItem rowClassName="tab-row" />
+        </div>
+      </FreshKitchenSectionLayout>,
+    );
+    expect(screen.getByTestId("sign-in-mode").textContent).toBe("true");
+    expect(window.localStorage.getItem("sous-chimer")).not.toBeNull();
+
+    const item = screen.getByRole("menuitem", { name: freshSignOutCopy.item });
+    fireEvent.click(item);
+    expect(item.textContent).toBe(freshSignOutCopy.armed(1));
+
+    await act(async () => {
+      fireEvent.click(item);
+      await replaced;
+      await settleMicrotasks();
+    });
+
+    expect(replaceCalls).toEqual([
+      {
+        url: "/sign-in",
+        localLength: 0,
+        childMounted: false,
+      },
+    ]);
+    expect(window.localStorage.length).toBe(0);
+    expect(screen.queryByTestId("sign-in-mode")).toBeNull();
+
+    resolveReportSend(
+      new Response(
+        JSON.stringify({
+          result: { data: { id: captured.id, duplicate: false } },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    await act(async () => {
+      await settleMicrotasks();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1200);
+    });
+
+    expect(window.localStorage.length).toBe(0);
+    expect(window.localStorage.getItem("sous-feedback")).toBeNull();
+    expect(window.localStorage.getItem("sous-chimer")).toBeNull();
+    expect(window.localStorage.getItem("sous-timers")).toBeNull();
+    expect(screen.queryByTestId("sign-in-mode")).toBeNull();
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(outbox.list()).toEqual([]);
+    expect(reportSendCalls).toBe(1);
+
+    unmount();
+  });
+
+  it("leaves outbox, timers, children, and localStorage untouched when sign-out is refused with 500", async () => {
+    vi.useFakeTimers();
+    setSignInCookie(true);
+    const {
+      KitchenSectionLayout: FreshKitchenSectionLayout,
+      SignOutItem: FreshSignOutItem,
+      SIGN_OUT_COPY: freshSignOutCopy,
+      ModeReader: FreshModeReader,
+      reportOutbox: freshReportOutbox,
+      timerStore: freshTimerStore,
+    } = await loadFreshKitchenModules();
+
+    let resolveSignOutCalled: () => void = () => {};
+    const signOutCalled = new Promise<void>((resolve) => {
+      resolveSignOutCalled = resolve;
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const path = requestPathname(input);
+      if (path.startsWith("/api/trpc")) {
+        return new Promise<Response>(() => {});
+      }
+      if (path.endsWith("/api/auth/sign-out")) {
+        resolveSignOutCalled();
+        return Promise.resolve(
+          new Response("{}", {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      return Promise.reject(new TypeError(`Unexpected request: ${path}`));
+    });
+
+    const replaceSpy = vi
+      .spyOn(window.location, "replace")
+      .mockImplementation(() => {});
+
+    const outbox = freshReportOutbox();
+    const captured = makeReport();
+    await expect(outbox.add(captured)).resolves.toBe("flagged");
+    await settleMicrotasks();
+
+    freshTimerStore.start(
+      {
+        id: "timer-simmer",
+        queueId: "q1",
+        recipeName: "Mole",
+        stepId: "s1",
+        label: "Simmer",
+        durationMs: 60_000,
+      },
+      Date.now(),
+    );
+
+    let unmountView: (() => void) | null = null;
+    try {
+      const view = render(
+        <FreshKitchenSectionLayout>
+          <FreshModeReader />
+          <div role="menu">
+            <FreshSignOutItem rowClassName="tab-row" />
+          </div>
+        </FreshKitchenSectionLayout>,
+      );
+      unmountView = view.unmount;
+
+      const beforeStorage = readAllLocalStorage();
+      expect(beforeStorage.map(([key]) => key)).toEqual([
+        "sous-chimer",
+        "sous-feedback",
+        "sous-timers",
+      ]);
+
+      const item = screen.getByRole("menuitem", { name: freshSignOutCopy.item });
+      fireEvent.click(item);
+      expect(item.textContent).toBe(freshSignOutCopy.armed(1));
+
+      await act(async () => {
+        fireEvent.click(item);
+        await signOutCalled;
+        await settleMicrotasks();
+      });
+
+      expect(screen.getByRole("status").textContent).toBe(
+        freshSignOutCopy.refused,
+      );
+      expect(
+        outbox.list().map((entry) => ({ id: entry.id, status: entry.status })),
+      ).toEqual([{ id: captured.id, status: "waiting" }]);
+      expect(freshTimerStore.getSnapshot().map((timer) => timer.id)).toEqual([
+        "timer-simmer",
+      ]);
+      expect(screen.getByTestId("sign-in-mode").textContent).toBe("true");
+      expect(readAllLocalStorage()).toEqual(beforeStorage);
+      expect(replaceSpy).not.toHaveBeenCalled();
+    } finally {
+      unmountView?.();
+      outbox.forget();
+      freshTimerStore.reload();
+    }
+  });
+
+  it("leaves outbox, timers, children, and localStorage untouched when sign-out fails with a network error", async () => {
+    vi.useFakeTimers();
+    setSignInCookie(true);
+    const {
+      KitchenSectionLayout: FreshKitchenSectionLayout,
+      SignOutItem: FreshSignOutItem,
+      SIGN_OUT_COPY: freshSignOutCopy,
+      ModeReader: FreshModeReader,
+      reportOutbox: freshReportOutbox,
+      timerStore: freshTimerStore,
+    } = await loadFreshKitchenModules();
+
+    let resolveSignOutCalled: () => void = () => {};
+    const signOutCalled = new Promise<void>((resolve) => {
+      resolveSignOutCalled = resolve;
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const path = requestPathname(input);
+      if (path.startsWith("/api/trpc")) {
+        return new Promise<Response>(() => {});
+      }
+      if (path.endsWith("/api/auth/sign-out")) {
+        resolveSignOutCalled();
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      return Promise.reject(new TypeError(`Unexpected request: ${path}`));
+    });
+
+    const replaceSpy = vi
+      .spyOn(window.location, "replace")
+      .mockImplementation(() => {});
+
+    const outbox = freshReportOutbox();
+    const captured = makeReport();
+    await expect(outbox.add(captured)).resolves.toBe("flagged");
+    await settleMicrotasks();
+
+    freshTimerStore.start(
+      {
+        id: "timer-simmer",
+        queueId: "q1",
+        recipeName: "Mole",
+        stepId: "s1",
+        label: "Simmer",
+        durationMs: 60_000,
+      },
+      Date.now(),
+    );
+
+    let unmountView: (() => void) | null = null;
+    try {
+      const view = render(
+        <FreshKitchenSectionLayout>
+          <FreshModeReader />
+          <div role="menu">
+            <FreshSignOutItem rowClassName="tab-row" />
+          </div>
+        </FreshKitchenSectionLayout>,
+      );
+      unmountView = view.unmount;
+
+      const beforeStorage = readAllLocalStorage();
+      expect(beforeStorage.map(([key]) => key)).toEqual([
+        "sous-chimer",
+        "sous-feedback",
+        "sous-timers",
+      ]);
+
+      const item = screen.getByRole("menuitem", { name: freshSignOutCopy.item });
+      fireEvent.click(item);
+      expect(item.textContent).toBe(freshSignOutCopy.armed(1));
+
+      await act(async () => {
+        fireEvent.click(item);
+        await signOutCalled;
+        await settleMicrotasks();
+      });
+
+      expect(screen.getByRole("status").textContent).toBe(
+        freshSignOutCopy.network,
+      );
+      expect(
+        outbox.list().map((entry) => ({ id: entry.id, status: entry.status })),
+      ).toEqual([{ id: captured.id, status: "waiting" }]);
+      expect(freshTimerStore.getSnapshot().map((timer) => timer.id)).toEqual([
+        "timer-simmer",
+      ]);
+      expect(screen.getByTestId("sign-in-mode").textContent).toBe("true");
+      expect(readAllLocalStorage()).toEqual(beforeStorage);
+      expect(replaceSpy).not.toHaveBeenCalled();
+    } finally {
+      unmountView?.();
+      outbox.forget();
+      freshTimerStore.reload();
+    }
   });
 });

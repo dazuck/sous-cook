@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { reportOutbox, useReportOutbox } from "@/hooks/useReportOutbox";
 import type { ReportOutbox } from "@/lib/kitchen/report-outbox";
 import { CLEAR_ARM_MS } from "./ShoppingListModal";
-import { useSignInMode } from "./SignInMode";
+import { useLetGo, useSignInMode } from "./SignInMode";
 
 export const SIGN_OUT_COPY = {
   item: "Sign out",
@@ -35,6 +35,7 @@ function SignOutRow({
   rowClassName: string;
   outbox: () => ReportOutbox;
 }) {
+  const letGo = useLetGo();
   const entries = useReportOutbox(outbox);
   const unsent = entries.filter(
     (entry) =>
@@ -56,7 +57,11 @@ function SignOutRow({
     let outcome: "signed-out" | "network" | "refused";
     try {
       const { signOutOfDevice } = await import("@/lib/auth/device");
-      outcome = await signOutOfDevice();
+      outcome = await signOutOfDevice(
+        undefined,
+        undefined,
+        letGo ?? undefined,
+      );
     } catch {
       setMessage(SIGN_OUT_COPY.network);
       setInFlight(false);

@@ -33,6 +33,7 @@ import {
   forgetDevice,
   signOutOfDevice,
   startSignIn,
+  type DeviceAuthClient,
   type DeviceNavigation,
 } from "./device";
 
@@ -930,5 +931,177 @@ describe("SIGNOUT-2: signOutOfDevice clears storage and navigates only after sig
       .from(authSession)
       .where(eq(authSession.id, login.session.id));
     expect(remainingSessions).toHaveLength(1);
+  });
+
+  it("runs beforeForget after sign-out resolves, before localStorage is emptied, and before replace", async () => {
+    const { login } = await createInvitedUserWithSession("order@example.com");
+    seedBrowserStorage();
+    const order: string[] = [];
+    const { authClient } = createInProcessAuthClient({
+      initialCookieHeader: login.headers.get("cookie"),
+    });
+    const wrappedClient: DeviceAuthClient = {
+      ...authClient,
+      async signOut() {
+        const result = await authClient.signOut();
+        order.push("sign-out-resolved");
+        return result;
+      },
+    };
+    const origClear = window.localStorage.clear.bind(window.localStorage);
+    vi.spyOn(window.localStorage, "clear").mockImplementation(() => {
+      order.push("localStorage-clear");
+      return origClear();
+    });
+    const navigation = createRecordingNavigation();
+    const origReplace = navigation.replace.bind(navigation);
+    navigation.replace = (url: string) => {
+      order.push("replace");
+      origReplace(url);
+    };
+
+    const outcome = await signOutOfDevice(wrappedClient, navigation, () => {
+      expect(window.localStorage.length).toBe(SEEDED_LOCAL_KEYS.length);
+      order.push("beforeForget");
+    });
+
+    expect(outcome).toBe("signed-out");
+    expect(order).toEqual([
+      "sign-out-resolved",
+      "beforeForget",
+      "localStorage-clear",
+      "replace",
+    ]);
+    expect(navigation.replaced).toEqual([
+      {
+        url: "/sign-in",
+        localLengthAtCall: 0,
+        sessionLengthAtCall: 0,
+      },
+    ]);
+    assertStorageEmpty();
+  });
+
+  it("does not call beforeForget when sign-out is refused or fails with a network error", async () => {
+    const { login: refusedLogin } = await createInvitedUserWithSession(
+      "refused-bf@example.com",
+    );
+    seedBrowserStorage();
+    const refusedNav = createRecordingNavigation();
+    const refusedBeforeForget = vi.fn();
+    const { authClient: refusedClient } = createInProcessAuthClient({
+      initialCookieHeader: refusedLogin.headers.get("cookie"),
+      override: (path) => {
+        if (path === "/sign-out") {
+          return new Response("{}", {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return undefined;
+      },
+    });
+
+    const refusedOutcome = await signOutOfDevice(
+      refusedClient,
+      refusedNav,
+      refusedBeforeForget,
+    );
+    expect(refusedOutcome).toBe("refused");
+    expect(refusedBeforeForget).not.toHaveBeenCalled();
+    assertStorageSeeded();
+    expect(refusedNav.replaced).toEqual([]);
+
+    const { login: failedLogin } = await createInvitedUserWithSession(
+      "failed-bf@example.com",
+    );
+    const failedNav = createRecordingNavigation();
+    const failedBeforeForget = vi.fn();
+    const { authClient: failedClient } = createInProcessAuthClient({
+      initialCookieHeader: failedLogin.headers.get("cookie"),
+      override: (path) => {
+        if (path === "/sign-out") {
+          throw new TypeError("Failed to fetch");
+        }
+        return undefined;
+      },
+    });
+
+    const failedOutcome = await signOutOfDevice(
+      failedClient,
+      failedNav,
+      failedBeforeForget,
+    );
+    expect(failedOutcome).toBe("network");
+    expect(failedBeforeForget).not.toHaveBeenCalled();
+    assertStorageSeeded();
+    expect(failedNav.replaced).toEqual([]);
+  });
+
+  it("logs an error thrown by beforeForget, still empties storage, and navigates to /sign-in", async () => {
+    const { login } = await createInvitedUserWithSession(
+      "throw-bf@example.com",
+    );
+    seedBrowserStorage();
+    const navigation = createRecordingNavigation();
+    const { authClient } = createInProcessAuthClient({
+      initialCookieHeader: login.headers.get("cookie"),
+    });
+    const boom = new Error("beforeForget failed");
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const outcome = await signOutOfDevice(authClient, navigation, () => {
+      throw boom;
+    });
+
+    expect(outcome).toBe("signed-out");
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(boom);
+    assertStorageEmpty();
+    expect(navigation.replaced).toEqual([
+      {
+        url: "/sign-in",
+        localLengthAtCall: 0,
+        sessionLengthAtCall: 0,
+      },
+    ]);
+  });
+
+  it("logs an InvalidStateError from localStorage.clear, still navigates to /sign-in, and resolves signed-out", async () => {
+    const { login } = await createInvitedUserWithSession(
+      "invalidstate@example.com",
+    );
+    seedBrowserStorage();
+    const navigation = createRecordingNavigation();
+    const { authClient } = createInProcessAuthClient({
+      initialCookieHeader: login.headers.get("cookie"),
+    });
+    const invalidState = new DOMException(
+      "storage unavailable",
+      "InvalidStateError",
+    );
+    vi.spyOn(window.localStorage, "clear").mockImplementation(() => {
+      throw invalidState;
+    });
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const outcome = await signOutOfDevice(authClient, navigation);
+
+    expect(outcome).toBe("signed-out");
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(invalidState);
+    expect(navigation.replaced).toHaveLength(1);
+    expect(navigation.replaced[0]!.url).toBe("/sign-in");
+    expect(navigation.assigned).toEqual([]);
+
+    const remainingSessions = await db
+      .select({ id: authSession.id })
+      .from(authSession)
+      .where(eq(authSession.id, login.session.id));
+    expect(remainingSessions).toEqual([]);
   });
 });

@@ -2,18 +2,21 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { flushSync } from "react-dom";
 import { QueryClientContext } from "@tanstack/react-query";
 import { reportOutbox } from "@/hooks/useReportOutbox";
 import { timerStore } from "@/lib/kitchen/timer-store";
 import { readSignInModeCookie } from "@/lib/kitchens/mode";
 
 const SignInModeContext = createContext<boolean>(false);
+const LetGoContext = createContext<(() => void) | null>(null);
 
 /**
  * Reports whether the current kitchen page is running in sign-in mode, based
@@ -22,6 +25,15 @@ const SignInModeContext = createContext<boolean>(false);
  */
 export function useSignInMode(): boolean {
   return useContext(SignInModeContext);
+}
+
+/**
+ * Returns the function that lets go of in-memory kitchen state and takes the
+ * kitchen screens down in sign-in mode, or null in single-kitchen mode or
+ * outside `SignInModeProvider`.
+ */
+export function useLetGo(): (() => void) | null {
+  return useContext(LetGoContext);
 }
 
 function subscribeNoop(): () => void {
@@ -75,17 +87,23 @@ export function SignInModeProvider({
   const queryClient = useContext(QueryClientContext);
   const [reloading, setReloading] = useState(false);
 
+  const letGo = useCallback(() => {
+    reportOutbox().forget();
+    timerStore.reload();
+    if (queryClient) {
+      void queryClient.cancelQueries();
+      queryClient.clear();
+    }
+    flushSync(() => {
+      setReloading(true);
+    });
+  }, [queryClient]);
+
   useEffect(() => {
     if (!signInMode) return;
 
     const prepareForReload = (clearSession: boolean) => {
-      reportOutbox().forget();
-      timerStore.reload();
-      if (queryClient) {
-        void queryClient.cancelQueries();
-        queryClient.clear();
-      }
-      setReloading(true);
+      letGo();
       if (clearSession) {
         clearSessionStorage();
       }
@@ -116,11 +134,13 @@ export function SignInModeProvider({
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("pageshow", onPageShow);
     };
-  }, [signInMode, queryClient, reload]);
+  }, [signInMode, letGo, reload]);
 
   return (
     <SignInModeContext.Provider value={signInMode}>
-      {reloading ? null : children}
+      <LetGoContext.Provider value={signInMode ? letGo : null}>
+        {reloading ? null : children}
+      </LetGoContext.Provider>
     </SignInModeContext.Provider>
   );
 }

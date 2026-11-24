@@ -162,6 +162,7 @@ export async function startSignIn(
 export async function signOutOfDevice(
   client: DeviceAuthClient = authClient,
   navigation: DeviceNavigation = window.location,
+  beforeForget?: () => void,
 ): Promise<SignOutOutcome> {
   let signOutResult: Awaited<ReturnType<DeviceAuthClient["signOut"]>>;
   try {
@@ -174,7 +175,20 @@ export async function signOutOfDevice(
     return "refused";
   }
 
-  forgetDevice();
+  if (beforeForget) {
+    try {
+      beforeForget();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  try {
+    forgetDevice();
+  } catch (err) {
+    console.error(err);
+  }
+
   navigation.replace("/sign-in");
   return "signed-out";
 }

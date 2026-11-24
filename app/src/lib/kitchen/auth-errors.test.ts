@@ -16,9 +16,20 @@ import { eq } from "drizzle-orm";
 import { Window } from "happy-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const fakeProvider = await vi.hoisted(async () => {
+  const { FakeProviderController } = await import("../__tests__/fake-provider");
+  return new FakeProviderController();
+});
+
 vi.mock("@/lib/db", async () =>
   (await import("../__tests__/test-db")).mockDbModule(),
 );
+vi.mock("@/lib/ai/providers/google", () => ({
+  createGoogleProvider: () => fakeProvider.provider("google"),
+}));
+vi.mock("@/lib/ai/providers/anthropic", () => ({
+  createAnthropicProvider: () => fakeProvider.provider("anthropic"),
+}));
 
 import * as dbModule from "@/lib/db";
 import { db, kitchens, members } from "@/lib/db";
@@ -266,6 +277,7 @@ async function createUninvitedSessionHeaders(): Promise<Headers> {
 }
 
 beforeEach(async () => {
+  fakeProvider.reset();
   stubSignInEnv();
   vi.stubEnv("GOOGLE_AI_API_KEY", "test-google-key");
   vi.stubEnv("AI_TEXT_PROVIDER", "google");
@@ -388,6 +400,8 @@ describe("AUTHERR-1: authErrorKind classifies real tRPC route refusals", () => {
       scope: "kitchen",
     });
     expect(authErrorKind(capErr)).toBeNull();
+    expect(fakeProvider.chatCalls).toHaveLength(0);
+    expect(fakeProvider.visionCalls).toHaveLength(0);
   });
 });
 
@@ -585,6 +599,8 @@ describe("AUTHERR-2: handleAuthError navigates once per load and makeQueryClient
       });
       expect(calls).toBe(1);
       expect(replaced).toEqual([]);
+      expect(fakeProvider.chatCalls).toHaveLength(0);
+      expect(fakeProvider.visionCalls).toHaveLength(0);
 
       const retry = queryClient.getDefaultOptions().queries?.retry;
       expect(typeof retry).toBe("function");
