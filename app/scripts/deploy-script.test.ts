@@ -2269,8 +2269,27 @@ describe("release scripts", () => {
     async () => {
       // Use a harness with no recorded pass and an unresolvable commit name
       // so any step after env validation would fail differently or hit network/host.
+      // Put git and curl shims first on PATH so any git or network call is logged
+      // and fails immediately, and remove stateDir so lock creation is observable.
       const hRefuse = makeHarness();
       const refuseLiveSrv = await makeLiveServer(hRefuse, hRefuse.commit1);
+      for (const tool of ["git", "curl"] as const) {
+        const shimPath = path.join(hRefuse.binDir, tool);
+        writeFileSync(
+          shimPath,
+          [
+            "#!/usr/bin/env bash",
+            "{ set +x; } 2>/dev/null",
+            "set -euo pipefail",
+            `printf '%s %s\\n' ${JSON.stringify(tool)} "$*" >> ${JSON.stringify(hRefuse.callLogFile)}`,
+            "exit 99",
+            "",
+          ].join("\n"),
+          "utf8",
+        );
+        chmodSync(shimPath, 0o755);
+      }
+      rmSync(hRefuse.stateDir, { recursive: true, force: true });
 
       function assertRefusedEarly(res: RunResult): void {
         expect(res.status).not.toBe(0);
@@ -2283,6 +2302,8 @@ describe("release scripts", () => {
         expect(refuseLiveSrv.receivedHeaders).toEqual([]);
         expect(hostCalls(hRefuse)).toEqual([]);
         expect(readCallLog(hRefuse)).toEqual([]);
+        expect(existsSync(hRefuse.lockDir)).toBe(false);
+        expect(existsSync(hRefuse.stateDir)).toBe(false);
       }
 
       // Missing SOUS_EXPECT_SIGN_IN is reported together with other missing required variables.
@@ -2531,7 +2552,8 @@ describe("release scripts", () => {
       );
 
       // Invalid URLs in JSON: non-https, port, query, fragment, dot-segment paths,
-      // path, user@host without password, and user plus password (built at run time).
+      // path, non-DNS or percent-encoded hostnames, user@host without password,
+      // and user plus password (built at run time).
       const userOnlyUrl = ["https://", "deployuser", "@", "staged.example.com"].join(
         "",
       );
@@ -2551,6 +2573,12 @@ describe("release scripts", () => {
         "https://staged.example.com/a/..",
         "staged.example.com/a/..",
         "https://staged.example.com/extra",
+        ".",
+        "..",
+        "a..b.example.com",
+        "staged.example.com.",
+        "staged%2eexample.com",
+        "staged.example.com)",
         userOnlyUrl,
         bareUserOnly,
         credUrl.toString(),
@@ -2607,6 +2635,26 @@ describe("release scripts", () => {
         },
         {
           stdout: "https://staged.example.com (production)\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "https://staged.example.com,\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "https://staged.example.com)\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "https://staged.example.com;\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "https://%2e\n",
+          expectedSnippet: "invalid deployment URL",
+        },
+        {
+          stdout: "https://$(id)\n",
           expectedSnippet: "invalid deployment URL",
         },
         {

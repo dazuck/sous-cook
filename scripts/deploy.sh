@@ -886,11 +886,27 @@ function fail(message) {
   process.exit(1);
 }
 
+function isDnsHostname(hostname) {
+  if (hostname.length === 0 || hostname.length > 253 || hostname.endsWith(".")) {
+    return false;
+  }
+  const labels = hostname.split(".");
+  if (labels.length < 2) {
+    return false;
+  }
+  for (const label of labels) {
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function validateStagedUrl(rawUrl, allowBareHostname) {
   if (typeof rawUrl !== "string" || rawUrl.length === 0) {
     fail(noUrlMsg);
   }
-  if (/[\x00-\x1f\x7f\s]/.test(rawUrl)) {
+  if (/[\x00-\x1f\x7f\s]/.test(rawUrl) || rawUrl.includes("%")) {
     fail(invalidUrlMsg);
   }
 
@@ -945,7 +961,8 @@ function validateStagedUrl(rawUrl, allowBareHostname) {
     urlObj.port !== "" ||
     urlObj.search !== "" ||
     urlObj.hash !== "" ||
-    urlObj.pathname !== "/"
+    urlObj.pathname !== "/" ||
+    !isDnsHostname(urlObj.hostname)
   ) {
     fail(invalidUrlMsg);
   }

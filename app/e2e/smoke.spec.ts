@@ -254,7 +254,9 @@ test.describe("Deployed copy smoke check", () => {
         await expect(signInButton).toBeVisible();
         await expect(signInButton).toBeEnabled();
 
-        const sessionResponse = await request.get("/api/auth/get-session");
+        const sessionResponse = await request.get("/api/auth/get-session", {
+          maxRedirects: 0,
+        });
         expect(
           sessionResponse.status(),
           `Expected GET /api/auth/get-session to answer 200 in sign-in mode, got ${sessionResponse.status()}`,
