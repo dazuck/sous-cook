@@ -711,6 +711,7 @@ interface ReleaseCheckHarness {
   stateDir: string;
   binDir: string;
   tmpDir: string;
+  realNodePath: string;
   callLogFile: string;
   pnpmOwnerLogFile: string;
   dockerEnvLogFile: string;
@@ -725,6 +726,7 @@ interface ReleaseCheckHarness {
 }
 
 function createReleaseCheckHarness(): ReleaseCheckHarness {
+  const realNodePath = process.execPath;
   const rootDir = mkdtempSync(path.join(os.tmpdir(), "sous-rcheck-test-"));
   const repoDir = path.join(rootDir, "repo");
   const stateDir = path.join(rootDir, "state");
@@ -904,6 +906,7 @@ function createReleaseCheckHarness(): ReleaseCheckHarness {
     stateDir,
     binDir,
     tmpDir,
+    realNodePath,
     callLogFile,
     pnpmOwnerLogFile,
     dockerEnvLogFile,
@@ -918,19 +921,66 @@ function createReleaseCheckHarness(): ReleaseCheckHarness {
   };
 }
 
+// No release-check test may depend on the machine's real ports (such as the
+// default app port 4131), because another release check or browser suite run
+// may be holding them while unit tests execute. Every release-check test that
+// runs past the commit check either picks its own free ephemeral E2E_APP_PORT
+// or, for the all-unset case of RCHECK-4, shims the port-4131 probe.
+async function pickFreePort(): Promise<string> {
+  const probe = net.createServer();
+  await new Promise<void>((resolve, reject) => {
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => resolve());
+  });
+  const port = (probe.address() as AddressInfo).port;
+  await new Promise<void>((resolve, reject) => {
+    probe.close((err) => (err ? reject(err) : resolve()));
+  });
+  return String(port);
+}
+
+function installDefaultPortProbeShim(harness: ReleaseCheckHarness): void {
+  const nodeShimPath = path.join(harness.binDir, "node");
+  writeFileSync(
+    nodeShimPath,
+    [
+      "#!/usr/bin/env bash",
+      "{ set +x; } 2>/dev/null",
+      "set -euo pipefail",
+      'if [ "$#" -eq 3 ] && [ "$1" = "-e" ] && [ "$3" = "4131" ] && [[ "$2" == *"net.createConnection({ host, port })"* ]] && [[ "$2" == *"function checkBind()"* ]]; then',
+      `  printf 'node-port-probe-shim port=%s\\n' "$3" >> ${JSON.stringify(harness.callLogFile)}`,
+      "  exit 0",
+      "fi",
+      `exec ${JSON.stringify(harness.realNodePath)} "$@"`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  chmodSync(nodeShimPath, 0o755);
+}
+
 function runReleaseCheck(
   harness: ReleaseCheckHarness,
   commitArg: string,
+  envOverrides: Record<string, string | undefined>,
 ): Promise<RunResult> {
+  const env: NodeJS.ProcessEnv = {
+    PATH: `${harness.binDir}:${process.env.PATH ?? ""}`,
+    HOME: harness.rootDir,
+    TMPDIR: harness.tmpDir,
+    SOUS_RELEASE_STATE_DIR: harness.stateDir,
+  };
+  for (const [k, v] of Object.entries(envOverrides)) {
+    if (v === undefined) {
+      delete env[k];
+    } else {
+      env[k] = v;
+    }
+  }
   return new Promise<RunResult>((resolve, reject) => {
     const child = spawn("bash", ["scripts/release-check.sh", commitArg], {
       cwd: harness.repoDir,
-      env: {
-        PATH: `${harness.binDir}:${process.env.PATH ?? ""}`,
-        HOME: harness.rootDir,
-        TMPDIR: harness.tmpDir,
-        SOUS_RELEASE_STATE_DIR: harness.stateDir,
-      },
+      env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -2068,7 +2118,9 @@ describe("release scripts", () => {
     async () => {
       // Case A: every step succeeds -> one pass line for sha, CI=1 on every step.
       const hOk = makeReleaseCheckHarness();
-      const okRes = await runReleaseCheck(hOk, hOk.commit1);
+      const okRes = await runReleaseCheck(hOk, hOk.commit1, {
+        E2E_APP_PORT: await pickFreePort(),
+      });
       expect(okRes.status).toBe(0);
       expect(existsSync(hOk.passLogFile)).toBe(true);
       const passLines = readFileSync(hOk.passLogFile, "utf8")
@@ -2094,7 +2146,9 @@ describe("release scripts", () => {
       // Case B: middle step (test:run) fails -> no pass line and no later step called.
       const hMid = makeReleaseCheckHarness();
       writeFileSync(hMid.failStepMarker, "test:run", "utf8");
-      const midRes = await runReleaseCheck(hMid, hMid.commit1);
+      const midRes = await runReleaseCheck(hMid, hMid.commit1, {
+        E2E_APP_PORT: await pickFreePort(),
+      });
       expect(midRes.status).not.toBe(0);
       expect(existsSync(hMid.passLogFile)).toBe(false);
       const midCalls = readFileSync(hMid.callLogFile, "utf8")
@@ -2109,7 +2163,9 @@ describe("release scripts", () => {
       // Case C: visual screenshot report shows one unexpected failure -> no pass line.
       const hVis = makeReleaseCheckHarness();
       writeFileSync(hVis.visualUnexpectedMarker, "1\n", "utf8");
-      const visRes = await runReleaseCheck(hVis, hVis.commit1);
+      const visRes = await runReleaseCheck(hVis, hVis.commit1, {
+        E2E_APP_PORT: await pickFreePort(),
+      });
       expect(visRes.status).not.toBe(0);
       expect(existsSync(hVis.passLogFile)).toBe(false);
     },
@@ -2911,47 +2967,6 @@ describe("release scripts", () => {
     REAL_RUN_TIMEOUT_MS,
   );
 
-  function runReleaseCheckWithEnv(
-    harness: ReleaseCheckHarness,
-    commitArg: string,
-    envOverrides: Record<string, string | undefined>,
-  ): Promise<RunResult> {
-    const env: NodeJS.ProcessEnv = {
-      PATH: `${harness.binDir}:${process.env.PATH ?? ""}`,
-      HOME: harness.rootDir,
-      TMPDIR: harness.tmpDir,
-      SOUS_RELEASE_STATE_DIR: harness.stateDir,
-    };
-    for (const [k, v] of Object.entries(envOverrides)) {
-      if (v === undefined) {
-        delete env[k];
-      } else {
-        env[k] = v;
-      }
-    }
-    return new Promise<RunResult>((resolve, reject) => {
-      const child = spawn("bash", ["scripts/release-check.sh", commitArg], {
-        cwd: harness.repoDir,
-        env,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      let stdout = "";
-      let stderr = "";
-      child.stdout.setEncoding("utf8");
-      child.stderr.setEncoding("utf8");
-      child.stdout.on("data", (chunk: string) => {
-        stdout += chunk;
-      });
-      child.stderr.on("data", (chunk: string) => {
-        stderr += chunk;
-      });
-      child.on("error", reject);
-      child.on("close", (status) => {
-        resolve({ status, stdout, stderr });
-      });
-    });
-  }
-
   function wrapReleaseCheckPnpmEnvLog(harness: ReleaseCheckHarness): string {
     const envLogFile = path.join(harness.rootDir, "pnpm-e2e-env.log");
     const pnpmPath = path.join(harness.binDir, "pnpm");
@@ -2993,7 +3008,8 @@ describe("release scripts", () => {
 
       for (const tc of invalidCases) {
         const h = makeReleaseCheckHarness();
-        const res = await runReleaseCheckWithEnv(h, h.commit1, {
+        const res = await runReleaseCheck(h, h.commit1, {
+          E2E_APP_PORT: await pickFreePort(),
           [tc.varName]: tc.badValue,
         });
         expect(res.status).not.toBe(0);
@@ -3009,14 +3025,20 @@ describe("release scripts", () => {
     "RCHECK-4: release-check.sh passes E2E_APP_PORT, E2E_PG_PORT, and E2E_PG_CONTAINER to every step (including cleanup) when set and omits them when unset",
     async () => {
       // Case A: all three unset -> absent from every step and cleanup.
+      // Shim the port-4131 probe so this case does not depend on what holds 4131.
       const hUnset = makeReleaseCheckHarness();
+      installDefaultPortProbeShim(hUnset);
       const unsetEnvLog = wrapReleaseCheckPnpmEnvLog(hUnset);
-      const unsetRes = await runReleaseCheckWithEnv(hUnset, hUnset.commit1, {
+      const unsetRes = await runReleaseCheck(hUnset, hUnset.commit1, {
         E2E_APP_PORT: undefined,
         E2E_PG_PORT: undefined,
         E2E_PG_CONTAINER: undefined,
       });
       expect(unsetRes.status).toBe(0);
+      const probeShimLines = readFileSync(hUnset.callLogFile, "utf8")
+        .split("\n")
+        .filter((line) => line.startsWith("node-port-probe-shim "));
+      expect(probeShimLines).toEqual(["node-port-probe-shim port=4131"]);
       const unsetLines = readFileSync(unsetEnvLog, "utf8")
         .split("\n")
         .filter((line) => line.length > 0);
@@ -3028,22 +3050,12 @@ describe("release scripts", () => {
         expect(line).toContain("E2E_PG_CONTAINER=<unset>");
       }
 
-      // Pick a free ephemeral port for E2E_APP_PORT.
-      const probe = net.createServer();
-      await new Promise<void>((resolve, reject) => {
-        probe.once("error", reject);
-        probe.listen(0, "127.0.0.1", () => resolve());
-      });
-      const freeAppPort = (probe.address() as AddressInfo).port;
-      await new Promise<void>((resolve, reject) => {
-        probe.close((err) => (err ? reject(err) : resolve()));
-      });
-
       // Case B: all three set -> present with exact values in every step and cleanup.
+      const freeAppPort = await pickFreePort();
       const hSet = makeReleaseCheckHarness();
       const setEnvLog = wrapReleaseCheckPnpmEnvLog(hSet);
-      const setRes = await runReleaseCheckWithEnv(hSet, hSet.commit1, {
-        E2E_APP_PORT: String(freeAppPort),
+      const setRes = await runReleaseCheck(hSet, hSet.commit1, {
+        E2E_APP_PORT: freeAppPort,
         E2E_PG_PORT: "55741",
         E2E_PG_CONTAINER: "override-pg",
       });
@@ -3075,7 +3087,7 @@ describe("release scripts", () => {
 
       try {
         const hBusy = makeReleaseCheckHarness();
-        const busyRes = await runReleaseCheckWithEnv(hBusy, hBusy.commit1, {
+        const busyRes = await runReleaseCheck(hBusy, hBusy.commit1, {
           E2E_APP_PORT: String(busyOverridePort),
         });
         expect(busyRes.status).not.toBe(0);
@@ -3105,23 +3117,15 @@ describe("release scripts", () => {
         });
       });
 
-      const freeProbe = net.createServer();
-      await new Promise<void>((resolve, reject) => {
-        freeProbe.once("error", reject);
-        freeProbe.listen(0, "127.0.0.1", () => resolve());
-      });
-      const freeOverridePort = (freeProbe.address() as AddressInfo).port;
-      await new Promise<void>((resolve, reject) => {
-        freeProbe.close((err) => (err ? reject(err) : resolve()));
-      });
+      const freeOverridePort = await pickFreePort();
 
       try {
         const hOverride = makeReleaseCheckHarness();
-        const overrideRes = await runReleaseCheckWithEnv(
+        const overrideRes = await runReleaseCheck(
           hOverride,
           hOverride.commit1,
           {
-            E2E_APP_PORT: String(freeOverridePort),
+            E2E_APP_PORT: freeOverridePort,
             E2E_PG_PORT: "55742",
             E2E_PG_CONTAINER: "port-override-pg",
           },
@@ -3142,19 +3146,6 @@ describe("release scripts", () => {
   it.skipIf(process.platform !== "darwin")(
     "RCHECK-6: release-check.sh refuses an existing database container at start or before e2e:db:up and removes only a container it created",
     async () => {
-      async function pickFreePort(): Promise<string> {
-        const probe = net.createServer();
-        await new Promise<void>((resolve, reject) => {
-          probe.once("error", reject);
-          probe.listen(0, "127.0.0.1", () => resolve());
-        });
-        const port = (probe.address() as AddressInfo).port;
-        await new Promise<void>((resolve, reject) => {
-          probe.close((err) => (err ? reject(err) : resolve()));
-        });
-        return String(port);
-      }
-
       const readLines = (filePath: string): string[] =>
         existsSync(filePath)
           ? readFileSync(filePath, "utf8")
@@ -3165,7 +3156,7 @@ describe("release scripts", () => {
       // Case A: container exists at start -> refuses before any pnpm step and never calls e2e:db:down or docker rm.
       const hStart = makeReleaseCheckHarness();
       writeFileSync(hStart.dockerExistsMarker, "1\n", "utf8");
-      const startRes = await runReleaseCheckWithEnv(hStart, hStart.commit1, {
+      const startRes = await runReleaseCheck(hStart, hStart.commit1, {
         E2E_APP_PORT: await pickFreePort(),
         E2E_PG_CONTAINER: "existing-pg",
         E2E_PG_PORT: "55743",
@@ -3186,7 +3177,7 @@ describe("release scripts", () => {
       // Case B: container appears between start and the db step -> refuses before e2e:db:up and never calls e2e:db:down.
       const hAppear = makeReleaseCheckHarness();
       writeFileSync(hAppear.createDockerOnStepMarker, "build", "utf8");
-      const appearRes = await runReleaseCheckWithEnv(hAppear, hAppear.commit1, {
+      const appearRes = await runReleaseCheck(hAppear, hAppear.commit1, {
         E2E_APP_PORT: await pickFreePort(),
         E2E_PG_CONTAINER: "appeared-pg",
         E2E_PG_PORT: "55744",
@@ -3211,7 +3202,7 @@ describe("release scripts", () => {
       // runs every docker call with a clean environment, and removes the
       // container in cleanup because its owner label matches.
       const hOk = makeReleaseCheckHarness();
-      const okRes = await runReleaseCheckWithEnv(hOk, hOk.commit1, {
+      const okRes = await runReleaseCheck(hOk, hOk.commit1, {
         E2E_APP_PORT: await pickFreePort(),
         E2E_PG_CONTAINER: "clean-pg",
         E2E_PG_PORT: "55745",
@@ -3268,7 +3259,7 @@ describe("release scripts", () => {
         "utf8",
       );
       writeFileSync(hOtherOwner.failStepMarker, "e2e:db:up", "utf8");
-      const otherOwnerRes = await runReleaseCheckWithEnv(
+      const otherOwnerRes = await runReleaseCheck(
         hOtherOwner,
         hOtherOwner.commit1,
         {
@@ -3301,7 +3292,7 @@ describe("release scripts", () => {
       for (const failCmd of ["e2e:db:up", "e2e"] as const) {
         const hAfter = makeReleaseCheckHarness();
         writeFileSync(hAfter.failStepMarker, failCmd, "utf8");
-        const afterRes = await runReleaseCheckWithEnv(hAfter, hAfter.commit1, {
+        const afterRes = await runReleaseCheck(hAfter, hAfter.commit1, {
           E2E_APP_PORT: await pickFreePort(),
           E2E_PG_CONTAINER: "cleanup-pg",
           E2E_PG_PORT: "55746",
@@ -3317,7 +3308,7 @@ describe("release scripts", () => {
       // Case E: a step failing before the db step never calls e2e:db:down.
       const hBefore = makeReleaseCheckHarness();
       writeFileSync(hBefore.failStepMarker, "build", "utf8");
-      const beforeRes = await runReleaseCheckWithEnv(hBefore, hBefore.commit1, {
+      const beforeRes = await runReleaseCheck(hBefore, hBefore.commit1, {
         E2E_APP_PORT: await pickFreePort(),
         E2E_PG_CONTAINER: "before-db-pg",
         E2E_PG_PORT: "55747",
