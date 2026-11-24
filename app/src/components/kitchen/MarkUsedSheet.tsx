@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui";
+import { allowanceSentence } from "@/lib/kitchen/allowance";
 import { bindNumbers } from "@/lib/kitchen/cook-view";
 import { BorrowedScreen } from "./BorrowedScreen";
 import { EDGE_X } from "./cook-edge";
@@ -24,10 +25,11 @@ export function MarkUsedSheet({
   onFinish,
   onCancel,
 }: MarkUsedSheetProps) {
-  const { data, isLoading, isError } = trpc.getRecipePantryReconciliation.useQuery(
+  const { data, isLoading, isError, error } = trpc.getRecipePantryReconciliation.useQuery(
     { queueId },
     { enabled: isOpen, retry: false },
   );
+  const allowanceMessage = allowanceSentence(error);
 
   const applyMutation = trpc.applyPantryReconciliation.useMutation();
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
@@ -72,8 +74,8 @@ export function MarkUsedSheet({
 
   // If query fails, fail safe and allow user to finish without blocking
   useEffect(() => {
-    if (isError && isOpen) bypass();
-  }, [isError, isOpen, bypass]);
+    if (isError && isOpen && allowanceMessage === null) bypass();
+  }, [isError, isOpen, allowanceMessage, bypass]);
 
   const toggleIndex = (index: number) => {
     setSelectedIndices((prev) => {
@@ -119,6 +121,27 @@ export function MarkUsedSheet({
   };
 
   if (!isOpen) return null;
+
+  if (allowanceMessage !== null) {
+    return (
+      <BorrowedScreen kind="Mark ingredients as used" onClose={onCancel}>
+        <div
+          className={`flex min-h-0 flex-1 flex-col items-center justify-center text-center ${EDGE_X}`}
+        >
+          <p className="text-[length:var(--type-chip)] leading-tight font-semibold text-ink">
+            {allowanceMessage}
+          </p>
+          <Button
+            variant="primary"
+            onClick={bypass}
+            className="mt-[var(--space-5)]"
+          >
+            Finish
+          </Button>
+        </div>
+      </BorrowedScreen>
+    );
+  }
 
   if (isLoading) {
     return (

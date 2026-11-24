@@ -72,14 +72,16 @@ export interface ReportSender {
 export type FlagResult = "flagged" | "failed" | "full";
 
 /**
- * How a failed send is taken. Only the server's Zod refusal (`BAD_REQUEST`)
- * is final (F6); the rate cap (F7), a server without the procedure (F8),
- * any other error and the network all leave the entry to go again.
+ * How a failed send is taken. A schema refusal (`BAD_REQUEST`) and a report
+ * id the server already holds under another kitchen (`CONFLICT`) will never
+ * be taken, so both are final; the rate cap (F7), a server without the
+ * procedure (F8), auth refusals, any other error and the network all leave
+ * the entry to go again.
  */
 export function outcomeOf(error: unknown): "refused" | "retry" {
   if (!(error instanceof TRPCClientError)) return "retry";
   const data = error.data as { code?: unknown } | null | undefined;
-  return data?.code === "BAD_REQUEST" ? "refused" : "retry";
+  return data?.code === "BAD_REQUEST" || data?.code === "CONFLICT" ? "refused" : "retry";
 }
 
 // Function properties, not methods: the closures are `this`-free, and
@@ -107,6 +109,12 @@ export interface ReportOutbox {
   dismiss: (id: string) => void;
   /** One send run; a trigger during a run makes it go round once more. */
   flush: () => Promise<void>;
+  /**
+   * Drops every entry this page holds and stops writing or sending for the
+   * rest of the page's life; for a page about to reload because storage was
+   * emptied.
+   */
+  forget: () => void;
   /** Sends what waits now and on each `online`; returns the stop. */
   start: (target?: Window) => () => void;
   subscribe: (listener: () => void) => () => void;
@@ -318,6 +326,7 @@ const REFUSED = RUNG_NOTES.length - 1;
 
 export function createReportOutbox(backing: StringStore, sender: ReportSender): ReportOutbox {
   let entries: OutboxEntry[] = load(backing);
+  let forgotten = false;
   const listeners = new Set<() => void>();
 
   // Degrading silently would lose the very fact a dogfood log exists to
@@ -403,24 +412,28 @@ export function createReportOutbox(backing: StringStore, sender: ReportSender): 
   // the same; notes still try, as the rate cap doesn't bind them.
   const run = async (): Promise<void> => {
     for (const id of oldestFirst((e) => e.status === "waiting")) {
+      if (forgotten) return;
       const entry = entries.find((e) => e.id === id);
       const captured = entry?.report;
       if (entry?.status !== "waiting" || !captured) continue;
       const note = entry.note;
       const outcome = await attempt(() => sender.submit({ ...captured, note }));
+      if (forgotten) return;
       if (outcome === "retry") break;
       if (outcome === "refused") {
         update(id, (e) => ({ ...e, status: "refused" }));
-        recordEvent("flag", "the server refused a report (BAD_REQUEST)");
+        recordEvent("flag", "the server refused a report");
         continue;
       }
       update(id, (e) => toStub(e, note));
     }
     for (const id of oldestFirst((e) => e.status === "sent" && e.note !== e.sentNote)) {
+      if (forgotten) return;
       const entry = entries.find((e) => e.id === id);
       if (entry?.status !== "sent" || entry.note === entry.sentNote) continue;
       const note = entry.note;
       const outcome = await attempt(() => sender.annotate(id, note));
+      if (forgotten) return;
       if (outcome === "retry") break;
       // The outbox cuts a note to the server's cap, so a refusal here is a
       // bug, not the note: it is said once and not retried on every trigger.
@@ -432,6 +445,7 @@ export function createReportOutbox(backing: StringStore, sender: ReportSender): 
   let running: Promise<void> | null = null;
   let again = false;
   const flush = (): Promise<void> => {
+    if (forgotten) return Promise.resolve();
     if (running !== null) {
       again = true;
       return running;
@@ -440,7 +454,7 @@ export function createReportOutbox(backing: StringStore, sender: ReportSender): 
       do {
         again = false;
         await run();
-      } while (again);
+      } while (again && !forgotten);
     };
     running = rounds().finally(() => {
       running = null;
@@ -454,6 +468,7 @@ export function createReportOutbox(backing: StringStore, sender: ReportSender): 
 
   return {
     async add(report, step) {
+      if (forgotten) return "failed";
       const others = trimmed(
         synced(entries).filter((e) => e.id !== report.id),
         OUTBOX_CAP - 1,
@@ -469,6 +484,7 @@ export function createReportOutbox(backing: StringStore, sender: ReportSender): 
       const sending = flush();
       if (reached(rung, report.id)) return "flagged";
       await sending;
+      if (forgotten) return "failed";
       if (entries.find((e) => e.id === report.id)?.status === "sent") return "flagged";
       // Neither stored nor sent: the pill says so, and nothing stays behind
       // to go later, after the cook was told it didn't.
@@ -480,6 +496,7 @@ export function createReportOutbox(backing: StringStore, sender: ReportSender): 
       return entries;
     },
     annotate(id, note) {
+      if (forgotten) return;
       const target = entries.find((e) => e.id === id);
       const next = cutToJsonBytes(note, NOTE_MAX_BYTES).text;
       if (target === undefined || target.note === next) return;
@@ -493,11 +510,13 @@ export function createReportOutbox(backing: StringStore, sender: ReportSender): 
       if (target.status !== "refused") void flush();
     },
     clearSent(ids) {
+      if (forgotten) return;
       const next = entries.filter((e) => !whole(e) || (ids !== undefined && !ids.has(e.id)));
       if (next.length === entries.length) return;
       commit(next);
     },
     dismiss(id) {
+      if (forgotten) return;
       if (entries.find((e) => e.id === id)?.status !== "refused") return;
       // Folded with storage first and written as is: `commit` would fold
       // storage in after, and take the refused flag back from it.
@@ -506,12 +525,21 @@ export function createReportOutbox(backing: StringStore, sender: ReportSender): 
       notify();
     },
     flush,
+    forget() {
+      if (forgotten) return;
+      forgotten = true;
+      entries = [];
+      again = false;
+      notify();
+    },
     start(target = window) {
       const onOnline = () => {
+        if (forgotten) return;
         void flush();
       };
       // Another tab wrote: what it holds joins this list (`clear()` has no key).
       const onStorage = (event: StorageEvent) => {
+        if (forgotten) return;
         if (event.key !== null && event.key !== OUTBOX_KEY) return;
         const stored = current(backing);
         if (stored === null) return;

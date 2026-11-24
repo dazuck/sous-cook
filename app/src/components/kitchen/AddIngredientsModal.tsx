@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useLayoutEffect, type ChangeEvent } from "
 import { Button } from "@/components/ui";
 import { BACK_TO_KITCHEN, BorrowedScreen } from "./BorrowedScreen";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { allowanceSentence } from "@/lib/kitchen/allowance";
 import { trpc } from "@/lib/trpc";
 import type { ParsedGroceryItem } from "@/lib/pantry-reconciliation";
 
@@ -233,7 +234,10 @@ export function AddIngredientsModal({
       );
     } catch (err) {
       console.error("Failed to parse groceries:", err);
-      setErrorMessage("Extraction failed. Check your network connection or enter text.");
+      setErrorMessage(
+        allowanceSentence(err) ??
+          "Extraction failed. Check your network connection or enter text.",
+      );
     } finally {
       setIsParsing(false);
     }

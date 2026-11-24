@@ -8,7 +8,7 @@ import { packReturnKey } from "@/components/cookpacks/Shelf";
 import { BorrowedPage } from "@/components/kitchen/BorrowedPage";
 import { EDGE_X } from "@/components/kitchen/cook-edge";
 import { LABEL } from "@/components/kitchen/KitchenHome";
-import { DEFAULT_COOK } from "@/lib/cook-id";
+import { allowanceSentence } from "@/lib/kitchen/allowance";
 import { isUnreadableRecipe, QUEUE_REFUSAL_COPY } from "@/lib/kitchen/queue-refusal";
 import {
   householdStatus,
@@ -60,7 +60,10 @@ export default function PackPage({ params }: PageProps) {
     onError: (err) => {
       // The cook gets one plain line; the server's own words go here.
       console.error("Queue from pack error:", err);
-      setSendFailure(isUnreadableRecipe(err) ? QUEUE_REFUSAL_COPY.notSent : COOKPACKS_COPY.sendFailed);
+      setSendFailure(
+        allowanceSentence(err) ??
+          (isUnreadableRecipe(err) ? QUEUE_REFUSAL_COPY.notSent : COOKPACKS_COPY.sendFailed),
+      );
       setSendingId(null);
       starting.current = false;
     },
@@ -90,7 +93,10 @@ export default function PackPage({ params }: PageProps) {
       void utils.getShelf.invalidate();
       void utils.libraryPlanReport.invalidate();
       const synced = view?.syncedAt ? kitchenDate(view.syncedAt) : null;
-      setRefreshStatus({ text: refreshFailedLine(refreshFailureCause(err.message), synced), trouble: true });
+      setRefreshStatus({
+        text: allowanceSentence(err) ?? refreshFailedLine(refreshFailureCause(err.message), synced),
+        trouble: true,
+      });
     },
   });
 
@@ -99,7 +105,7 @@ export default function PackPage({ params }: PageProps) {
     starting.current = true;
     setSendFailure(null);
     setSendingId(recipeId);
-    queue.mutate({ packId, recipeId, targetUser: DEFAULT_COOK });
+    queue.mutate({ packId, recipeId });
   };
 
   return (

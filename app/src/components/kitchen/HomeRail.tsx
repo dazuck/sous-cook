@@ -8,6 +8,7 @@ import { FOCUS } from "./control-style";
 import { useMenuDismiss } from "./CookMenu";
 import { COOKPACKS_HREF } from "./HomeFoot";
 import { HOME_MORE_COPY } from "./HomeMore";
+import { SignOutItem } from "./SignOutItem";
 
 interface HomeRailProps {
   cookpacks: string;
@@ -300,6 +301,7 @@ export function HomeRail({
                 <span>{ASK_COPY.title}</span>
               </button>
             )}
+            <SignOutItem rowClassName={TAB_ROW} />
           </div>
         </div>
       )}

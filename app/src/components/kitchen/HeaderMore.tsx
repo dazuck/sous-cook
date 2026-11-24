@@ -3,7 +3,6 @@
 import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import Link from "next/link";
 import type { FlagAck, FlagNoteProps } from "@/hooks/useCookFlag";
-import { DEFAULT_COOK } from "@/lib/cook-id";
 import { dishName } from "@/lib/kitchen/dish-name";
 import { trpc } from "@/lib/trpc";
 import { MENU_PANEL, MENU_ROW, useMenuDismiss } from "./CookMenu";
@@ -102,7 +101,7 @@ export function HeaderMore({
   const asks = showRecentItems;
 
   const { data: recent } = trpc.getRecentCookingItems.useQuery(
-    { userId: DEFAULT_COOK, limit: 5 },
+    { limit: 5 },
     { enabled: asks },
   );
   const others = asks ? (recent ?? []).filter((item) => item.id !== currentItemId).slice(0, 3) : [];

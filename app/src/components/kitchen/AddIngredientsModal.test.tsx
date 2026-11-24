@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { allowanceError } from "@/lib/kitchen/__tests__/allowance-error";
 import { AddIngredientsModal } from "./AddIngredientsModal";
 
 const mockParseMutateAsync = vi.fn();
@@ -170,5 +171,51 @@ describe("AddIngredientsModal", () => {
 
     expect(screen.queryByDisplayValue("honeycrisp apples")).toBeNull();
     expect(screen.getByRole("button", { name: /Add 1 item to pantry/ })).toBeTruthy();
+  });
+
+  it("shows the server's allowance sentence when parsing hits the monthly AI cap", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const capError = allowanceError("kitchen", new Date("2026-12-01T00:00:00.000Z"));
+    mockParseMutateAsync.mockRejectedValueOnce(capError);
+
+    render(
+      <AddIngredientsModal
+        isOpen={true}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /Text/ }));
+    fireEvent.change(screen.getByLabelText(/Type or paste items/), {
+      target: { value: "apples\nmilk" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review items" }));
+
+    await screen.findByText(capError.message);
+    expect(
+      screen.queryByText("Extraction failed. Check your network connection or enter text."),
+    ).toBeNull();
+    logged.mockRestore();
+  });
+
+  it("shows the generic extraction failure message for ordinary parse errors", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockParseMutateAsync.mockRejectedValueOnce(new Error("Network down"));
+
+    render(
+      <AddIngredientsModal
+        isOpen={true}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /Text/ }));
+    fireEvent.change(screen.getByLabelText(/Type or paste items/), {
+      target: { value: "apples\nmilk" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review items" }));
+
+    await screen.findByText("Extraction failed. Check your network connection or enter text.");
+    logged.mockRestore();
   });
 });

@@ -130,7 +130,7 @@ describe("HeaderMore", () => {
 
   it("asks for the default cook's recipes in progress", () => {
     render(<More />);
-    expect(useQuery.mock.lastCall).toEqual([{ userId: "cook", limit: 5 }, { enabled: true }]);
+    expect(useQuery.mock.lastCall).toEqual([{ limit: 5 }, { enabled: true }]);
   });
 
   it("lists no heading when nothing else is in progress", () => {

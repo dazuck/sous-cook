@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { allowanceError } from "@/lib/kitchen/__tests__/allowance-error";
+import { QUEUE_REFUSAL_COPY } from "@/lib/kitchen/queue-refusal";
 import type { RecipeExtraction } from "@/lib/recipe-import";
 import { RecipeImportModal } from "./RecipeImportModal";
 
@@ -86,4 +88,20 @@ describe("RecipeImportModal: an add the server refuses", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add to queue" }));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
+
+  it.each(["Add to queue", "Start cooking"])(
+    "%s: shows the server's allowance sentence when the monthly AI allowance is used up",
+    async (action) => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      const capError = allowanceError("kitchen", new Date("2026-12-01T00:00:00.000Z"));
+      const reject = () => Promise.reject(capError);
+      const { onClose } = await previewed(reject, reject);
+      fireEvent.click(screen.getByRole("button", { name: action }));
+      await screen.findByText(capError.message);
+      expect(screen.queryByText(QUEUE_REFUSAL_COPY.addFailed)).toBeNull();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByRole("heading", { name: "Lemon Pasta", level: 3 })).toBeTruthy();
+      logged.mockRestore();
+    },
+  );
 });
