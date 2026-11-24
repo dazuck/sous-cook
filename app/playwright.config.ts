@@ -63,6 +63,14 @@ const localConfig = defineConfig({
     ? [["list"], ["html", { open: "never" }]]
     : "list",
   globalSetup: "./e2e/global-setup.ts",
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixels: 0,
+      threshold: 0,
+      animations: "disabled",
+      caret: "hide",
+    },
+  },
   use: {
     baseURL: E2E_BASE_URL,
     serviceWorkers: "block",
@@ -83,6 +91,7 @@ const localConfig = defineConfig({
     },
     {
       name: "portrait",
+      grepInvert: /@visual/,
       use: {
         viewport: { width: 800, height: 1280 },
         hasTouch: true,

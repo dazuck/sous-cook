@@ -22,7 +22,7 @@ Start the suite's PostgreSQL container, recreate the `sous_e2e` database, and ru
 pnpm --dir app e2e:db:up
 ```
 
-Run the Playwright suite (builds the production app, seeds the database, and runs all specs in both tablet orientations):
+Run the Playwright behaviour suite (builds the production app, seeds the database, and runs all non-`@visual` specs in both tablet orientations):
 
 ```sh
 pnpm --dir app e2e
@@ -38,6 +38,50 @@ When finished, remove the suite's PostgreSQL container:
 
 ```sh
 pnpm --dir app e2e:db:down
+```
+
+## Thin tests while a design is still changing
+
+Screens in Sous are still evolving, so the browser suite follows a thin-tests rule:
+
+- One main-path browser test per screen on the wide (landscape) tablet, plus a not-broken check upright (portrait) and on a phone.
+- Screenshot baselines only for screens whose design has been signed off.
+- Layout rules belong in fast unit tests, not in browser tests.
+
+## Screenshots
+
+`app/e2e/visual.spec.ts` holds the screenshot checks (tagged `@visual`), running on the `landscape` (1280x800) tablet project only (`portrait` ignores `@visual` via `grepInvert`). `pnpm --dir app e2e` leaves screenshot tests out so behaviour runs stay fast and platform-independent.
+
+Three proof baselines exercise the screenshot setup:
+
+- `VIS-1` (`home.png`): `/kitchen` with the seeded queue (Thin White Sauce offered to start, meal illustration, and right-edge rail).
+- `VIS-2` (`library.png`): `/kitchen/cookpacks` showing the bundled 1896 book on the shelf.
+- `VIS-3` (`cook-step.png`): Thin White Sauce's first cooking step, after starting from home, leaving the opening screen, and advancing past the prep page, with the bottom strip visible and its peek lowered.
+
+Screens get baselines one at a time, after their design is signed off, not in a sweep.
+
+Reproducibility relies on pinning both the browser and the OS font rendering:
+
+- `@playwright/test` is pinned to an exact version in `app/package.json` (`1.63.0`, with no caret or tilde), which pins the Chromium build.
+- Baselines are taken only on macOS (`app/e2e/visual.spec.ts` skips the whole file on any other platform), so font rendering matches without a Docker image.
+- Comparisons in `app/playwright.config.ts` require exact pixel matches (`maxDiffPixels: 0`, `threshold: 0`) with `animations: "disabled"` and `caret: "hide"`. Before each shot, `settle(page)` in `app/e2e/visual-helpers.ts` waits for every declared font face in `document.fonts` to load, for any cross-fading leaving step line to finish and leave the DOM, and for two animation frames to paint.
+
+With the E2E PostgreSQL container running (`pnpm --dir app e2e:db:up`), run the screenshot tests:
+
+```sh
+pnpm --dir app e2e:visual
+```
+
+To reuse the last production build on a repeat run:
+
+```sh
+E2E_SKIP_BUILD=1 pnpm --dir app e2e:visual
+```
+
+After a screen's design is signed off or intentionally changed, take or re-take its baseline and inspect every new image in `app/e2e/visual.spec.ts-snapshots/` before committing it:
+
+```sh
+pnpm --dir app e2e:visual --update-snapshots
 ```
 
 ## Running two copies at once
@@ -80,7 +124,7 @@ Set `SMOKE_EXPECT_COMMIT=<40-char lowercase sha>` to assert the exact running co
 
 The `browser` job in `.github/workflows/ci.yml` runs the behaviour suite (`pnpm --dir app e2e`) on every push to `main` and every pull request, on Linux (`ubuntu-latest`) with Chromium.
 
-Screenshot tests, when they exist, do not run in CI because their baselines are macOS only. The smoke check (`app/e2e/smoke.spec.ts`) does not run in CI either, because `SMOKE_BASE_URL` is never set there.
+Screenshot tests (`app/e2e/visual.spec.ts`) do not run in CI because `pnpm --dir app e2e` excludes `@visual` and their baselines are macOS only. The smoke check (`app/e2e/smoke.spec.ts`) does not run in CI either, because `SMOKE_BASE_URL` is never set there.
 
 When the `browser` job fails, it uploads `app/test-results/` and `app/playwright-report/` as the `browser-test-results` artifact (kept for 7 days). Download and unzip the artifact to inspect a failure trace or the HTML report locally:
 
@@ -148,4 +192,8 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | The webhook | not covered yet |
 | Finishing an idle cook automatically | not covered yet |
 | Sign-in pages | not covered yet |
-| Screenshots | not covered yet |
+| Screenshot baseline: kitchen home | `app/e2e/visual.spec.ts` (VIS-1) |
+| Screenshot baseline: Cookpacks library | `app/e2e/visual.spec.ts` (VIS-2) |
+| Screenshot baseline: Thin White Sauce first cooking step | `app/e2e/visual.spec.ts` (VIS-3) |
+| Screenshots of every other screen | no baseline yet (not signed off) |
+| The phone width | not covered yet |
