@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -222,29 +223,148 @@ describe("tokens.css contrast (Direction 2 Natural Stoneware & P67, DS §1)", ()
   });
 });
 
+/** A stylesheet without its comments (tokens.css names the polar spaces to say why it avoids them). */
+const cssCode = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "");
+
+/**
+ * A TS or TSX source without its comments, by parsing it and printing it back,
+ * so a `//` in a URL or a `/*` in a glob string is not taken for one.
+ */
+function tsCode(source: string): string {
+  const file = ts.createSourceFile("source.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  return ts.createPrinter({ removeComments: true }).printFile(file);
+}
+
+/**
+ * Where code mixes, blends or converts a colour in a polar space, or null.
+ * CSS is case-insensitive and takes any whitespace between its words, and a
+ * Tailwind arbitrary value writes each space as an underscore, so every
+ * pattern ignores case and reads a run of whitespace or underscores as one gap.
+ */
+const POLAR_SPACE = "(oklch|lch|hsl|hwb)(?![a-z0-9-])";
+const POLAR_USES: Array<[what: string, pattern: RegExp]> = [
+  ["color-mix in a polar space", new RegExp(`color-mix\\([\\s_]*in[\\s_]+${POLAR_SPACE}`, "i")],
+  // The blend is named in the gradient's first argument, after a direction or an
+  // angle that may itself hold brackets (calc(), var()), two deep at most.
+  [
+    "gradient blended in a polar space",
+    new RegExp(`gradient\\((?:[^,()]|\\((?:[^()]|\\([^()]*\\))*\\))*?(?<![a-z0-9-])in[\\s_]+${POLAR_SPACE}`, "i"),
+  ],
+  // Tailwind's gradient modifier: bg-linear-… then a slash and a space. Not spelled
+  // out, since Tailwind would build the class from this comment.
+  [
+    "Tailwind gradient in a polar space",
+    /\bbg-(linear|radial|conic)[^\s"'`]*\/(oklch|lch|hsl|hwb|shorter|longer|increasing|decreasing)\b/i,
+  ],
+  ["relative colour in a polar space", /(?<![a-z0-9-])(oklch|lch|hsl|hwb)\([\s_]*from(?![a-z0-9-])/i],
+];
+const polarUse = (code: string): string | null => POLAR_USES.find(([, pattern]) => pattern.test(code))?.[0] ?? null;
+
 describe("no mix goes through a hue (Chromium drops a near-neutral colour's hue in oklch and paints it pink)", () => {
   it("every color-mix in tokens.css is in oklab, with its two stops as plain tokens", () => {
-    const mixes = [...CSS.matchAll(/--[a-z-]+:\s*color-mix\(\s*in ([a-z]+),([^;]*?)\);/g)];
-    expect(mixes.length).toBe(5);
-    for (const [, space, stops] of mixes) {
-      expect(space).toBe("oklab");
+    const code = cssCode(CSS);
+    // Every color-mix( in the stylesheet, whatever follows it: its interpolation
+    // method as written (a hyphenated space, a hue modifier, none at all).
+    const methods = [...code.matchAll(/color-mix\(\s*(?:in\s+([^,]*?)\s*,)?/gi)].map((m) => m[1]);
+    const declared = [...code.matchAll(/(--[a-z-]+)\s*:\s*color-mix\(\s*in\s+[^,]*,([^;]*)\)\s*;/gi)];
+    expect(declared.map((m) => m[1]).sort()).toEqual(["--ground", "--ink", "--ink-soft", "--paper", "--sand"]);
+    // The five tokens and the @supports test: no other mix, and none in another space.
+    expect(methods).toEqual(Array.from({ length: declared.length + 1 }, () => "oklab"));
+    for (const [, , stops] of declared) {
       expect([...stops.matchAll(/var\(--[a-z-]+-(day|night)\)/g)]).toHaveLength(2);
-      expect(stops, "a stop converted to a polar space can lose its hue").not.toMatch(/(oklch|lch|hsl|hwb)\(/);
+      expect(stops, "a stop converted to a polar space can lose its hue").not.toMatch(/(oklch|lch|hsl|hwb)\(/i);
     }
   });
 
-  it("no source file mixes colours in a polar space", () => {
+  it("no source file under src mixes, blends a gradient or converts a colour in a polar space", () => {
     const root = fileURLToPath(new URL("..", import.meta.url));
-    const polar = /color-mix\(\s*in[ _](oklch|lch|hsl|hwb)\b/;
     const found = readdirSync(root, { recursive: true, encoding: "utf8" })
       .filter((file) => /\.(tsx?|css)$/.test(file) && !/\.test\.tsx?$/.test(file))
-      .filter((file) => polar.test(readFileSync(`${root}/${file}`, "utf8")));
-    expect(found).toEqual([]);
+      .filter((file) => {
+        const source = readFileSync(`${root}/${file}`, "utf8");
+        // Only a file that names a polar use anywhere is worth stripping of its comments.
+        if (polarUse(source) === null) return false;
+        return polarUse(file.endsWith(".css") ? cssCode(source) : tsCode(source)) !== null;
+      });
+    expect(found.sort()).toEqual([]);
+  });
+
+  /**
+   * A Tailwind arbitrary value as a class name, put together here rather than
+   * written out: Tailwind scans this file too, and would build any class it
+   * finds in it into the app's stylesheet.
+   */
+  const arbitrary = (utility: string, css: string) => [utility, `[${css.replace(/ /g, "_")}]`].join("-");
+
+  describe("the guard reads CSS as a browser does", () => {
+    const caught: Array<[string, string]> = [
+      ["as the app wrote it", "color-mix(in oklch, var(--sand), var(--ink) 8%)"],
+      ["as Tailwind writes it", `active:${arbitrary("bg", "color-mix(in oklch,var(--sand),var(--ink) 8%)")}`],
+      ["upper case", "color-mix(IN OKLCH, red, blue)"],
+      ["mixed case", "Color-Mix(in Oklch, red, blue)"],
+      ["two spaces", "color-mix(in  oklch, red, blue)"],
+      ["a tab", "color-mix(in\toklch, red, blue)"],
+      ["across lines, as tokens.css had it", "color-mix(\n    in\n    oklch,\n    red,\n    blue\n  )"],
+      ["two underscores", arbitrary("bg", "color-mix(in  hsl,red,blue)")],
+      ["a hue modifier in Tailwind", arbitrary("bg", "color-mix(in hsl shorter hue,red,blue)")],
+      ["a gradient", "linear-gradient(to right in oklch, red, blue)"],
+      ["a gradient after calc()", "linear-gradient(calc(90deg + 1deg) in oklch, red, blue)"],
+      ["a gradient after calc(var())", "conic-gradient(from calc(var(--turn) * 2) at 50% 50% in hsl, red, blue)"],
+      ["a gradient in Tailwind", arbitrary("bg", "linear-gradient(to right in oklch,red,blue)")],
+      ["an upper-case gradient", "LINEAR-GRADIENT(in  HWB, red, blue)"],
+      ["a relative colour", "oklch(from var(--ink) l c h)"],
+      ["an upper-case relative colour", "OKLCH(FROM red l c h)"],
+      ["a relative colour after spaces", "hsl(  from red h s l)"],
+      ["a relative colour in Tailwind", arbitrary("text", "oklch(from var(--ink) l c h)")],
+      ["Tailwind's gradient modifier, upper case", ["bg", "linear", "to", "r/OKLCH"].join("-")],
+    ];
+    for (const [what, code] of caught) {
+      it(`catches ${what}`, () => {
+        expect(polarUse(code), code).not.toBeNull();
+      });
+    }
+
+    const allowed: Array<[string, string]> = [
+      ["an Oklab mix", "color-mix(in oklab, red, blue)"],
+      ["an Oklab mix in Tailwind", `active:${arbitrary("bg", "color-mix(in oklab,var(--sand),var(--ink) 8%)")}`],
+      ["a linear-light mix", "color-mix(in srgb-linear, red, blue)"],
+      ["a plain gradient", "linear-gradient(to right, red, blue)"],
+      ["an Oklab gradient after calc()", "linear-gradient(calc(90deg) in oklab, red, blue)"],
+      ["an Oklab mix inside a gradient", "linear-gradient(red, color-mix(in oklab, red, blue))"],
+      ["an Oklab relative colour", "oklab(from red l a b)"],
+      ["a polar colour written out", "oklch(0.5 0.1 30) hsl(20 30% 40%)"],
+      ["words that only look like it", "const within = hsl; margin(from); begin oklch-from"],
+    ];
+    for (const [what, code] of allowed) {
+      it(`allows ${what}`, () => {
+        expect(polarUse(code), code).toBeNull();
+      });
+    }
+  });
+
+  describe("the guard reads a source without its comments", () => {
+    const mix = "color-mix(in oklch, red, blue)";
+
+    it("a comment naming the old syntax does not trip it", () => {
+      expect(polarUse(tsCode(`// was ${mix}\nconst x = 1;`))).toBeNull();
+      expect(polarUse(tsCode(`/** ${mix} */\nconst x = 1; /* ${mix} */`))).toBeNull();
+      expect(polarUse(tsCode(`const a = <div>{/* ${arbitrary("bg", mix)} */}</div>;`))).toBeNull();
+      expect(polarUse(cssCode(`/* ${mix} */ :root { --a: red; }`))).toBeNull();
+    });
+
+    it("code beside a comment, a URL or a glob is still read", () => {
+      expect(polarUse(tsCode(`const u = "https://sous.test"; const c = "${mix}"; // a note`))).not.toBeNull();
+      expect(polarUse(tsCode('const g = "src/**/*.ts"; const c = `color-mix(in oklch, red ${1}%, blue)`; /* x */'))).not.toBeNull();
+      expect(polarUse(tsCode(`const r = /"\\/\\//; const c = '${mix}';`))).not.toBeNull();
+      expect(polarUse(tsCode(`const a = <div className="${arbitrary("bg", mix)}">// text</div>;`))).not.toBeNull();
+      expect(polarUse(cssCode(`/* why */ :root { --a: ${mix}; } /* end */`))).not.toBeNull();
+    });
   });
 
   it("no declaration in tokens.css mixes or converts in a polar space", () => {
-    const code = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(code).not.toMatch(/in\s+(oklch|lch|hsl|hwb)\b/);
-    expect(code).not.toMatch(/(oklch|lch)\(from\b/);
+    const code = cssCode(CSS);
+    expect(polarUse(code)).toBeNull();
+    // Stricter here than under src: no "in <polar space>" anywhere, the @supports test included.
+    expect(code).not.toMatch(/(?<![a-z0-9-])in\s+(oklch|lch|hsl|hwb)(?![a-z0-9-])/i);
   });
 });
