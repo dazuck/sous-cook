@@ -142,8 +142,11 @@ export function SignOutRow({
       onClick={s.onClick}
       className={rowClassName}
     >
-      {/* Room above and below the words once they run past the row's own height. */}
-      <span className="flex-1 py-[calc(4*var(--cpx))]">{s.label}</span>
+      {/*
+        The room a one-line row has above and below its words (the row's height less one line of
+        them, halved), kept when the armed count runs to three lines.
+      */}
+      <span className="flex-1 py-[calc((var(--target)-1.25*var(--type-meta))/2)]">{s.label}</span>
       {icon}
     </button>
   );
