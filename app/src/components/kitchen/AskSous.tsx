@@ -541,7 +541,7 @@ export function AskSous({
     } catch (error) {
       // An AI allowance refusal shows the server's sentence; a reply cut at
       // the token cap says so, in the line and in a flag's lead-up; anything
-      // else is the connection line (feedback review 2026-10-27).
+      // else is the connection line.
       const allowance = allowanceSentence(error);
       const cutOff = allowance === null && isAnswerCutOff(error);
       recordAsk(

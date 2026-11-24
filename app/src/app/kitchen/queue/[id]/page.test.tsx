@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
-import { act, cleanup, render, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Window } from "happy-dom";
 import { Suspense } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { KitchenTimersProvider, TimerNotices } from "@/components/kitchen/KitchenTimers";
 import { allowanceError } from "@/lib/kitchen/__tests__/allowance-error";
 import { ZUCCHINI_RECIPE } from "@/lib/kitchen/__tests__/zucchini-wraps";
+import { sessionKey } from "@/lib/kitchen/cook-session";
 import { markSignedOut, resetSignedOutForTests, SIGNED_OUT_COOK_NOTICE } from "@/lib/kitchen/signed-out";
 import { createTimerStore } from "@/lib/kitchen/timer-store";
 import { legacyToPackRecipe } from "@/lib/pack-convert/convert";
@@ -145,6 +146,18 @@ describe("CAPUI-4: the cook page shows the plan's cap sentence in the cook scree
     expect(cookNotices(container)).toEqual([refusal.message]);
     const home = container.querySelector("[data-home-notices]") as HTMLElement;
     expect(within(home).queryByText(refusal.message)).toBeNull();
+
+    // The cook goes on as written, and a step taken keeps the session on the device: the
+    // sentence is shown, never saved with it.
+    expect(localStorage.getItem(sessionKey(ITEM.id))).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+    });
+    const saved = localStorage.getItem(sessionKey(ITEM.id));
+    expect(saved).not.toBeNull();
+    expect(JSON.parse(saved!).state.session.state.pos).toBe(1);
+    expect(cookNotices(container)).toEqual([refusal.message]);
+    expect(localStorage.length).toBeGreaterThan(0);
     for (let i = 0; i < localStorage.length; i++) {
       expect(localStorage.getItem(localStorage.key(i)!)).not.toContain(refusal.message);
     }
