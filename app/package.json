@@ -19,7 +19,8 @@
     "typecheck:scripts": "tsc --noEmit -p scripts",
     "e2e:db:up": "sh e2e/db-up.sh",
     "e2e:db:down": "sh e2e/db-down.sh",
-    "e2e": "playwright test",
+    "e2e": "playwright test --grep-invert @visual",
+    "e2e:visual": "playwright test --grep @visual",
     "e2e:smoke": "playwright test --project=smoke"
   },
   "dependencies": {
