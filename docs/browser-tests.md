@@ -104,18 +104,22 @@ E2E_APP_PORT=4141 E2E_PG_CONTAINER=port-pg E2E_PG_PORT=55741 pnpm --dir app e2e:
 
 `app/e2e/smoke.spec.ts` is a read-only check of any running Sous copy. It does not start a local server or connect to a database, and it never writes: it never clicks Start, queues a recipe, imports, or calls Ask, and it fails if any page issues a request with a method other than `GET` or `HEAD`.
 
+`SMOKE_EXPECT_SIGN_IN` is required on every run and must be set to exactly `on` or `off` (no default, no trimming, no case folding). If it is missing or has any other value, the smoke run fails immediately before any page or request check runs.
+
 It checks three things:
 
 - `SMOKE-1`: `GET /api/version` answers 200 with only `commit`; when `SMOKE_EXPECT_COMMIT` is set, the commit must equal it exactly (and a malformed `SMOKE_EXPECT_COMMIT` fails the test with a plain message).
-- `SMOKE-2`: `/kitchen` loads with no 5xx response, no unexpected console or page error, and shows the home screen heading.
-- `SMOKE-3`: `/kitchen/cookpacks` loads with at least one book, and opening that book loads its page.
+- `SMOKE-2`:
+  - When `SMOKE_EXPECT_SIGN_IN=off` (single-kitchen mode): navigates to `/kitchen`, confirms the final URL path is `/kitchen` (no redirect) with a response status below 400, checks for no 5xx response, no unexpected console or page error, and no non-`GET`/`HEAD` request, and confirms the home screen headings appear.
+  - When `SMOKE_EXPECT_SIGN_IN=on` (sign-in mode): navigates to `/kitchen`, confirms the final URL path is `/sign-in` with a response status below 400, confirms the sign-in page's level-1 heading is visible and the "Sign in with Google" button is visible and enabled (without clicking it), and checks for no 5xx response, no unexpected console or page error, and no non-`GET`/`HEAD` request.
+- `SMOKE-3`: when `SMOKE_EXPECT_SIGN_IN=off`, loads `/kitchen/cookpacks` with at least one book and opens its page without write requests. When `SMOKE_EXPECT_SIGN_IN=on`, `SMOKE-3` is skipped because kitchen pages require a session.
 
-`scripts/deploy.sh` runs `pnpm --dir app e2e:smoke` twice on every real deploy: once against the staged URL before promotion, and once against `SOUS_LIVE_URL` after promotion, passing `SMOKE_BASE_URL`, `SMOKE_EXPECT_COMMIT`, and (when configured) `SMOKE_BYPASS_HEADER` and `SMOKE_BYPASS_VALUE`.
+`scripts/deploy.sh` runs `pnpm --dir app e2e:smoke` twice on every real deploy: once against the staged URL before promotion, and once against `SOUS_LIVE_URL` after promotion, passing `SMOKE_BASE_URL`, `SMOKE_EXPECT_COMMIT`, `SMOKE_EXPECT_SIGN_IN` (from `SOUS_EXPECT_SIGN_IN`), and (when configured) `SMOKE_BYPASS_HEADER` and `SMOKE_BYPASS_VALUE`.
 
-To run it by hand against a deployed URL:
+To run it by hand against a deployed URL (use `SMOKE_EXPECT_SIGN_IN=off` for a single-kitchen deployment):
 
 ```sh
-SMOKE_BASE_URL=https://sous.example.com pnpm --dir app e2e:smoke
+SMOKE_BASE_URL=https://sous.example.com SMOKE_EXPECT_SIGN_IN=on pnpm --dir app e2e:smoke
 ```
 
 Set `SMOKE_EXPECT_COMMIT=<40-char lowercase sha>` to assert the exact running commit, and set `SMOKE_BYPASS_HEADER` together with `SMOKE_BYPASS_VALUE` if the host requires a deployment protection bypass header.
@@ -187,7 +191,7 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | No model key: Ask Sous opens from the top line's capsule (beside the step in landscape, a full sheet upright), sends a prep page's jobs with no step, and shows the unreachable message | `app/e2e/no-key.spec.ts` (NOKEY-5) |
 | Single-kitchen mode: `/` redirect, `/api/auth/get-session` 404, no sign-in/out controls | `app/e2e/single-kitchen.spec.ts` (SINGLE-1) |
 | Version endpoint: `/api/version` answers 200 with only `commit` and matches `SOUS_RELEASE_COMMIT` when set | `app/e2e/version.spec.ts` (VERSION-2) |
-| Deployed copy smoke check: `/api/version`, `/kitchen`, `/kitchen/cookpacks`, and a book page (read-only) | `app/e2e/smoke.spec.ts` (SMOKE-1, SMOKE-2, SMOKE-3) |
+| Deployed copy smoke check: `/api/version`, `/kitchen` (home screen when `SMOKE_EXPECT_SIGN_IN=off`, redirect to `/sign-in` with heading and enabled button when `SMOKE_EXPECT_SIGN_IN=on`), and `/kitchen/cookpacks` plus a book page when `SMOKE_EXPECT_SIGN_IN=off` (skipped when `on`; read-only) | `app/e2e/smoke.spec.ts` (SMOKE-1, SMOKE-2, SMOKE-3) |
 | Flagging a screen and the reports panel | not covered yet |
 | What a voice command does beyond the reply (the step moved, the timer set, the screen flagged, Ask by voice) | not covered yet |
 | The whole cook's reading of a stop, and its scrolling lines | not covered yet |

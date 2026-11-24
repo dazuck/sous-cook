@@ -18,6 +18,25 @@ Configure the hosting project with:
 - **Include files outside the root directory:** enabled (required because `app/` imports `../pack` and bundles pack JSON files from `../packs`)
 - **Turn off automatic deploys from Git pushes** (on Vercel, in the project's Git settings). A push-triggered deploy skips the release check, the pre-migration backup, and the migration. If a push-triggered deploy ever slips through, the live copy answers `null` or an unrecorded commit and `scripts/deploy.sh` refuses to continue: roll back on the host to the last recorded release, then deploy normally.
 - **Do not set `SOUS_RELEASE_COMMIT` by hand** in the host's environment variable settings. `scripts/deploy.sh` passes `--build-env SOUS_RELEASE_COMMIT=<sha>` on every deploy so `/api/version` always reflects the exact commit being released.
+- **Deployment protection:** If the host protects deployment URLs (Vercel does by default), either set `SMOKE_BYPASS_HEADER` to `x-vercel-protection-bypass` and `SMOKE_BYPASS_VALUE` to the project's "Protection Bypass for Automation" secret, or turn deployment protection off. Without one of these, the staged `/api/version` check receives HTTP 401 and `scripts/deploy.sh` stops before promotion.
+
+### Host project environment variables (Production)
+
+Configure these in the hosting project's own Production environment (separate from the local operator variables below):
+
+- **`DATABASE_URL` (always required):** PostgreSQL connection string for the production database.
+- **Sign-in mode (`SOUS_SIGN_IN` unset, empty, or `on`, which is the default):** Set all six variables that `app/src/lib/kitchens/deployment.ts` checks at start-up:
+  - `BETTER_AUTH_SECRET`: non-empty, at least 32 characters after trimming.
+  - `BETTER_AUTH_URL`: non-empty, valid URL matching the live origin over `https` (for example `https://sous.example.com`; `http` is allowed only for `localhost`, `127.0.0.1`, or `[::1]`).
+  - `GOOGLE_CLIENT_ID`: non-empty Google OAuth client id.
+  - `GOOGLE_CLIENT_SECRET`: non-empty Google OAuth client secret.
+  - `SOUS_AI_KITCHEN_CAP_USD`: non-empty, plain non-negative dollar amount with at most two decimals (for example `2`, `0.25`, or `0`).
+  - `SOUS_AI_TOTAL_CAP_USD`: non-empty, plain non-negative dollar amount with at most two decimals (for example `10`, `2.5`, or `0`).
+  In sign-in mode, all household hook flags in `app/src/lib/hooks/connected.ts` must remain `false`, and every configured AI model (`AI_TEXT_MODEL`, `AI_COOK_CHAT_MODEL`, `AI_VISION_MODEL`, or their defaults) must have a price entry in `app/src/lib/ai/prices.ts`.
+- **Single-kitchen mode:** Set `SOUS_SIGN_IN=off` instead of the sign-in variables above. (`SOUS_AI_KITCHEN_CAP_USD` and `SOUS_AI_TOTAL_CAP_USD` are optional in single-kitchen mode; if either is set, it must follow the same dollar format and every configured model must have a price entry.)
+- **Do not set `SOUS_RELEASE_COMMIT` by hand** in the host project.
+
+If any required host variable is missing or invalid, the server refuses to start, the staged smoke check fails, and nothing is promoted.
 
 ### Operator environment variables
 
@@ -26,13 +45,14 @@ Export these variables in the shell that runs `scripts/deploy.sh` (or keep them 
 | Variable | Required | Default | Purpose (with Vercel example) |
 | --- | --- | --- | --- |
 | `SOUS_LIVE_URL` | Always | none | Public origin of the live app, for example `https://sous.example.com`. Used to check `/api/version` before deploy, verify `/api/version` after promote, and smoke the live copy after promote. |
+| `SOUS_EXPECT_SIGN_IN` | Always | none | Expected deployment mode of the host: `on` (sign-in mode) or `off` (single-kitchen mode). Must match the mode the host runs in; passed to the smoke check as `SMOKE_EXPECT_SIGN_IN`. In `on` mode the smoke check confirms `/kitchen` redirects to `/sign-in` with its heading and enabled "Sign in with Google" button and skips `/kitchen/cookpacks`; in `off` mode it confirms `/kitchen` loads without redirecting and opens a book from `/kitchen/cookpacks`. |
 | `SOUS_LIVE_WAIT_SECONDS` | No | `60` | Maximum seconds `scripts/deploy.sh` retries `$SOUS_LIVE_URL/api/version` (every 5 seconds) after promotion while waiting for the live address to answer the new commit. |
 | `SOUS_HOST_CLI` | No | `vercel` | Hosting CLI executable name or path. |
 | `SOUS_HOST_ARGS` | No | empty | Extra whitespace-separated flags passed to the hosting CLI on a single line (newlines are refused), for example `--scope example-team`. Put the host's authentication token in the host's own environment variable (for Vercel, `VERCEL_TOKEN`), never in `SOUS_HOST_ARGS`. |
 | `SOUS_HOST_LINK_FILE` | Always | none | Path to the host's project link JSON file (for example `$HOME/.config/sous/vercel-project.json`). Copied into `.vercel/project.json` inside the temporary deploy worktree before staging. |
 | `SOUS_RELEASE_REMOTE` | No | `origin` | Git remote fetched before deploy to confirm the target commit is on the shared release branch. |
 | `SOUS_RELEASE_BRANCH` | No | `main` | Git branch on `SOUS_RELEASE_REMOTE` that the target commit must be on before deploy. |
-| `SOUS_DEPLOY_ENV_FILE` | When migrations are pending | none | Path to a mode-600 `KEY=VALUE` file holding `DATABASE_URL` for the production database (for example `$HOME/.config/sous/deploy.env`). Read as plain text without executing it; only `DATABASE_URL` is extracted, and only its host is ever printed. |
+| `SOUS_DEPLOY_ENV_FILE` | When migrations are pending | none | Path to a mode-600 `KEY=VALUE` file holding `DATABASE_URL` for the production database (for example `$HOME/.config/sous/deploy.env`). Read as plain text without executing it; only `DATABASE_URL` is extracted, and only its host is ever printed. Must use a direct connection or a session-mode pooler (never a transaction-mode pooler), with the host's TLS parameter (for example `sslmode=require`) when the host requires TLS. |
 | `SOUS_BACKUP_DIR` | When migrations are pending | none | Directory where `pg_dump` writes pre-migration backups (for example `$HOME/.local/share/sous/backups`). Created with mode `700`. |
 | `SOUS_RELEASE_STATE_DIR` | No | `$HOME/.local/state/sous` | Local state directory holding `release-passes.log`, `releases.log`, and the temporary `deploy.lock` folder. Created with mode `700`. |
 | `SMOKE_BYPASS_HEADER` | No | none | Optional HTTP header name sent to `/api/version` requests (through a mode-600 temporary file) and passed to `pnpm --dir app e2e:smoke` when deployment protection requires a bypass header (for example `x-vercel-protection-bypass`). Must be paired with `SMOKE_BYPASS_VALUE`. |
@@ -79,9 +99,9 @@ A real deploy:
 1. Refuses if the current checkout has uncommitted changes to tracked files (untracked files are allowed), then acquires the lock folder (`deploy.lock`) in the state directory so only one deploy runs at a time per state folder (per machine and `SOUS_RELEASE_STATE_DIR`, not across machines).
 2. Re-runs all pre-flight checks (pass log, fetching `SOUS_RELEASE_REMOTE`/`SOUS_RELEASE_BRANCH` to confirm the commit is pushed, live commit ancestor check, append-only and increasing-timestamp migrations).
 3. Creates a fresh temporary detached worktree of the commit and installs dependencies (prefers the offline cache).
-4. If new migrations are pending, runs `pg_dump -Fc --no-owner` with connection parameters passed through `PG*` environment variables into `SOUS_BACKUP_DIR` (refusing to migrate if the dump fails or is empty) and runs `pnpm --dir app db:migrate` in a clean environment with `DATABASE_URL` loaded from a mode-600 temporary file. If `db:migrate` fails after the backup, the script prints the backup file's path, reminds you to restore it into a scratch database first (see Backup and restore below), and exits with status 1 without staging.
-5. Copies `SOUS_HOST_LINK_FILE` to `.vercel/project.json` in the worktree and stages the build with `--prod --skip-domain --yes --build-env SOUS_RELEASE_COMMIT=<sha>`.
-6. Checks `<staged-url>/api/version` to confirm the staged copy answers the target commit, then runs `pnpm --dir app e2e:smoke` against the staged URL. If either check fails, the deploy stops and nothing is promoted. Note that if this run had pending migrations, the database is already migrated while the old code remains live (safe because migrations are additive), and re-running `scripts/deploy.sh` after fixing the issue is safe (already-applied migrations are skipped, and a fresh backup is taken).
+4. If new migrations are pending, runs `pg_dump -Fc --no-owner -n public -n drizzle` with connection parameters passed through `PG*` environment variables into `SOUS_BACKUP_DIR` (refusing to migrate if the dump fails or is empty) and runs `pnpm --dir app db:migrate` in a clean environment with `DATABASE_URL` loaded from a mode-600 temporary file. The backup covers the `public` and `drizzle` schemas only (the app's tables and its migration record), because a managed PostgreSQL host's own schemas may not be readable by the deploy role; anything an operator adds outside those two schemas is not in it. If `db:migrate` fails after the backup, the script prints the backup file's path, reminds you to restore it into a scratch database first (see Backup and restore below), and exits with status 1 without staging.
+5. Copies `SOUS_HOST_LINK_FILE` to `.vercel/project.json` in the worktree and stages the build with `--prod --skip-domain --yes --build-env SOUS_RELEASE_COMMIT=<sha>`. `scripts/deploy.sh` reads the staged URL from the command's stdout in either of two forms: the last bare line starting with `https://`, or a single JSON document (which newer host CLI versions print in non-interactive mode, their default under coding agents). In the JSON form, it reads `deployment.url` (or top-level `url` when there is no `deployment` object), normalizes a bare hostname to `https://<hostname>`, and refuses URLs with non-`https` schemes, credentials, ports, non-root paths, queries, or fragments. If the JSON document includes a `readyState` (`deployment.readyState`, or top-level `readyState` when there is no `deployment` object) with any value other than `READY`, `scripts/deploy.sh` stops with a message naming that state and promotes nothing.
+6. Checks `<staged-url>/api/version` to confirm the staged copy answers the target commit, then runs `pnpm --dir app e2e:smoke` against the staged URL with `SMOKE_EXPECT_SIGN_IN=$SOUS_EXPECT_SIGN_IN`. If either check fails, the deploy stops and nothing is promoted. Note that if this run had pending migrations, the database is already migrated while the old code remains live (safe because migrations are additive), and re-running `scripts/deploy.sh` after fixing the issue is safe (already-applied migrations are skipped, and a fresh backup is taken).
 7. Promotes the staged deployment. If the promote command itself fails, `scripts/deploy.sh` prints that the outcome is unknown, reminds you to check what the live address answers (and notes if this run migrated the database), prints the rollback command, and exits with status 1 without recording a release. After a successful promote, it polls `$SOUS_LIVE_URL/api/version` every 5 seconds for up to `SOUS_LIVE_WAIT_SECONDS` until the live copy answers the target commit, then runs `pnpm --dir app e2e:smoke` against `SOUS_LIVE_URL`. If the live copy never answers the target commit or live smoke fails, the script prints the rollback command and exits with status 1 without recording a release.
 8. Appends `<number> <sha> <staged url> <UTC time>` to `releases.log` and prints the rollback command.
 
@@ -123,18 +143,24 @@ vercel rollback <live-release-staged-url> --yes
 Whenever a deploy includes new migrations, `scripts/deploy.sh` takes a PostgreSQL custom-format dump before running `db:migrate`, passing connection details through `PG*` environment variables (`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, and `PGSSLMODE` when present) so the database password never appears in any process's arguments:
 
 ```sh
-pg_dump -Fc --no-owner -f "$SOUS_BACKUP_DIR/sous-<sha short>-<UTC timestamp>.dump"
+pg_dump -Fc --no-owner -n public -n drizzle -f "$SOUS_BACKUP_DIR/sous-<sha short>-<UTC timestamp>.dump"
 ```
 
+The backup covers the `public` and `drizzle` schemas only (the app's tables and its migration record). Anything an operator adds outside those two schemas is not in it. Scope is limited to these two schemas because a managed PostgreSQL host keeps its own schemas in the same database, and those schemas may not be readable by the deploy role. The app's tables enable row-level security without `FORCE` and without policies, so the role that owns them (the role in `DATABASE_URL`) still dumps every row.
+
 If `pg_dump` fails or writes an empty file, the deploy stops before running any migration. If `db:migrate` fails after the backup succeeds, `scripts/deploy.sh` prints the backup file's path, reminds you to restore it into a scratch database first, and exits with status 1 without staging.
+
+The `DATABASE_URL` in `SOUS_DEPLOY_ENV_FILE` must use a direct connection or a connection pooler in session mode, never a transaction-mode pooler, because `pg_dump` and Drizzle migrations rely on session state. Include the host's TLS parameter (for example `sslmode=require`) when the host requires TLS. The local `pg_dump` binary's major version must also be the same as or newer than the database server's major version, or `pg_dump` will refuse to dump the database.
 
 Dumps in `SOUS_BACKUP_DIR` are full plaintext copies of user data. Keep the directory private (mode `700`) and delete old dumps once they are no longer needed.
 
 Restoring a dump requires a PostgreSQL server you can reach (a local PostgreSQL server or a scratch database created at your database host). Always restore into a **scratch database** first and check its contents before touching production:
 
 ```sh
-pg_restore --no-owner --no-privileges -d "<scratch-database-url-or-name>" "$SOUS_BACKUP_DIR/sous-<sha short>-<UTC timestamp>.dump"
+pg_restore --clean --if-exists --no-owner --no-privileges -d "<scratch-database-url-or-name>" "$SOUS_BACKUP_DIR/sous-<sha short>-<UTC timestamp>.dump"
 ```
+
+Because the dump selects `-n public`, it includes `CREATE SCHEMA public;`, which already exists in a fresh PostgreSQL database. `--clean --if-exists` drops and recreates the empty `public` schema so `pg_restore` exits 0; if the target host does not allow dropping `public`, omit `--clean --if-exists` and expect a single `schema "public" already exists` error from `pg_restore` while the `public` and `drizzle` objects and rows still restore.
 
 After verifying the scratch copy, recover production by restoring the dump into a **new database** at the host and pointing the app's `DATABASE_URL` at that new database (keeping the damaged database intact for inspection), or by using the host's own point-in-time recovery if it provides one. Never run `pg_restore` over the live database.
 
@@ -161,3 +187,4 @@ Releases are numbered sequentially in `${SOUS_RELEASE_STATE_DIR:-$HOME/.local/st
 - **macOS required for screenshots:** Visual screenshot checks only run on macOS. On any other operating system, `scripts/release-check.sh` stops with a plain message and records no pass.
 - **Running a release check beside another copy of the browser suite:** By default, the browser test harness uses app port `4131` (`E2E_APP_PORT`), PostgreSQL port `55731` (`E2E_PG_PORT`), and Docker container `rails-pg` (`E2E_PG_CONTAINER`). Setting those three environment variables lets `scripts/release-check.sh` run beside another release check or copy of the browser suite, as long as two concurrent copies do not share any of the three values.
 - **Hosting commands not yet run against a live project:** The hosting CLI invocations (`deploy --prod --skip-domain --yes --build-env ...`, `promote`, and `rollback`) follow the host's documented command line, but they have not been exercised against a real hosted project yet. Watch the first real deploy step by step and verify each command's output.
+- **First deployment and `--skip-domain` on Vercel:** A project's very first deployment on Vercel is always a production deployment, and it is not documented whether `--skip-domain` holds for that first one. If the host assigns the live domain during staging and the `promote` step then fails, `scripts/deploy.sh` exits with status 1 saying that promote failed and its outcome is unknown, without writing to `releases.log`. To recover, run `scripts/deploy.sh` again with the same `--first-release` number and commit: `releases.log` is still empty so `--first-release` is still accepted, the live `/api/version` check sees the target commit (which passes the ancestry check against itself and yields no pending migrations), and the run stages a fresh copy, verifies and smokes it, promotes it, verifies and smokes the live URL, and records the release in `releases.log`.

@@ -9,6 +9,21 @@ import {
 const FULL_COMMIT_RE = /^[0-9a-f]{40}$/;
 const READ_ONLY_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD"]);
 
+type ExpectedSignInMode = "on" | "off";
+
+function readExpectedSignInMode(): ExpectedSignInMode {
+  const raw = process.env.SMOKE_EXPECT_SIGN_IN;
+  if (raw === "on" || raw === "off") {
+    return raw;
+  }
+  const detail = raw === undefined ? "unset" : JSON.stringify(raw);
+  throw new Error(
+    `SMOKE_EXPECT_SIGN_IN is required and must be "on" or "off" (got ${detail}).`,
+  );
+}
+
+const expectedSignIn = readExpectedSignInMode();
+
 /**
  * Playwright's `serviceWorkers: "block"` stubs navigator.serviceWorker.register
  * to resolve to undefined, so ServiceWorkerRegistration.tsx logs this error on
@@ -120,66 +135,114 @@ test.describe("Deployed copy smoke check", () => {
     }
   });
 
-  test("SMOKE-2: /kitchen loads cleanly without 5xx responses, console errors, or write requests", async ({
-    page,
-  }) => {
-    const guards = attachSmokeGuards(page);
-    try {
-      const response = await page.goto("/kitchen");
-      expect(
-        response,
-        "Expected a navigation response for /kitchen",
-      ).not.toBeNull();
-      expect(response!.status()).toBeLessThan(400);
+  if (expectedSignIn === "off") {
+    test("SMOKE-2: /kitchen loads cleanly in single-kitchen mode without redirecting, 5xx responses, console errors, or write requests", async ({
+      page,
+    }) => {
+      const guards = attachSmokeGuards(page);
+      try {
+        const response = await page.goto("/kitchen");
+        expect(
+          response,
+          "Expected a navigation response for /kitchen",
+        ).not.toBeNull();
+        expect(response!.status()).toBeLessThan(400);
 
-      // KitchenHome renders a level-1 landmark heading ("Kitchen") and, once
-      // the read-only tRPC queries settle, a visible level-2 subject heading.
-      await expect(
-        page.getByRole("heading", { level: 1, name: "Kitchen" }),
-      ).toBeAttached();
-      await expect(
-        page.locator("[data-subject]").getByRole("heading", { level: 2 }).first(),
-      ).toBeVisible();
+        const finalPath = new URL(page.url()).pathname;
+        expect(
+          finalPath,
+          `Expected /kitchen not to redirect in single-kitchen mode (SMOKE_EXPECT_SIGN_IN="off"), but landed on ${finalPath}`,
+        ).toBe("/kitchen");
 
-      guards.assertClean();
-    } finally {
-      guards.detach();
-    }
-  });
+        // KitchenHome renders a level-1 landmark heading ("Kitchen") and, once
+        // the read-only tRPC queries settle, a visible level-2 subject heading.
+        await expect(
+          page.getByRole("heading", { level: 1, name: "Kitchen" }),
+        ).toBeAttached();
+        await expect(
+          page
+            .locator("[data-subject]")
+            .getByRole("heading", { level: 2 })
+            .first(),
+        ).toBeVisible();
 
-  test("SMOKE-3: /kitchen/cookpacks shows at least one book and opens its page without write requests", async ({
-    page,
-  }) => {
-    const guards = attachSmokeGuards(page);
-    try {
-      const response = await page.goto("/kitchen/cookpacks");
-      expect(
-        response,
-        "Expected a navigation response for /kitchen/cookpacks",
-      ).not.toBeNull();
-      expect(response!.status()).toBeLessThan(400);
+        guards.assertClean();
+      } finally {
+        guards.detach();
+      }
+    });
 
-      await expect(
-        page.getByRole("heading", { level: 1, name: "Cookpacks" }),
-      ).toBeVisible();
+    test("SMOKE-3: /kitchen/cookpacks shows at least one book and opens its page without write requests", async ({
+      page,
+    }) => {
+      const guards = attachSmokeGuards(page);
+      try {
+        const response = await page.goto("/kitchen/cookpacks");
+        expect(
+          response,
+          "Expected a navigation response for /kitchen/cookpacks",
+        ).not.toBeNull();
+        expect(response!.status()).toBeLessThan(400);
 
-      const bookLinks = page.locator(
-        '[data-shelf] a[href^="/kitchen/cookpacks/"]',
-      );
-      await expect(bookLinks.first()).toBeVisible();
-      expect(await bookLinks.count()).toBeGreaterThanOrEqual(1);
+        await expect(
+          page.getByRole("heading", { level: 1, name: "Cookpacks" }),
+        ).toBeVisible();
 
-      await bookLinks.first().click();
+        const bookLinks = page.locator(
+          '[data-shelf] a[href^="/kitchen/cookpacks/"]',
+        );
+        await expect(bookLinks.first()).toBeVisible();
+        expect(await bookLinks.count()).toBeGreaterThanOrEqual(1);
 
-      await expect(page).toHaveURL(/\/kitchen\/cookpacks\/.+/);
-      await expect(page.locator("[data-pack-view]")).toBeVisible();
-      await expect(
-        page.locator("[data-running-head]").getByRole("heading", { level: 2 }),
-      ).toBeVisible();
+        await bookLinks.first().click();
 
-      guards.assertClean();
-    } finally {
-      guards.detach();
-    }
-  });
+        await expect(page).toHaveURL(/\/kitchen\/cookpacks\/.+/);
+        await expect(page.locator("[data-pack-view]")).toBeVisible();
+        await expect(
+          page
+            .locator("[data-running-head]")
+            .getByRole("heading", { level: 2 }),
+        ).toBeVisible();
+
+        guards.assertClean();
+      } finally {
+        guards.detach();
+      }
+    });
+  } else {
+    test("SMOKE-2: /kitchen redirects to /sign-in cleanly without 5xx responses, console errors, or write requests", async ({
+      page,
+    }) => {
+      const guards = attachSmokeGuards(page);
+      try {
+        const response = await page.goto("/kitchen");
+        expect(
+          response,
+          "Expected a navigation response for /kitchen",
+        ).not.toBeNull();
+        expect(response!.status()).toBeLessThan(400);
+
+        const finalPath = new URL(page.url()).pathname;
+        expect(
+          finalPath,
+          `Expected /kitchen to redirect to /sign-in in sign-in mode (SMOKE_EXPECT_SIGN_IN="on"), but landed on ${finalPath}`,
+        ).toBe("/sign-in");
+
+        await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+        const signInButton = page.getByRole("button", {
+          name: "Sign in with Google",
+        });
+        await expect(signInButton).toBeVisible();
+        await expect(signInButton).toBeEnabled();
+
+        guards.assertClean();
+      } finally {
+        guards.detach();
+      }
+    });
+
+    test("SMOKE-3: /kitchen/cookpacks is skipped in sign-in mode (kitchen pages require a session)", () => {
+      test.skip(true, "Kitchen pages require a session in sign-in mode.");
+    });
+  }
 });
