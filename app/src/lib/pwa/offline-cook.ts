@@ -1,3 +1,5 @@
+import { CLIP_NAMES, clipUrl } from "@/lib/kitchen/ack-clips";
+
 /**
  * What a cook page asks of the service worker (slice B5b, E4): keep this page
  * and the files it already loaded, so a reload with no connection still draws
@@ -24,7 +26,11 @@ export function filesToKeep(
       continue;
     }
     if (url.origin !== origin) continue;
-    if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/fonts/")) {
+    if (
+      url.pathname.startsWith("/_next/static/") ||
+      url.pathname.startsWith("/fonts/") ||
+      url.pathname.startsWith("/sounds/")
+    ) {
       url.hash = "";
       keep.add(url.href);
     }
@@ -81,7 +87,10 @@ export function keepCookOffline(): void {
     .filter((l) => /\b(stylesheet|preload|modulepreload)\b/.test(l.rel))
     .map((l) => l.href);
   const timed = performance.getEntriesByType("resource").map((entry) => entry.name);
-  const loaded = [...elements, ...links, ...declaredFonts(), ...timed];
+  // Sue's confirmation clips are fetched only when the setting says voice, so
+  // no timing may name them; the worker keeps them anyway, so choosing voice
+  // with no connection still has them.
+  const loaded = [...elements, ...links, ...declaredFonts(), ...timed, ...CLIP_NAMES.map(clipUrl)];
   const urls = filesToKeep(window.location.href, loaded, window.location.origin);
   navigator.serviceWorker.ready.then(
     (registration) => registration.active?.postMessage({ type: "CACHE_URLS", urls }),

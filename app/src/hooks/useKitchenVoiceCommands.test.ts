@@ -10,6 +10,7 @@ import {
 } from "@/lib/kitchen/tap-listen";
 import { ARM_WINDOW_MS, type VoiceCommand } from "@/lib/kitchen/wake-word";
 import { FakeSpeechRecognition } from "./testing/fakeSpeechRecognition";
+import { sueAck } from "./testing/sueAck";
 import {
   ECHO_MS,
   MAX_FAILURES,
@@ -40,6 +41,8 @@ function listen(options: Partial<UseKitchenVoiceCommandsOptions> = {}) {
     useKitchenVoiceCommands({
       enabled: true,
       onCommand: (c) => void commands.push(c),
+      // Sue's sounds on a fake context, so the browser's absence isn't logged on every test.
+      acknowledger: sueAck().ack,
       ...props,
     }),
     { initialProps: options },

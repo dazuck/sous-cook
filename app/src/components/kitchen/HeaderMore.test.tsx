@@ -24,9 +24,18 @@ beforeEach(() => {
     { id: "c", recipeData: null, recipeNotionId: "notion-c" },
   ];
   useQuery.mockClear();
+  // The device's storage, fresh for each test. Node's own global localStorage
+  // has no methods without a backing file, so a plain store stands in.
+  const kept = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (k: string) => kept.get(k) ?? null,
+    setItem: (k: string, v: string) => void kept.set(k, v),
+    removeItem: (k: string) => void kept.delete(k),
+  });
 });
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 /**
@@ -93,14 +102,31 @@ describe("HeaderMore", () => {
     const m = within(open);
     expect(m.getAllByRole("button").map((b) => b.textContent)).toEqual([
       MORE_COPY.info,
+      MORE_COPY.sueReplies("sounds"),
     ]);
     expect(m.getByRole("button", { name: MORE_COPY.info })).toBeTruthy();
-    expect(m.getByRole("heading", { name: MORE_COPY.inProgress(2) })).toBeTruthy();
-    // The recipe on screen is left out; one with no name falls back to its id.
+    expect(m.getByRole("heading", { name: MORE_COPY.inProgress(1) })).toBeTruthy();
+    // The recipe on screen is left out; the most recent other is listed.
     expect(m.queryByRole("link", { name: "Dal" })).toBeNull();
     expect(m.getByRole("link", { name: "Tacos" }).getAttribute("href")).toBe("/kitchen/queue/b");
-    expect(m.getByRole("link", { name: "notion-c" }).getAttribute("href")).toBe("/kitchen/queue/c");
+    expect(m.queryByRole("link", { name: "notion-c" })).toBeNull();
     expect(m.getByRole("link", { name: MORE_COPY.exit }).getAttribute("href")).toBe("/kitchen");
+  });
+
+  it("lists only the most recent other cook, so the menu with Sue's replies stays clear of the foot", () => {
+    inProgress = [
+      { id: "a", recipeData: { name: "Dal" } },
+      { id: "b", recipeData: { name: "Tacos" } },
+      { id: "c", recipeData: { name: "Stew" } },
+      { id: "d", recipeData: { name: "Curry" } },
+    ];
+    render(<More onShowInfo={() => {}} currentItemId="a" />);
+    fireEvent.click(button());
+    const m = within(menu()!);
+    expect(m.getByRole("heading", { name: MORE_COPY.inProgress(1) })).toBeTruthy();
+    expect(m.getByRole("link", { name: "Tacos" })).toBeTruthy();
+    expect(m.queryByRole("link", { name: "Stew" })).toBeNull();
+    expect(m.queryByRole("link", { name: "Curry" })).toBeNull();
   });
 
   it("a choice closes it, then does what it says", () => {
@@ -569,5 +595,37 @@ describe("the flag's note", () => {
     await flagIt();
     expect(note()).toBeNull();
     expect(screen.getByRole("button", { name: MORE_COPY.notKept })).toBeTruthy();
+  });
+});
+
+describe("Sue's replies", () => {
+  const row = (setting: "off" | "sounds" | "voice") => screen.queryByRole("button", { name: MORE_COPY.sueReplies(setting) });
+
+  it("says the device's setting, sounds until the cook chooses, in plain words", () => {
+    render(<More />);
+    fireEvent.click(button());
+    expect(row("sounds")?.textContent).toBe("Sue's replies: Sounds");
+  });
+
+  it("a press turns to the next setting and the menu stays open to show it, round to where it began", () => {
+    render(<More />);
+    fireEvent.click(button());
+    fireEvent.click(row("sounds")!);
+    expect(row("voice")?.textContent).toBe("Sue's replies: Sounds and voice");
+    expect(menu()).not.toBeNull();
+    fireEvent.click(row("voice")!);
+    expect(row("off")?.textContent).toBe("Sue's replies: Off");
+    fireEvent.click(row("off")!);
+    expect(row("sounds")).not.toBeNull();
+  });
+
+  it("is kept on the device: a menu opened again reads it back", () => {
+    render(<More />);
+    fireEvent.click(button());
+    fireEvent.click(row("sounds")!);
+    fireEvent.click(button());
+    fireEvent.click(button());
+    expect(row("voice")).not.toBeNull();
+    expect(localStorage.getItem("sous-sue-replies")).toBe("voice");
   });
 });

@@ -65,3 +65,46 @@ export function setVoiceEnabled(on: boolean): void {
     console.warn("Could not remember the voice setting:", err);
   }
 }
+
+/**
+ * Sue's replies, per device (DESIGN_SYSTEM §4, "Sue acknowledges"): what she
+ * answers a spoken command with. `off` is silence, `sounds` a soft sound for
+ * a command understood and a lower one for one that wasn't, `voice` those and
+ * a rare spoken confirmation on top. A device that never chose has `sounds`.
+ */
+export type SueReplies = "off" | "sounds" | "voice";
+export const SUE_REPLIES_KEY = "sous-sue-replies";
+export const DEFAULT_SUE_REPLIES: SueReplies = "sounds";
+/** Fired on the window when this page changes the setting, so every reader of it follows. */
+export const SUE_REPLIES_EVENT = "sous-sue-replies-changed";
+
+export function isSueReplies(value: unknown): value is SueReplies {
+  return value === "off" || value === "sounds" || value === "voice";
+}
+
+/** The setting a press moves to: sounds, then voice, then off, then sounds again. */
+export function nextSueReplies(now: SueReplies): SueReplies {
+  return now === "sounds" ? "voice" : now === "voice" ? "off" : "sounds";
+}
+
+export function getSueReplies(): SueReplies {
+  try {
+    const store = safeLocalStorage();
+    if (!store) return DEFAULT_SUE_REPLIES;
+    const value = store.getItem(SUE_REPLIES_KEY);
+    return isSueReplies(value) ? value : DEFAULT_SUE_REPLIES;
+  } catch {
+    return DEFAULT_SUE_REPLIES;
+  }
+}
+
+export function setSueReplies(mode: SueReplies): void {
+  try {
+    const store = safeLocalStorage();
+    if (store) store.setItem(SUE_REPLIES_KEY, mode);
+    else localStorage.setItem(SUE_REPLIES_KEY, mode);
+  } catch (err) {
+    console.warn("Could not remember Sue's replies setting:", err);
+  }
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(SUE_REPLIES_EVENT));
+}

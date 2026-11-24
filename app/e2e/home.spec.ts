@@ -77,7 +77,7 @@ test.describe("Kitchen home", () => {
 
     // On the opening screen RecipeHeader is inert/invisible (CookScreen.tsx:1086);
     // the cook screen's exit control is More -> Exit cooking
-    // (app/src/components/kitchen/CookSheet.tsx:1462; app/src/components/kitchen/HeaderMore.tsx:13, 40, 136, 205-207)
+    // (app/src/components/kitchen/CookSheet.tsx:1462; app/src/components/kitchen/HeaderMore.tsx:31, 64, 161, 237-239)
     await page.locator("[data-sheet-more]").getByRole("button", { name: "More" }).click();
     await page.getByRole("link", { name: "Exit cooking" }).click();
 

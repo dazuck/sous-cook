@@ -12,12 +12,28 @@ const KEEP_URL = "/_next/static/chunks/never-arrives.js";
 interface Scope {
   message: (data: unknown) => Promise<void>;
   fetchSignals: AbortSignal[];
+  /** The paths the worker fetched to keep, in order. */
+  fetched: string[];
+  /** The paths it kept. */
+  kept: () => string[];
 }
 
-/** Loads the worker; `timeoutApi` false leaves AbortSignal without `timeout`. */
-function loadWorker({ timeoutApi }: { timeoutApi: boolean }): Scope {
+/**
+ * Loads the worker; `timeoutApi` false leaves AbortSignal without `timeout`. With `answers`, the
+ * server answers each fetch, with a 404 for the paths in `missing`.
+ */
+function loadWorker({
+  timeoutApi,
+  answers = false,
+  missing = [],
+}: {
+  timeoutApi: boolean;
+  answers?: boolean;
+  missing?: string[];
+}): Scope {
   const listeners: Record<string, (event: unknown) => void> = {};
   const fetchSignals: AbortSignal[] = [];
+  const fetched: string[] = [];
   const stored = new Map<string, Response>();
   const cache = {
     match: async (r: Request) => stored.get(r.url),
@@ -47,8 +63,15 @@ function loadWorker({ timeoutApi }: { timeoutApi: boolean }): Scope {
     setTimeout,
     console,
     caches: { open: async () => cache, keys: async () => [] },
-    fetch: (_request: Request, init: { signal: AbortSignal }) => {
+    fetch: (request: Request, init: { signal: AbortSignal }) => {
       fetchSignals.push(init.signal);
+      const path = new URL(request.url).pathname;
+      fetched.push(path);
+      // A server that answers: a plain, same-origin file, or its 404.
+      if (answers) {
+        const ok = !missing.includes(path);
+        return Promise.resolve({ ok, status: ok ? 200 : 404, type: "basic", redirected: false } as unknown as Response);
+      }
       // A server that never answers: only the signal ends it.
       return new Promise<Response>((_resolve, reject) =>
         init.signal.addEventListener("abort", () => reject(init.signal.reason)),
@@ -58,6 +81,8 @@ function loadWorker({ timeoutApi }: { timeoutApi: boolean }): Scope {
   vm.runInNewContext(SOURCE, sandbox);
   return {
     fetchSignals,
+    fetched,
+    kept: () => [...stored.keys()].map((u) => new URL(u).pathname),
     message: async (data) => {
       const waits: Promise<unknown>[] = [];
       listeners.message({ data, waitUntil: (p: Promise<unknown>) => waits.push(p) });
@@ -94,5 +119,23 @@ describe.each([
     // Said, not swallowed.
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toContain(KEEP_URL);
+  });
+});
+
+describe("keeping Sue's clips", () => {
+  it("fetches a clip under /sounds/ to keep it, and still refuses the API and other folders", async () => {
+    const scope = loadWorker({ timeoutApi: true, answers: true });
+    await scope.message({
+      type: "CACHE_URLS",
+      urls: ["/sounds/sue/flagged.mp3", "/api/trpc/x", "/private/sue.mp3"],
+    });
+    expect(scope.fetched).toEqual(["/sounds/sue/flagged.mp3"]);
+  });
+
+  it("keeps no clip the server doesn't have (the repository ships none), and still keeps the rest", async () => {
+    const scope = loadWorker({ timeoutApi: true, answers: true, missing: ["/sounds/sue/flagged.mp3"] });
+    await scope.message({ type: "CACHE_URLS", urls: ["/sounds/sue/flagged.mp3", "/sounds/sue/on-it.mp3"] });
+    expect(scope.fetched).toEqual(["/sounds/sue/flagged.mp3", "/sounds/sue/on-it.mp3"]);
+    expect(scope.kept()).toEqual(["/sounds/sue/on-it.mp3"]);
   });
 });

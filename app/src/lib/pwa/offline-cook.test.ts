@@ -37,6 +37,13 @@ describe("filesToKeep", () => {
     ]);
   });
 
+  it("keeps Sue's clips, which no timing names until the setting says voice", () => {
+    expect(filesToKeep(`${ORIGIN}/kitchen/queue/abc`, [`${ORIGIN}/sounds/sue/flagged.mp3`], ORIGIN)).toEqual([
+      `${ORIGIN}/kitchen/queue/abc`,
+      `${ORIGIN}/sounds/sue/flagged.mp3`,
+    ]);
+  });
+
   it("leaves out the API, other origins, other paths and junk", () => {
     expect(
       filesToKeep(`${ORIGIN}/kitchen/queue/abc`, [

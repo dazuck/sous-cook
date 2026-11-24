@@ -19,11 +19,11 @@
 //   cache.
 // - Navigations to /kitchen and /kitchen/queue/* are network-first, with the
 //   kept page when the network fails. The hashed build files
-//   (/_next/static/*) are cache-first; the fixed-name ones (/fonts/*, the
-//   manifest and icon) are network-first, so a deploy that changes them is
-//   seen at once. /api/* and everything else goes straight to the network,
-//   never kept: the active cook offline is drawn from the session the page
-//   keeps, not from a kept tRPC answer.
+//   (/_next/static/*) are cache-first; the fixed-name ones (/fonts/*, Sue's
+//   confirmation clips in /sounds/*, the manifest and icon) are network-first,
+//   so a deploy that changes them is seen at once. /api/* and everything
+//   else goes straight to the network, never kept: the active cook offline
+//   is drawn from the session the page keeps, not from a kept tRPC answer.
 // - A cook page asks the worker to keep its own URL and the files it already
 //   loaded (CACHE_URLS): a cook opened from the kitchen is a client-side
 //   navigation, so its HTML never passed through here.
@@ -124,6 +124,7 @@ function isHashedFile(url) {
 function isFixedNameFile(url) {
   return (
     url.pathname.startsWith("/fonts/") ||
+    url.pathname.startsWith("/sounds/") ||
     url.pathname === "/manifest.json" ||
     url.pathname === "/icon-192.png" ||
     url.pathname === "/icon-512.png" ||

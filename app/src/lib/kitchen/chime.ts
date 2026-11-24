@@ -9,6 +9,8 @@
  * saying so.
  */
 
+import { sharedAudioContext } from "./audio-context";
+
 export interface Chime {
   /** Call from a user gesture. Safe to call repeatedly. */
   unlock: () => void;
@@ -24,8 +26,7 @@ type AudioContextLike = Pick<
 >;
 
 export function createChime(
-  makeContext: () => AudioContextLike | null = () =>
-    typeof AudioContext === "undefined" ? null : new AudioContext(),
+  makeContext: () => AudioContextLike | null = sharedAudioContext,
 ): Chime {
   let context: AudioContextLike | null = null;
   return {

@@ -3,9 +3,27 @@
 import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import Link from "next/link";
 import type { FlagAck, FlagNoteProps } from "@/hooks/useCookFlag";
+import { useSueReplies } from "@/hooks/useSueReplies";
+import { nextSueReplies, setSueReplies, type SueReplies } from "@/lib/kitchen/cook-prefs";
 import { dishName } from "@/lib/kitchen/dish-name";
 import { trpc } from "@/lib/trpc";
 import { MENU_PANEL, MENU_ROW, useMenuDismiss } from "./CookMenu";
+
+/**
+ * The other cooks the menu lists. It was three (two on the seeded kitchen
+ * fitting just clear of the foot) until Sue's replies took a row: the menu's
+ * rows (flag, recipe info, Sue's replies, the cooks, Exit) must stay clear of
+ * the cook screen's foot, which covers anything below it, at 1280 x 800 and 800 x 1280,
+ * where a row is 107 px. With the row the menu has room for one other cook,
+ * the most recent.
+ */
+const MAX_OTHERS = 1;
+
+const SUE_REPLIES_LABEL: Record<SueReplies, string> = {
+  off: "Off",
+  sounds: "Sounds",
+  voice: "Sounds and voice",
+};
 
 /** Placeholder copy for the header's More menu. */
 export const MORE_COPY = {
@@ -35,6 +53,12 @@ export const MORE_COPY = {
   saveNote: "Save note",
   closeNote: "Close",
   info: "Recipe info",
+  /**
+   * Sue's replies to what is said to her, per device (DS §4): a row that
+   * says the setting and turns to the next on a press, the menu staying open
+   * so the new one shows.
+   */
+  sueReplies: (setting: SueReplies) => `Sue's replies: ${SUE_REPLIES_LABEL[setting]}`,
   inProgress: (n: number) => `Also cooking (${n})`,
   exit: "Exit cooking",
 } as const;
@@ -104,7 +128,8 @@ export function HeaderMore({
     { limit: 5 },
     { enabled: asks },
   );
-  const others = asks ? (recent ?? []).filter((item) => item.id !== currentItemId).slice(0, 3) : [];
+  const others = asks ? (recent ?? []).filter((item) => item.id !== currentItemId).slice(0, MAX_OTHERS) : [];
+  const sueReplies = useSueReplies();
 
   return (
     <div ref={root} data-more-cell className="flex shrink-0">
@@ -161,7 +186,7 @@ export function HeaderMore({
           data-holds-keys
           data-capture-omit
           {...panelFocus}
-          className={`${MENU_PANEL} ${others.length >= 3 ? "!py-0" : ""} w-[calc(320*var(--cpx))] max-w-[calc(100vw-2*var(--edge))]`}
+          className={`${MENU_PANEL} ${others.length >= MAX_OTHERS ? "!py-0" : ""} w-[calc(320*var(--cpx))] max-w-[calc(100vw-2*var(--edge))]`}
         >
           <ul>
             {onFlag && (
@@ -178,10 +203,17 @@ export function HeaderMore({
                 </button>
               </li>
             )}
+            <li>
+              {/* Not `choose`: the press changes the row's own words, so the
+                  menu stays open to show it. */}
+              <button type="button" onClick={() => setSueReplies(nextSueReplies(sueReplies))} className={MENU_ROW}>
+                {MORE_COPY.sueReplies(sueReplies)}
+              </button>
+            </li>
             {others.length > 0 && (
               <li>
                 <h2
-                  className={`px-[calc(20*var(--cpx))] ${others.length >= 3 ? "pt-0.5 pb-0 leading-none" : "pt-4 pb-1"} text-[length:var(--type-meta)] font-semibold text-ink-soft`}
+                  className={`px-[calc(20*var(--cpx))] ${others.length >= MAX_OTHERS ? "pt-0.5 pb-0 leading-none" : "pt-4 pb-1"} text-[length:var(--type-meta)] font-semibold text-ink-soft`}
                 >
                   {MORE_COPY.inProgress(others.length)}
                 </h2>

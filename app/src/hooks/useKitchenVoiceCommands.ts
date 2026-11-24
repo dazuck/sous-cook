@@ -9,6 +9,8 @@ import {
   type VoiceCommand,
   type WakeState,
 } from "@/lib/kitchen/wake-word";
+import { createAckAudio } from "@/lib/kitchen/ack-audio";
+import { getSueReplies } from "@/lib/kitchen/cook-prefs";
 import { recordListen, recordVoice } from "@/lib/kitchen/report-events";
 import {
   FIRST_WORDS_MS,
@@ -19,9 +21,11 @@ import {
   type Heard,
   type ListenEnding,
 } from "@/lib/kitchen/tap-listen";
+import { createAcknowledger, type Acknowledger } from "@/lib/kitchen/voice-ack";
 import { voiceModeFor, type VoiceMode } from "@/lib/kitchen/voice-mode";
 import { normalizeUtterance } from "@/lib/kitchen/wake-word";
 import { useSpeechRecognition } from "./useSpeechRecognition";
+import { useSueReplies } from "./useSueReplies";
 
 /**
  * Where voice stands, as the indicator dot shows it.
@@ -127,6 +131,12 @@ export interface UseKitchenVoiceCommandsOptions {
    * long enough to ask (`hearTapped`), for Ask. Read through a ref too.
    */
   onQuestion?: (text: string) => void;
+  /**
+   * How Sue answers what was heard, with sounds and a rare spoken
+   * confirmation (`lib/kitchen/voice-ack.ts`). Left out, the page's own,
+   * following the device's setting; a test hands one in over a fake context.
+   */
+  acknowledger?: Acknowledger;
 }
 
 export interface UseKitchenVoiceCommandsReturn {
@@ -164,14 +174,37 @@ export function useKitchenVoiceCommands({
   paused = false,
   onCommand,
   onQuestion,
+  acknowledger,
 }: UseKitchenVoiceCommandsOptions): UseKitchenVoiceCommandsReturn {
   const [halted, setHalted] = useState<"blocked" | "stalled" | null>(null);
   const [echo, setEcho] = useState<VoiceEcho | null>(null);
+  // Sue's answer to what is heard, one per cook page: its count of spoken
+  // confirmations is the cook's, and starts over when the page does.
+  const [ack] = useState(
+    () => acknowledger ?? createAcknowledger({ audio: createAckAudio(), mode: getSueReplies, random: () => Math.random() }),
+  );
   // Each echo joins the flag's event log (B2) as it shows, before any command
-  // it carries acts, so a report reads the voice ahead of the move.
+  // it carries acts, so a report reads the voice ahead of the move. It is also
+  // the one place what was heard becomes a sound: a command's own result
+  // (`carryOut`) says its sound, so the echo of the command itself says none.
   const show = (shown: VoiceEcho) => {
     recordVoice(shown);
     setEcho(shown);
+    switch (shown.kind) {
+      case "asked":
+        ack.asked();
+        break;
+      case "unknown":
+      case "near-miss":
+      case "reply":
+      case "silence":
+      case "trouble":
+        ack.notUnderstood();
+        break;
+      case "armed":
+      case "command":
+        break;
+    }
   };
   const [mode, setMode] = useState<VoiceMode | null>(null);
   const [hearing, setHearing] = useState(false);
@@ -217,6 +250,8 @@ export function useKitchenVoiceCommands({
     armListen: () => {},
     closeListen: (_ending: ListenEnding | "command") => {},
     stopTaking: () => {},
+    carryOut: (_command: VoiceCommand, _heard: string, _declined: () => void) => {},
+    show: (_shown: VoiceEcho) => {},
   });
 
   const clearRestart = () => {
@@ -243,6 +278,9 @@ export function useKitchenVoiceCommands({
       const settled = now.final && !l.heard.final;
       l.heard = now;
       if (!changed && !settled) return;
+      // The words already say a whole command: Sue's sound goes now, ahead of
+      // the quiet that ends the listen and of the action (`voice-ack.ts`).
+      if (hearTapped(now.text).kind === "command") ack.heardCommand();
       clearClock("firstWords");
       const quiet = quietToEnd(now);
       if (quiet === 0) {
@@ -264,10 +302,8 @@ export function useKitchenVoiceCommands({
       if (outcome.kind === "ignore") return;
       show(outcome);
       if (outcome.kind === "command") {
-        const reply = live.current.onCommand(outcome.command, outcome.heard);
         // No command here: echoed as a try that wasn't caught, as before.
-        if (reply === false) show({ kind: "unknown", heard: outcome.heard });
-        else if (typeof reply === "string") show({ kind: "reply", heard: outcome.heard, text: reply });
+        tapActs.current.carryOut(outcome.command, outcome.heard, () => show({ kind: "unknown", heard: outcome.heard }));
       }
     },
     // Chrome aborted a session we didn't stop (on Android, most likely a
@@ -384,6 +420,7 @@ export function useKitchenVoiceCommands({
    */
   function openListen() {
     stopTaking();
+    ack.listenStarted();
     const l = listen.current;
     l.startedAt = clock();
     l.heard = NOTHING_HEARD;
@@ -421,6 +458,18 @@ export function useKitchenVoiceCommands({
     else show({ kind: "silence" });
   }
 
+  /**
+   * A command said to Sous, acted on: its reply (a refusal) is shown, a
+   * `false` (no command here) goes to `declined`, and one carried out is told
+   * to Sue, whose sound and rare spoken confirmation follow it.
+   */
+  function carryOut(command: VoiceCommand, heard: string, declined: () => void) {
+    const reply = live.current.onCommand(command, heard);
+    if (reply === false) declined();
+    else if (typeof reply === "string") show({ kind: "reply", heard, text: reply });
+    else ack.commandDone(command, heard);
+  }
+
   /** What a tap's listen heard, as one command or one question for Ask; the next tap listens afresh. */
   function handOver(transcript: string) {
     const outcome = hearTapped(transcript);
@@ -437,16 +486,13 @@ export function useKitchenVoiceCommands({
     show(outcome);
     if (outcome.kind !== "command") return;
     // A command's own answer takes the echo's place.
-    const reply = live.current.onCommand(outcome.command, outcome.heard);
-    if (reply === false) {
+    carryOut(outcome.command, outcome.heard, () => {
       const asWords = hearTapped(transcript, false);
       if (asWords.kind === "question") {
         show({ kind: "asked", text: asWords.text });
         live.current.onQuestion?.(asWords.text);
       } else if (asWords.kind !== "ignore") show(asWords);
-      return;
-    }
-    if (typeof reply === "string") show({ kind: "reply", heard: outcome.heard, text: reply });
+    });
   }
 
   function restartLater() {
@@ -484,6 +530,13 @@ export function useKitchenVoiceCommands({
     setMode(voiceModeFor(navigator.userAgent, navigator.maxTouchPoints));
   }, []);
 
+  // Sue's recorded confirmations are fetched and decoded once, when the
+  // setting says voice, so the first one is ready when it is earned.
+  const sueReplies = useSueReplies();
+  useEffect(() => {
+    if (sueReplies === "voice") ack.warm();
+  }, [sueReplies, ack]);
+
   const held = paused || hidden;
   const want = mode === "always" && enabled && !held && isSupported && halted === null;
 
@@ -497,7 +550,7 @@ export function useKitchenVoiceCommands({
       held,
       start: startListening,
     };
-    tapActs.current = { openListen, armListen, closeListen, stopTaking };
+    tapActs.current = { openListen, armListen, closeListen, stopTaking, carryOut, show };
   });
 
   // A hold ends a listen from a tap, and one waiting to start: nothing it

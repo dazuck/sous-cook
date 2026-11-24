@@ -111,7 +111,7 @@ test.describe("Cookpacks shelf and pack view", () => {
     page.off("request", onRequest);
 
     // Return to /kitchen via opening's More -> Exit cooking
-    // (CookSheet.tsx:1462; HeaderMore.tsx:40, 136, 205-207)
+    // (CookSheet.tsx:1462; HeaderMore.tsx:64, 161, 237-239)
     await page.locator("[data-sheet-more]").getByRole("button", { name: "More" }).click();
     await page.getByRole("link", { name: "Exit cooking" }).click();
     await expect(page).toHaveURL(/\/kitchen$/);
