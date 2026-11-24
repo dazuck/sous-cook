@@ -12,6 +12,6 @@ export default defineConfig({
     hookTimeout: 30_000,
     // Agent worktrees are full checkouts, each tested from its own root; from
     // here their "@/" imports would resolve into this checkout's src.
-    exclude: [...configDefaults.exclude, ".claude/worktrees/**"],
+    exclude: [...configDefaults.exclude, ".claude/worktrees/**", "e2e/**/*.spec.ts"],
   },
 });

@@ -50,6 +50,8 @@ SOUS_TEST_POSTGRES_URL=postgres://localhost:5432/sous_test \
 
 Put any further test that needs a real PostgreSQL database into `app/src/lib/kitchens/races.pg.test.ts`: Vitest runs separate test files concurrently, so two files sharing a test database would delete each other's rows mid-test.
 
+The Playwright browser test suite needs Docker and a Chromium browser, so it is not part of the gates above; see `docs/browser-tests.md` for prerequisites and how to run it.
+
 ## Things to leave alone unless asked
 
 - **The pack format.** `pack/` implements `design/pack-format-v0.md`, a versioned specification that pack files are written against. Don't change the schema to make a pack or a test pass. A change to one is a change to the other, made together and on purpose.

@@ -1,0 +1,1965 @@
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import http from "node:http";
+import https from "node:https";
+import type { AddressInfo } from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it } from "vitest";
+
+const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(THIS_DIR, "../..");
+const DEPLOY_SCRIPT_SRC = path.join(REPO_ROOT, "scripts/deploy.sh");
+const RELEASE_CHECK_SCRIPT_SRC = path.join(
+  REPO_ROOT,
+  "scripts/release-check.sh",
+);
+const REAL_RUN_TIMEOUT_MS = 30_000;
+
+interface VersionServer {
+  url: string;
+  port: number;
+  commitFile: string;
+  receivedHeaders: http.IncomingHttpHeaders[];
+  setCommit: (commit: string | null) => void;
+  close: () => Promise<void>;
+}
+
+function writeCommitFile(filePath: string, commit: string | null): void {
+  writeFileSync(filePath, commit === null ? "NULL\n" : `${commit}\n`, "utf8");
+}
+
+function readCommitFile(filePath: string): string | null {
+  if (!existsSync(filePath)) {
+    return null;
+  }
+  const raw = readFileSync(filePath, "utf8").trim();
+  if (!raw || raw === "NULL") {
+    return null;
+  }
+  return raw;
+}
+
+async function startVersionServer(
+  commitFile: string,
+  initialCommit: string | null,
+): Promise<VersionServer> {
+  writeCommitFile(commitFile, initialCommit);
+  const receivedHeaders: http.IncomingHttpHeaders[] = [];
+  const server = http.createServer((req, res) => {
+    if (req.url === "/api/version") {
+      receivedHeaders.push({ ...req.headers });
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ commit: readCommitFile(commitFile) }));
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+
+  const addr = server.address() as AddressInfo;
+  return {
+    url: `http://127.0.0.1:${addr.port}`,
+    port: addr.port,
+    commitFile,
+    receivedHeaders,
+    setCommit(commit: string | null) {
+      writeCommitFile(commitFile, commit);
+    },
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      }),
+  };
+}
+
+function generateSelfSignedCert(certDir: string): {
+  certPath: string;
+  keyPath: string;
+} {
+  mkdirSync(certDir, { recursive: true });
+  const keyPath = path.join(certDir, "staged.key.pem");
+  const certPath = path.join(certDir, "staged.cert.pem");
+  const cnfPath = path.join(certDir, "openssl.cnf");
+  writeFileSync(
+    cnfPath,
+    [
+      "[req]",
+      "distinguished_name = req_distinguished_name",
+      "x509_extensions = v3_req",
+      "prompt = no",
+      "[req_distinguished_name]",
+      "CN = staged.example.com",
+      "[v3_req]",
+      "subjectAltName = DNS:staged.example.com",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  execFileSync(
+    "openssl",
+    [
+      "req",
+      "-x509",
+      "-newkey",
+      "ec",
+      "-pkeyopt",
+      "ec_paramgen_curve:prime256v1",
+      "-keyout",
+      keyPath,
+      "-out",
+      certPath,
+      "-days",
+      "1",
+      "-nodes",
+      "-config",
+      cnfPath,
+    ],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  return { certPath, keyPath };
+}
+
+async function startStagedHttpsServer(
+  harness: TestHarness,
+  initialCommit: string | null,
+): Promise<VersionServer> {
+  const { certPath, keyPath } = generateSelfSignedCert(
+    path.join(harness.rootDir, "certs"),
+  );
+  writeCommitFile(harness.stagedVersionFile, initialCommit);
+  const receivedHeaders: http.IncomingHttpHeaders[] = [];
+
+  const server = https.createServer(
+    {
+      key: readFileSync(keyPath),
+      cert: readFileSync(certPath),
+    },
+    (req, res) => {
+      if (req.url === "/api/version") {
+        receivedHeaders.push({ ...req.headers });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({ commit: readCommitFile(harness.stagedVersionFile) }),
+        );
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    },
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+
+  const addr = server.address() as AddressInfo;
+  // curl reads $HOME/.curlrc; runDeploy sets HOME to harness.rootDir.
+  writeFileSync(
+    path.join(harness.rootDir, ".curlrc"),
+    [
+      `cacert = ${certPath}`,
+      `connect-to = staged.example.com:443:127.0.0.1:${addr.port}`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  return {
+    url: "https://staged.example.com",
+    port: addr.port,
+    commitFile: harness.stagedVersionFile,
+    receivedHeaders,
+    setCommit(commit: string | null) {
+      writeCommitFile(harness.stagedVersionFile, commit);
+    },
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      }),
+  };
+}
+
+function git(cwd: string, args: readonly string[]): string {
+  return execFileSync(
+    "git",
+    [
+      "-c",
+      "user.name=Test Operator",
+      "-c",
+      "user.email=operator@example.com",
+      "-c",
+      "commit.gpgsign=false",
+      ...args,
+    ],
+    { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+  ).trim();
+}
+
+interface HostMetaEntry {
+  subcmd: string;
+  pwd: string;
+  head: string;
+}
+
+interface TestHarness {
+  rootDir: string;
+  repoDir: string;
+  originDir: string;
+  stateDir: string;
+  binDir: string;
+  backupDir: string;
+  tmpDir: string;
+  callLogFile: string;
+  hostMetaLogFile: string;
+  pgDumpEnvLogFile: string;
+  liveVersionFile: string;
+  stagedVersionFile: string;
+  emptyDumpMarker: string;
+  pgDumpFailMarker: string;
+  migrateFailMarker: string;
+  smokeFailUrlMarker: string;
+  hostNoUrlMarker: string;
+  keepStagedCommitMarker: string;
+  promoteFailMarker: string;
+  promoteNoSwitchMarker: string;
+  hostLinkFile: string;
+  deployEnvFile: string;
+  passLogFile: string;
+  releasesLogFile: string;
+  lockDir: string;
+  commit1: string;
+  commit2: string;
+}
+
+function createHarness(): TestHarness {
+  const rootDir = mkdtempSync(path.join(os.tmpdir(), "sous-deploy-test-"));
+  const repoDir = path.join(rootDir, "repo");
+  const originDir = path.join(rootDir, "origin.git");
+  const stateDir = path.join(rootDir, "state");
+  const binDir = path.join(rootDir, "bin");
+  const backupDir = path.join(rootDir, "backups");
+  const tmpDir = path.join(rootDir, "tmp");
+  const callLogFile = path.join(rootDir, "calls.log");
+  const hostMetaLogFile = path.join(rootDir, "host-meta.log");
+  const pgDumpEnvLogFile = path.join(rootDir, "pg-dump-env.log");
+  const liveVersionFile = path.join(rootDir, "live-version.txt");
+  const stagedVersionFile = path.join(rootDir, "staged-version.txt");
+  const emptyDumpMarker = path.join(rootDir, "empty-dump.marker");
+  const pgDumpFailMarker = path.join(rootDir, "pg-dump-fail.marker");
+  const migrateFailMarker = path.join(rootDir, "migrate-fail.marker");
+  const smokeFailUrlMarker = path.join(rootDir, "smoke-fail-url.marker");
+  const hostNoUrlMarker = path.join(rootDir, "host-no-url.marker");
+  const keepStagedCommitMarker = path.join(rootDir, "keep-staged.marker");
+  const promoteFailMarker = path.join(rootDir, "promote-fail.marker");
+  const promoteNoSwitchMarker = path.join(rootDir, "promote-no-switch.marker");
+  const hostLinkFile = path.join(rootDir, "project.json");
+  const deployEnvFile = path.join(rootDir, "deploy.env");
+
+  mkdirSync(repoDir, { recursive: true });
+  mkdirSync(originDir, { recursive: true });
+  mkdirSync(stateDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  mkdirSync(tmpDir, { recursive: true });
+  mkdirSync(path.join(repoDir, "scripts"), { recursive: true });
+  mkdirSync(path.join(repoDir, "app/drizzle/migrations/meta"), {
+    recursive: true,
+  });
+
+  copyFileSync(DEPLOY_SCRIPT_SRC, path.join(repoDir, "scripts/deploy.sh"));
+  chmodSync(path.join(repoDir, "scripts/deploy.sh"), 0o755);
+  copyFileSync(
+    RELEASE_CHECK_SCRIPT_SRC,
+    path.join(repoDir, "scripts/release-check.sh"),
+  );
+  chmodSync(path.join(repoDir, "scripts/release-check.sh"), 0o755);
+
+  // Stand-in host CLI that logs calls, records PWD and HEAD, updates staged and
+  // live version files, and honours test failure markers.
+  const fakeHostPath = path.join(binDir, "fake-host");
+  writeFileSync(
+    fakeHostPath,
+    [
+      "#!/usr/bin/env bash",
+      "{ set +x; } 2>/dev/null",
+      "set -euo pipefail",
+      `printf 'fake-host %s\\n' "$*" >> "${callLogFile}"`,
+      'subcmd="${1:-}"',
+      'cur_pwd="$(pwd -P)"',
+      'cur_head="$(git rev-parse HEAD 2>/dev/null || printf none)"',
+      `printf '%s\\t%s\\t%s\\n' "\${subcmd}" "\${cur_pwd}" "\${cur_head}" >> "${hostMetaLogFile}"`,
+      'if [ "${subcmd}" = "deploy" ]; then',
+      '  build_commit=""',
+      '  prev=""',
+      '  for arg in "$@"; do',
+      '    if [ "${prev}" = "--build-env" ]; then',
+      '      case "${arg}" in',
+      '        SOUS_RELEASE_COMMIT=*) build_commit="${arg#SOUS_RELEASE_COMMIT=}" ;;',
+      "      esac",
+      '      prev=""',
+      '    elif [ "${arg}" = "--build-env" ]; then',
+      '      prev="--build-env"',
+      "    fi",
+      "  done",
+      `  if [ ! -e "${keepStagedCommitMarker}" ] && [ -n "\${build_commit}" ]; then`,
+      `    printf '%s\\n' "\${build_commit}" > "${stagedVersionFile}"`,
+      "  fi",
+      `  if [ -e "${hostNoUrlMarker}" ]; then`,
+      '    printf "Build finished with no deployment URL\\n"',
+      "  else",
+      '    printf "%s\\n" "https://staged.example.com"',
+      "  fi",
+      'elif [ "${subcmd}" = "promote" ]; then',
+      `  if [ -e "${promoteFailMarker}" ]; then`,
+      '    printf "simulated host promote failure\\n" >&2',
+      "    exit 1",
+      "  fi",
+      `  if [ ! -e "${promoteNoSwitchMarker}" ] && [ -f "${stagedVersionFile}" ]; then`,
+      `    cp "${stagedVersionFile}" "${liveVersionFile}"`,
+      "  fi",
+      "fi",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  chmodSync(fakeHostPath, 0o755);
+
+  // Stand-in pnpm using perl so the inherited environment is recorded without
+  // extra shell-injected variables.
+  const fakePnpmPath = path.join(binDir, "pnpm");
+  writeFileSync(
+    fakePnpmPath,
+    [
+      "#!/usr/bin/env perl",
+      "use strict;",
+      "use warnings;",
+      `my $log_file = ${JSON.stringify(callLogFile)};`,
+      `my $migrate_fail = ${JSON.stringify(migrateFailMarker)};`,
+      `my $smoke_fail = ${JSON.stringify(smokeFailUrlMarker)};`,
+      'my @env_names = sort grep { $_ ne "PATH" && $_ ne "HOME" } keys %ENV;',
+      'my $smoke_url = defined $ENV{SMOKE_BASE_URL} ? $ENV{SMOKE_BASE_URL} : "";',
+      'my $smoke_commit = defined $ENV{SMOKE_EXPECT_COMMIT} ? $ENV{SMOKE_EXPECT_COMMIT} : "";',
+      'open(my $fh, ">>", $log_file) or die "cannot open call log: $!";',
+      'print $fh "pnpm " . join(" ", @ARGV) . " | env=" . join(",", @env_names) . " | SMOKE_BASE_URL=" . $smoke_url . " | SMOKE_EXPECT_COMMIT=" . $smoke_commit . "\\n";',
+      "close($fh);",
+      'my $cmd = "";',
+      "for (my $i = 0; $i < scalar(@ARGV); $i++) {",
+      '  if ($ARGV[$i] eq "--dir") { $i++; next; }',
+      "  $cmd = $ARGV[$i];",
+      "  last;",
+      "}",
+      'if ($cmd eq "install") { exit 0; }',
+      'if ($cmd eq "db:migrate") {',
+      "  if (-e $migrate_fail) {",
+      '    print STDERR "simulated db:migrate failure\\n";',
+      "    exit 1;",
+      "  }",
+      "  exit 0;",
+      "}",
+      'if ($cmd eq "e2e:smoke") {',
+      "  if (-e $smoke_fail) {",
+      '    open(my $sfh, "<", $smoke_fail) or die "cannot read smoke marker: $!";',
+      "    my $fail_url = <$sfh>;",
+      "    close($sfh);",
+      '    $fail_url = "" unless defined $fail_url;',
+      "    $fail_url =~ s/\\r?\\n\\z//;",
+      "    if ($smoke_url eq $fail_url) {",
+      '      print STDERR "simulated e2e:smoke failure for $smoke_url\\n";',
+      "      exit 1;",
+      "    }",
+      "  }",
+      "  exit 0;",
+      "}",
+      'print STDERR "fake pnpm: unexpected command: " . join(" ", @ARGV) . "\\n";',
+      "exit 1;",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  chmodSync(fakePnpmPath, 0o755);
+
+  // Stand-in pg_dump that records its full argument list and PG* env names.
+  const fakePgDumpPath = path.join(binDir, "pg_dump");
+  writeFileSync(
+    fakePgDumpPath,
+    [
+      "#!/usr/bin/env bash",
+      "{ set +x; } 2>/dev/null",
+      "set -euo pipefail",
+      `printf 'pg_dump %s\\n' "$*" >> "${callLogFile}"`,
+      'pg_vars="$(env | awk -F= \'/^PG/ { print $1 }\' | sort | paste -sd, -)"',
+      `printf '%s\\n' "\${pg_vars}" >> "${pgDumpEnvLogFile}"`,
+      'out_file=""',
+      'while [ "$#" -gt 0 ]; do',
+      '  if [ "$1" = "-f" ] && [ "$#" -ge 2 ]; then',
+      '    out_file="$2"',
+      "    shift 2",
+      "  else",
+      "    shift",
+      "  fi",
+      "done",
+      'if [ -z "${out_file}" ]; then',
+      '  printf "fake pg_dump: missing -f path\\n" >&2',
+      "  exit 1",
+      "fi",
+      `if [ -e "${pgDumpFailMarker}" ]; then`,
+      '  printf "PGDMP-partial\\n" > "${out_file}"',
+      '  printf "simulated pg_dump failure\\n" >&2',
+      "  exit 1",
+      "fi",
+      `if [ -e "${emptyDumpMarker}" ]; then`,
+      '  : > "${out_file}"',
+      "else",
+      '  printf "PGDMP-test-backup\\n" > "${out_file}"',
+      "fi",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  chmodSync(fakePgDumpPath, 0o755);
+
+  writeFileSync(
+    hostLinkFile,
+    JSON.stringify({ projectId: "prj_test", orgId: "org_test" }),
+    "utf8",
+  );
+  const deployDbUrl = new URL(
+    "postgres://db.example.com:5432/sous?sslmode=require",
+  );
+  deployDbUrl.username = "deployuser";
+  deployDbUrl.password = "secretpass";
+  writeFileSync(
+    deployEnvFile,
+    `DATABASE_URL=${deployDbUrl.toString()}\n`,
+    "utf8",
+  );
+
+  git(originDir, ["init", "--bare", "-b", "main"]);
+  git(repoDir, ["init", "-b", "main"]);
+  git(repoDir, ["remote", "add", "origin", originDir]);
+
+  writeFileSync(path.join(repoDir, "README.md"), "release test repo\n", "utf8");
+  writeFileSync(
+    path.join(repoDir, "app/drizzle/migrations/0000_init.sql"),
+    "CREATE TABLE items (id text PRIMARY KEY);\n",
+    "utf8",
+  );
+  writeFileSync(
+    path.join(repoDir, "app/drizzle/migrations/meta/_journal.json"),
+    JSON.stringify(
+      {
+        version: "7",
+        dialect: "postgresql",
+        entries: [
+          {
+            idx: 0,
+            version: "7",
+            when: 1700000000000,
+            tag: "0000_init",
+            breakpoints: true,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  git(repoDir, ["add", "."]);
+  git(repoDir, ["commit", "-m", "initial commit"]);
+  const commit1 = git(repoDir, ["rev-parse", "HEAD"]);
+
+  writeFileSync(path.join(repoDir, "README.md"), "second commit\n", "utf8");
+  git(repoDir, ["add", "README.md"]);
+  git(repoDir, ["commit", "-m", "second commit"]);
+  const commit2 = git(repoDir, ["rev-parse", "HEAD"]);
+
+  git(repoDir, ["push", "-u", "origin", "main"]);
+
+  return {
+    rootDir,
+    repoDir,
+    originDir,
+    stateDir,
+    binDir,
+    backupDir,
+    tmpDir,
+    callLogFile,
+    hostMetaLogFile,
+    pgDumpEnvLogFile,
+    liveVersionFile,
+    stagedVersionFile,
+    emptyDumpMarker,
+    pgDumpFailMarker,
+    migrateFailMarker,
+    smokeFailUrlMarker,
+    hostNoUrlMarker,
+    keepStagedCommitMarker,
+    promoteFailMarker,
+    promoteNoSwitchMarker,
+    hostLinkFile,
+    deployEnvFile,
+    passLogFile: path.join(stateDir, "release-passes.log"),
+    releasesLogFile: path.join(stateDir, "releases.log"),
+    lockDir: path.join(stateDir, "deploy.lock"),
+    commit1,
+    commit2,
+  };
+}
+
+function readCallLog(harness: TestHarness): string[] {
+  if (!existsSync(harness.callLogFile)) {
+    return [];
+  }
+  return readFileSync(harness.callLogFile, "utf8")
+    .split("\n")
+    .filter((line) => line.length > 0);
+}
+
+function readHostMeta(harness: TestHarness): HostMetaEntry[] {
+  if (!existsSync(harness.hostMetaLogFile)) {
+    return [];
+  }
+  return readFileSync(harness.hostMetaLogFile, "utf8")
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [subcmd = "", pwd = "", head = ""] = line.split("\t");
+      return { subcmd, pwd, head };
+    });
+}
+
+function readPgDumpEnvLog(harness: TestHarness): string[][] {
+  if (!existsSync(harness.pgDumpEnvLogFile)) {
+    return [];
+  }
+  return readFileSync(harness.pgDumpEnvLogFile, "utf8")
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => line.split(",").filter((name) => name.length > 0));
+}
+
+function hostCalls(harness: TestHarness): string[] {
+  return readCallLog(harness).filter((line) => line.startsWith("fake-host "));
+}
+
+function recordPass(harness: TestHarness, sha: string): void {
+  writeFileSync(
+    harness.passLogFile,
+    `${sha} 2026-03-10T11:00:00Z e2e=36/0 visual=10/0\n`,
+    { flag: "a", encoding: "utf8" },
+  );
+}
+
+function recordRelease(
+  harness: TestHarness,
+  num: number,
+  sha: string,
+  stagedUrl = "https://prev.example.com",
+): void {
+  writeFileSync(
+    harness.releasesLogFile,
+    `${num} ${sha} ${stagedUrl} 2026-03-10T10:00:00Z\n`,
+    { flag: "a", encoding: "utf8" },
+  );
+}
+
+function commitAndPushNewMigration(harness: TestHarness): string {
+  writeFileSync(
+    path.join(harness.repoDir, "app/drizzle/migrations/0001_add_notes.sql"),
+    "ALTER TABLE items ADD COLUMN notes text;\n",
+    "utf8",
+  );
+  writeFileSync(
+    path.join(harness.repoDir, "app/drizzle/migrations/meta/_journal.json"),
+    JSON.stringify(
+      {
+        version: "7",
+        dialect: "postgresql",
+        entries: [
+          {
+            idx: 0,
+            version: "7",
+            when: 1700000000000,
+            tag: "0000_init",
+            breakpoints: true,
+          },
+          {
+            idx: 1,
+            version: "7",
+            when: 1700000001000,
+            tag: "0001_add_notes",
+            breakpoints: true,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  git(harness.repoDir, [
+    "add",
+    "app/drizzle/migrations/0001_add_notes.sql",
+    "app/drizzle/migrations/meta/_journal.json",
+  ]);
+  git(harness.repoDir, ["commit", "-m", "add new migration"]);
+  const sha = git(harness.repoDir, ["rev-parse", "HEAD"]);
+  git(harness.repoDir, ["push", "origin", "main"]);
+  return sha;
+}
+
+interface RunResult {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function runDeploy(
+  harness: TestHarness,
+  args: readonly string[],
+  envOverrides: Record<string, string | undefined>,
+  bashFlags: readonly string[] = [],
+): Promise<RunResult> {
+  const env: NodeJS.ProcessEnv = {
+    PATH: `${harness.binDir}:${process.env.PATH ?? ""}`,
+    HOME: harness.rootDir,
+    TMPDIR: harness.tmpDir,
+    SOUS_RELEASE_STATE_DIR: harness.stateDir,
+    SOUS_HOST_CLI: "fake-host",
+    SOUS_HOST_LINK_FILE: harness.hostLinkFile,
+  };
+  for (const [k, v] of Object.entries(envOverrides)) {
+    if (v === undefined) {
+      delete env[k];
+    } else {
+      env[k] = v;
+    }
+  }
+  return new Promise<RunResult>((resolve, reject) => {
+    const child = spawn("bash", [...bashFlags, "scripts/deploy.sh", ...args], {
+      cwd: harness.repoDir,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (status) => {
+      resolve({ status, stdout, stderr });
+    });
+  });
+}
+
+interface ReleaseCheckHarness {
+  rootDir: string;
+  repoDir: string;
+  stateDir: string;
+  binDir: string;
+  tmpDir: string;
+  callLogFile: string;
+  failStepMarker: string;
+  visualUnexpectedMarker: string;
+  passLogFile: string;
+  commit1: string;
+}
+
+function createReleaseCheckHarness(): ReleaseCheckHarness {
+  const rootDir = mkdtempSync(path.join(os.tmpdir(), "sous-rcheck-test-"));
+  const repoDir = path.join(rootDir, "repo");
+  const stateDir = path.join(rootDir, "state");
+  const binDir = path.join(rootDir, "bin");
+  const tmpDir = path.join(rootDir, "tmp");
+  const callLogFile = path.join(rootDir, "calls.log");
+  const failStepMarker = path.join(rootDir, "fail-step.marker");
+  const visualUnexpectedMarker = path.join(rootDir, "visual-unexpected.marker");
+
+  mkdirSync(repoDir, { recursive: true });
+  mkdirSync(stateDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  mkdirSync(tmpDir, { recursive: true });
+  mkdirSync(path.join(repoDir, "scripts"), { recursive: true });
+  mkdirSync(path.join(repoDir, "app/drizzle"), { recursive: true });
+  mkdirSync(path.join(repoDir, "pack"), { recursive: true });
+
+  copyFileSync(
+    RELEASE_CHECK_SCRIPT_SRC,
+    path.join(repoDir, "scripts/release-check.sh"),
+  );
+  chmodSync(path.join(repoDir, "scripts/release-check.sh"), 0o755);
+
+  const fakePnpmPath = path.join(binDir, "pnpm");
+  writeFileSync(
+    fakePnpmPath,
+    [
+      "#!/usr/bin/env bash",
+      "{ set +x; } 2>/dev/null",
+      "set -euo pipefail",
+      `printf 'pnpm %s | CI=%s\\n' "$*" "\${CI:-}" >> "${callLogFile}"`,
+      'dir_arg=""',
+      'cmd=""',
+      'next_is_dir=0',
+      'for arg in "$@"; do',
+      '  if [ "${next_is_dir}" -eq 1 ]; then',
+      '    dir_arg="${arg}"',
+      "    next_is_dir=0",
+      '  elif [ "${arg}" = "--dir" ]; then',
+      "    next_is_dir=1",
+      '  elif [ -z "${cmd}" ]; then',
+      '    cmd="${arg}"',
+      "  fi",
+      "done",
+      `if [ -f "${failStepMarker}" ]; then`,
+      `  fail_cmd="$(cat "${failStepMarker}")"`,
+      '  if [ "${cmd}" = "${fail_cmd}" ]; then',
+      '    printf "simulated failure in %s\\n" "${cmd}" >&2',
+      "    exit 1",
+      "  fi",
+      "fi",
+      'if [ "${cmd}" = "e2e" ] && [ -n "${PLAYWRIGHT_JSON_OUTPUT_NAME:-}" ]; then',
+      '  printf \'{"stats":{"expected":3,"unexpected":0,"flaky":0},"errors":[]}\\n\' > "${PLAYWRIGHT_JSON_OUTPUT_NAME}"',
+      "fi",
+      'if [ "${cmd}" = "e2e:visual" ] && [ -n "${PLAYWRIGHT_JSON_OUTPUT_NAME:-}" ]; then',
+      `  if [ -e "${visualUnexpectedMarker}" ]; then`,
+      '    printf \'{"stats":{"expected":2,"unexpected":1,"flaky":0},"errors":[]}\\n\' > "${PLAYWRIGHT_JSON_OUTPUT_NAME}"',
+      "  else",
+      '    printf \'{"stats":{"expected":2,"unexpected":0,"flaky":0},"errors":[]}\\n\' > "${PLAYWRIGHT_JSON_OUTPUT_NAME}"',
+      "  fi",
+      "fi",
+      'if [ -n "${dir_arg}" ]; then :; fi',
+      "exit 0",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  chmodSync(fakePnpmPath, 0o755);
+
+  git(repoDir, ["init", "-b", "main"]);
+  writeFileSync(path.join(repoDir, "README.md"), "release check repo\n", "utf8");
+  writeFileSync(
+    path.join(repoDir, "app/drizzle/schema.ts"),
+    "export const version = 1;\n",
+    "utf8",
+  );
+  git(repoDir, ["add", "."]);
+  git(repoDir, ["commit", "-m", "initial commit"]);
+  const commit1 = git(repoDir, ["rev-parse", "HEAD"]);
+
+  return {
+    rootDir,
+    repoDir,
+    stateDir,
+    binDir,
+    tmpDir,
+    callLogFile,
+    failStepMarker,
+    visualUnexpectedMarker,
+    passLogFile: path.join(stateDir, "release-passes.log"),
+    commit1,
+  };
+}
+
+function runReleaseCheck(
+  harness: ReleaseCheckHarness,
+  commitArg: string,
+): Promise<RunResult> {
+  return new Promise<RunResult>((resolve, reject) => {
+    const child = spawn("bash", ["scripts/release-check.sh", commitArg], {
+      cwd: harness.repoDir,
+      env: {
+        PATH: `${harness.binDir}:${process.env.PATH ?? ""}`,
+        HOME: harness.rootDir,
+        TMPDIR: harness.tmpDir,
+        SOUS_RELEASE_STATE_DIR: harness.stateDir,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (status) => {
+      resolve({ status, stdout, stderr });
+    });
+  });
+}
+
+describe("release scripts", () => {
+  const cleanupDirs: string[] = [];
+  const servers: VersionServer[] = [];
+
+  afterEach(async () => {
+    while (servers.length > 0) {
+      const srv = servers.pop()!;
+      await srv.close();
+    }
+    while (cleanupDirs.length > 0) {
+      const dir = cleanupDirs.pop()!;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  function makeHarness(): TestHarness {
+    const h = createHarness();
+    cleanupDirs.push(h.rootDir);
+    return h;
+  }
+
+  function makeReleaseCheckHarness(): ReleaseCheckHarness {
+    const h = createReleaseCheckHarness();
+    cleanupDirs.push(h.rootDir);
+    return h;
+  }
+
+  async function makeLiveServer(
+    harness: TestHarness,
+    commit: string | null,
+  ): Promise<VersionServer> {
+    const srv = await startVersionServer(harness.liveVersionFile, commit);
+    servers.push(srv);
+    return srv;
+  }
+
+  async function makeStagedServer(
+    harness: TestHarness,
+    initialCommit: string | null = null,
+  ): Promise<VersionServer> {
+    const srv = await startStagedHttpsServer(harness, initialCommit);
+    servers.push(srv);
+    return srv;
+  }
+
+  it("DEPLOY-1: refuses commit without a recorded release-check pass (even when another commit passed) and never calls host CLI", async () => {
+    const h = makeHarness();
+    const srv = await makeLiveServer(h, h.commit1);
+    recordRelease(h, 1, h.commit1);
+    // Write a pass line for a different commit to verify exact commit matching.
+    recordPass(h, h.commit1);
+
+    const res = await runDeploy(h, ["--dry-run", h.commit2], {
+      SOUS_LIVE_URL: srv.url,
+    });
+
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain("release-check.sh");
+    expect(res.stderr).toContain(h.commit2);
+    expect(hostCalls(h)).toEqual([]);
+  });
+
+  it("DEPLOY-2: refuses when live commit is missing from local repository or not an ancestor of target commit", async () => {
+    const h = makeHarness();
+
+    // Create a diverged branch commit that is not an ancestor of commit2.
+    git(h.repoDir, ["checkout", "-b", "side", h.commit1]);
+    writeFileSync(path.join(h.repoDir, "side.txt"), "diverged\n", "utf8");
+    git(h.repoDir, ["add", "side.txt"]);
+    git(h.repoDir, ["commit", "-m", "diverged branch commit"]);
+    const divergedCommit = git(h.repoDir, ["rev-parse", "HEAD"]);
+    git(h.repoDir, ["checkout", "main"]);
+
+    recordPass(h, h.commit2);
+    recordRelease(h, 1, divergedCommit);
+    const srv = await makeLiveServer(h, divergedCommit);
+
+    const res = await runDeploy(h, ["--dry-run", h.commit2], {
+      SOUS_LIVE_URL: srv.url,
+    });
+
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain("does not contain the live commit");
+    expect(res.stderr).toContain(divergedCommit);
+    expect(hostCalls(h)).toEqual([]);
+
+    // When the live commit does not exist in this repository at all, say so
+    // before the ancestry check.
+    const missingCommit = "0123456789abcdef0123456789abcdef01234567";
+    srv.setCommit(missingCommit);
+    const missingRes = await runDeploy(h, ["--dry-run", h.commit2], {
+      SOUS_LIVE_URL: srv.url,
+    });
+
+    expect(missingRes.status).not.toBe(0);
+    expect(missingRes.stderr).toContain(
+      `the live commit ${missingCommit} is not in this repository; fetch it first`,
+    );
+    expect(missingRes.stderr).not.toContain("does not contain the live commit");
+    expect(hostCalls(h)).toEqual([]);
+  });
+
+  it("DEPLOY-3: refuses unreachable or null live commit without suggesting --first-release, allows --first-release 7 on empty log, and refuses --first-release on non-empty log", async () => {
+    const h = makeHarness();
+    recordPass(h, h.commit2);
+    const srv = await makeLiveServer(h, null);
+
+    // Live site answering null: refused without suggesting --first-release.
+    const refusedNull = await runDeploy(h, ["--dry-run", h.commit2], {
+      SOUS_LIVE_URL: srv.url,
+      SOUS_DEPLOY_ENV_FILE: h.deployEnvFile,
+      SOUS_BACKUP_DIR: h.backupDir,
+    });
+    expect(refusedNull.status).not.toBe(0);
+    expect(refusedNull.stderr).toContain("null");
+    expect(refusedNull.stderr).not.toContain("--first-release");
+    expect(hostCalls(h)).toEqual([]);
+
+    // Live site unreachable: refused without suggesting --first-release.
+    const refusedUnreachable = await runDeploy(h, ["--dry-run", h.commit2], {
+      SOUS_LIVE_URL: "http://127.0.0.1:1",
+      SOUS_DEPLOY_ENV_FILE: h.deployEnvFile,
+      SOUS_BACKUP_DIR: h.backupDir,
+    });
+    expect(refusedUnreachable.status).not.toBe(0);
+    expect(refusedUnreachable.stderr).toContain("failed to read");
+    expect(refusedUnreachable.stderr).not.toContain("--first-release");
+    expect(hostCalls(h)).toEqual([]);
+
+    // --first-release 7 with empty log is allowed in dry run.
+    const allowed = await runDeploy(
+      h,
+      ["--dry-run", "--first-release", "7", h.commit2],
+      {
+        SOUS_LIVE_URL: srv.url,
+        SOUS_DEPLOY_ENV_FILE: h.deployEnvFile,
+        SOUS_BACKUP_DIR: h.backupDir,
+      },
+    );
+    expect(allowed.status).toBe(0);
+    expect(allowed.stdout).toContain("release 7");
+    expect(allowed.stdout).toContain("dry run: nothing was changed");
+    expect(hostCalls(h)).toEqual([]);
+    expect(existsSync(h.releasesLogFile)).toBe(false);
+
+    // --first-release with non-empty releases.log is refused.
+    recordRelease(h, 1, h.commit1, "https://r1.example.com");
+    const nonEmptyRefused = await runDeploy(
+      h,
+      ["--dry-run", "--first-release", "7", h.commit2],
+      {
+        SOUS_LIVE_URL: srv.url,
+        SOUS_DEPLOY_ENV_FILE: h.deployEnvFile,
+        SOUS_BACKUP_DIR: h.backupDir,
+      },
+    );
+    expect(nonEmptyRefused.status).not.toBe(0);
+    expect(nonEmptyRefused.stderr).toContain("--first-release");
+    expect(nonEmptyRefused.stderr).toContain("not empty");
+    expect(hostCalls(h)).toEqual([]);
+  });
+
+  it("DEPLOY-4: refuses modified migration or out-of-order journal timestamp, and dry-run prints backup/migrate for valid new migration", async () => {
+    const h = makeHarness();
+    const srv = await makeLiveServer(h, h.commit1);
+    recordRelease(h, 1, h.commit1);
+
+    // Case A: target modifies an existing migration file.
+    git(h.repoDir, ["checkout", "-b", "bad-migration", h.commit1]);
+    writeFileSync(
+      path.join(h.repoDir, "app/drizzle/migrations/0000_init.sql"),
+      "CREATE TABLE items (id text PRIMARY KEY, name text);\n",
+      "utf8",
+    );
+    git(h.repoDir, ["add", "app/drizzle/migrations/0000_init.sql"]);
+    git(h.repoDir, ["commit", "-m", "modify existing migration"]);
+    const badMigCommit = git(h.repoDir, ["rev-parse", "HEAD"]);
+    git(h.repoDir, ["push", "--force", "origin", "HEAD:main"]);
+    recordPass(h, badMigCommit);
+
+    const badRes = await runDeploy(h, ["--dry-run", badMigCommit], {
+      SOUS_LIVE_URL: srv.url,
+      SOUS_DEPLOY_ENV_FILE: h.deployEnvFile,
+      SOUS_BACKUP_DIR: h.backupDir,
+    });
+    expect(badRes.status).not.toBe(0);
+    expect(badRes.stderr).toContain("append-only");
+    expect(hostCalls(h)).toEqual([]);
+
+    // Case B: target alters an existing entry in meta/_journal.json.
+    git(h.repoDir, ["checkout", "-b", "bad-journal", h.commit1]);
+    writeFileSync(
+      path.join(h.repoDir, "app/drizzle/migrations/meta/_journal.json"),
+      JSON.stringify(
+        {
+          version: "7",
+          dialect: "postgresql",
+          entries: [
+            {
+              idx: 0,
+              version: "7",
+              when: 1700000000000,
+              tag: "0000_renamed",
+              breakpoints: true,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    git(h.repoDir, ["add", "app/drizzle/migrations/meta/_journal.json"]);
+    git(h.repoDir, ["commit", "-m", "alter existing journal entry"]);
+    const badJournalCommit = git(h.repoDir, ["rev-parse", "HEAD"]);
+    git(h.repoDir, ["push", "--force", "origin", "HEAD:main"]);
+    recordPass(h, badJournalCommit);
+
+    const badJournalRes = await runDeploy(h, ["--dry-run", badJournalCommit], {
+      SOUS_LIVE_URL: srv.url,
+      SOUS_DEPLOY_ENV_FILE: h.deployEnvFile,
+      SOUS_BACKUP_DIR: h.backupDir,
+    });
+    expect(badJournalRes.status).not.toBe(0);
+    expect(badJournalRes.stderr).toContain("append-only");
+    expect(hostCalls(h)).toEqual([]);
+
+    // Case C: target appends an entry whose timestamp is earlier than the last live entry.
+    git(h.repoDir, ["checkout", "-b", "bad-journal-when", h.commit1]);
+    writeFileSync(
+      path.join(h.repoDir, "app/drizzle/migrations/0001_old_ts.sql"),
+      "ALTER TABLE items ADD COLUMN old_ts text;\n",
+      "utf8",
+    );
+    writeFileSync(
+      path.join(h.repoDir, "app/drizzle/migrations/meta/_journal.json"),
+      JSON.stringify(
+        {
+          version: "7",
+          dialect: "postgresql",
+          entries: [
+            {
+              idx: 0,
+              version: "7",
+              when: 1700000000000,
+              tag: "0000_init",
+              breakpoints: true,
+            },
+            {
+              idx: 1,
+              version: "7",
+              when: 1699999999000,
+              tag: "0001_old_ts",
+              breakpoints: true,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    git(h.repoDir, [
+      "add",
+      "app/drizzle/migrations/0001_old_ts.sql",
+      "app/drizzle/migrations/meta/_journal.json",
+    ]);
+    git(h.repoDir, ["commit", "-m", "append migration with earlier timestamp"]);
+    const badWhenCommit = git(h.repoDir, ["rev-parse", "HEAD"]);
+    git(h.repoDir, ["push", "--force", "origin", "HEAD:main"]);
+    recordPass(h, badWhenCommit);
+
+    const badWhenRes = await runDeploy(h, ["--dry-run", badWhenCommit], {
+      SOUS_LIVE_URL: srv.url,
+      SOUS_DEPLOY_ENV_FILE: h.deployEnvFile,
+      SOUS_BACKUP_DIR: h.backupDir,
+    });
+    expect(badWhenRes.status).not.toBe(0);
+    expect(badWhenRes.stderr).toContain(
+      "migration 0001_old_ts has a timestamp earlier than one already live; regenerate it",
+    );
+    expect(hostCalls(h)).toEqual([]);
+
+    // Case D: target appends a new migration file and appends to _journal.json with increasing timestamp.
+    git(h.repoDir, ["checkout", "-b", "good-migration", h.commit1]);
+    writeFileSync(
+      path.join(h.repoDir, "app/drizzle/migrations/0001_add_notes.sql"),
+      "ALTER TABLE items ADD COLUMN notes text;\n",
+      "utf8",
+    );
+    writeFileSync(
+      path.join(h.repoDir, "app/drizzle/migrations/meta/_journal.json"),
+      JSON.stringify(
+        {
+          version: "7",
+          dialect: "postgresql",
+          entries: [
+            {
+              idx: 0,
+              version: "7",
+              when: 1700000000000,
+              tag: "0000_init",
+              breakpoints: true,
+            },
+            {
+              idx: 1,
+              version: "7",
+              when: 1700000001000,
+              tag: "0001_add_notes",
+              breakpoints: true,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    git(h.repoDir, [
+      "add",
+      "app/drizzle/migrations/0001_add_notes.sql",
+      "app/drizzle/migrations/meta/_journal.json",
+    ]);
+    git(h.repoDir, ["commit", "-m", "add new migration"]);
+    const goodMigCommit = git(h.repoDir, ["rev-parse", "HEAD"]);
+    git(h.repoDir, ["push", "--force", "origin", "HEAD:main"]);
+    recordPass(h, goodMigCommit);
+
+    const goodRes = await runDeploy(h, ["--dry-run", goodMigCommit], {
+      SOUS_LIVE_URL: srv.url,
+      SOUS_DEPLOY_ENV_FILE: h.deployEnvFile,
+      SOUS_BACKUP_DIR: h.backupDir,
+    });
+    expect(goodRes.status).toBe(0);
+    expect(goodRes.stdout).toContain("app/drizzle/migrations/0001_add_notes.sql");
+    expect(goodRes.stdout).toContain("db.example.com:5432");
+    expect(goodRes.stdout).not.toContain("secretpass");
+    expect(goodRes.stdout).toContain(h.backupDir);
+    expect(goodRes.stdout).toContain("pnpm --dir app db:migrate");
+    expect(goodRes.stdout).toContain("dry run: nothing was changed");
+    expect(readCallLog(h)).toEqual([]);
+    if (existsSync(h.backupDir)) {
+      expect(readdirSync(h.backupDir)).toEqual([]);
+    }
+  });
+
+  it("DEPLOY-5: rollback line picks the most recent releases.log entry matching the live commit, or warns when none matches", async () => {
+    const h = makeHarness();
+    recordPass(h, h.commit2);
+    // Release 4 was commit1 (currently live), release 5 was another commit (rolled back).
+    recordRelease(h, 4, h.commit1, "https://r4.example.com");
+    recordRelease(
+      h,
+      5,
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "https://r5.example.com",
+    );
+    const beforeLog = readFileSync(h.releasesLogFile, "utf8");
+    const srv = await makeLiveServer(h, h.commit1);
+
+    const res = await runDeploy(h, ["--dry-run", h.commit2], {
+      SOUS_LIVE_URL: srv.url,
+    });
+
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain("New migrations: none");
+    expect(res.stdout).toContain("dry run: nothing was changed");
+    expect(res.stdout).toContain("fake-host rollback https://r4.example.com --yes");
+    expect(res.stdout).not.toContain("r5.example.com");
+    expect(readCallLog(h)).toEqual([]);
+    expect(readFileSync(h.releasesLogFile, "utf8")).toBe(beforeLog);
+
+    // When no recorded release matches the live commit, say so and point to the host deployment list.
+    const h2 = makeHarness();
+    recordPass(h2, h2.commit2);
+    recordRelease(
+      h2,
+      5,
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "https://r5.example.com",
+    );
+    const srv2 = await makeLiveServer(h2, h2.commit1);
+
+    const noMatchRes = await runDeploy(h2, ["--dry-run", h2.commit2], {
+      SOUS_LIVE_URL: srv2.url,
+    });
+    expect(noMatchRes.status).toBe(0);
+    expect(noMatchRes.stdout).toContain("no recorded release matches the live commit");
+    expect(noMatchRes.stdout).toContain("host's own deployment list");
+    expect(noMatchRes.stdout).not.toContain("r5.example.com");
+  });
+
+  it("DEPLOY-6: refuses when required variables are missing or SOUS_HOST_ARGS has a newline or DATABASE_URL has a fragment", async () => {
+    const h = makeHarness();
+    // Deliberately omit pass log and server to verify missing env vars fail first.
+    const res = await runDeploy(h, ["--dry-run", "not-even-resolved"], {
+      SOUS_LIVE_URL: undefined,
+    });
+
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain("SOUS_LIVE_URL");
+    expect(res.stderr).not.toContain("release-check.sh");
+    expect(hostCalls(h)).toEqual([]);
+
+    // When multiple required variables are missing, all are reported together.
+    const bothMissing = await runDeploy(h, ["--dry-run", "not-even-resolved"], {
+      SOUS_LIVE_URL: undefined,
+      SOUS_HOST_LINK_FILE: undefined,
+    });
+    expect(bothMissing.status).not.toBe(0);
+    expect(bothMissing.stderr).toContain("SOUS_LIVE_URL");
+    expect(bothMissing.stderr).toContain("SOUS_HOST_LINK_FILE");
+    expect(hostCalls(h)).toEqual([]);
+
+    // A newline in SOUS_HOST_ARGS is refused with a plain message.
+    const newlineArgs = await runDeploy(h, ["--dry-run", h.commit2], {
+      SOUS_LIVE_URL: "http://127.0.0.1:1",
+      SOUS_HOST_ARGS: "--scope example-team\n--extra-flag",
+    });
+    expect(newlineArgs.status).not.toBe(0);
+    expect(newlineArgs.stderr).toContain("SOUS_HOST_ARGS");
+    expect(newlineArgs.stderr).toContain("newline");
+    expect(hostCalls(h)).toEqual([]);
+
+    // A DATABASE_URL containing a # fragment is refused without printing any part of the URL.
+    const h2 = makeHarness();
+    const migCommit = commitAndPushNewMigration(h2);
+    recordPass(h2, migCommit);
+    recordRelease(h2, 1, h2.commit1);
+    const srv2 = await makeLiveServer(h2, h2.commit1);
+    const badEnvFile = path.join(h2.rootDir, "bad-deploy.env");
+    const badDbUrl = new URL("postgres://db.example.com:5432/sous");
+    badDbUrl.username = "deployuser";
+    badDbUrl.password = "secretfrag";
+    badDbUrl.hash = "frag";
+    writeFileSync(badEnvFile, `DATABASE_URL=${badDbUrl.toString()}\n`, "utf8");
+    const badUrlRes = await runDeploy(h2, ["--dry-run", migCommit], {
+      SOUS_LIVE_URL: srv2.url,
+      SOUS_DEPLOY_ENV_FILE: badEnvFile,
+      SOUS_BACKUP_DIR: h2.backupDir,
+    });
+    expect(badUrlRes.status).not.toBe(0);
+    expect(badUrlRes.stderr).toContain("#");
+    expect(badUrlRes.stderr).not.toContain("secretfrag");
+    expect(badUrlRes.stderr).not.toContain("db.example.com");
+    expect(badUrlRes.stdout).not.toContain("secretfrag");
+    expect(hostCalls(h2)).toEqual([]);
+  });
+
+  it("DEPLOY-7: refuses when deploy lock folder already exists and names it", async () => {
+    const h = makeHarness();
+    recordPass(h, h.commit2);
+    recordRelease(h, 1, h.commit1);
+    mkdirSync(h.lockDir);
+    const srv = await makeLiveServer(h, h.commit1);
+
+    const res = await runDeploy(h, ["--dry-run", h.commit2], {
+      SOUS_LIVE_URL: srv.url,
+    });
+
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain(h.lockDir);
+    expect(existsSync(h.lockDir)).toBe(true);
+    expect(hostCalls(h)).toEqual([]);
+  });
+
+  it("DEPLOY-8: refuses an unpushed commit in both dry run and real run without calling host", async () => {
+    const h = makeHarness();
+    writeFileSync(path.join(h.repoDir, "README.md"), "local only commit\n", "utf8");
+    git(h.repoDir, ["add", "README.md"]);
+    git(h.repoDir, ["commit", "-m", "unpushed local commit"]);
+    const unpushedCommit = git(h.repoDir, ["rev-parse", "HEAD"]);
+
+    recordPass(h, unpushedCommit);
+    recordRelease(h, 1, h.commit1);
+    const srv = await makeLiveServer(h, h.commit1);
+
+    const dryRes = await runDeploy(h, ["--dry-run", unpushedCommit], {
+      SOUS_LIVE_URL: srv.url,
+    });
+    expect(dryRes.status).not.toBe(0);
+    expect(dryRes.stderr).toContain(
+      `${unpushedCommit} is not on origin/main; push it first`,
+    );
+    expect(hostCalls(h)).toEqual([]);
+
+    const realRes = await runDeploy(h, [unpushedCommit], {
+      SOUS_LIVE_URL: srv.url,
+    });
+    expect(realRes.status).not.toBe(0);
+    expect(realRes.stderr).toContain(
+      `${unpushedCommit} is not on origin/main; push it first`,
+    );
+    expect(readCallLog(h)).toEqual([]);
+    expect(existsSync(h.lockDir)).toBe(false);
+
+    // Fetch failure produces a plain error message without calling host.
+    recordPass(h, h.commit2);
+    const badRemoteRes = await runDeploy(h, ["--dry-run", h.commit2], {
+      SOUS_LIVE_URL: srv.url,
+      SOUS_RELEASE_REMOTE: "missing-remote",
+    });
+    expect(badRemoteRes.status).not.toBe(0);
+    expect(badRemoteRes.stderr).toContain("failed to fetch missing-remote/main");
+    expect(hostCalls(h)).toEqual([]);
+  }, REAL_RUN_TIMEOUT_MS);
+
+  it("DEPLOY-9: refuses a modified tracked file before other steps, while allowing an untracked file alone", async () => {
+    const h = makeHarness();
+    writeFileSync(path.join(h.repoDir, "README.md"), "dirty tracked edit\n", "utf8");
+
+    // Deliberately omit pass log and use an unresolvable commit to verify
+    // the clean-tree check runs before reading repository history.
+    const realDirty = await runDeploy(h, ["not-even-resolved"], {
+      SOUS_LIVE_URL: "http://127.0.0.1:1",
+    });
+    expect(realDirty.status).not.toBe(0);
+    expect(realDirty.stderr).toContain(
+      "the working tree has uncommitted changes to tracked files; commit or stash them first",
+    );
+    expect(realDirty.stderr).not.toContain("unknown commit");
+    expect(realDirty.stderr).not.toContain("release-check.sh");
+    expect(readCallLog(h)).toEqual([]);
+
+    const dryDirty = await runDeploy(h, ["--dry-run", "not-even-resolved"], {
+      SOUS_LIVE_URL: "http://127.0.0.1:1",
+    });
+    expect(dryDirty.status).not.toBe(0);
+    expect(dryDirty.stderr).toContain(
+      "the working tree has uncommitted changes to tracked files; commit or stash them first",
+    );
+    expect(readCallLog(h)).toEqual([]);
+
+    // Restore the tracked file and add only an untracked file: dry run succeeds.
+    git(h.repoDir, ["checkout", "--", "README.md"]);
+    writeFileSync(path.join(h.repoDir, "scratch-notes.txt"), "untracked\n", "utf8");
+
+    recordPass(h, h.commit2);
+    recordRelease(h, 1, h.commit1);
+    const srv = await makeLiveServer(h, h.commit1);
+
+    const untrackedRes = await runDeploy(h, ["--dry-run", h.commit2], {
+      SOUS_LIVE_URL: srv.url,
+    });
+    expect(untrackedRes.status).toBe(0);
+    expect(untrackedRes.stdout).toContain("dry run: nothing was changed");
+    expect(readCallLog(h)).toEqual([]);
+  }, REAL_RUN_TIMEOUT_MS);
+
+  it(
+    "DEPLOY-10: real run stages in detached worktree, checks staged and live versions, smokes both with SMOKE_EXPECT_COMMIT, records release, and cleans up",
+    async () => {
+      const h = makeHarness();
+      // Keep the main repo checkout on commit1 so worktree HEAD === commit2 is proven.
+      git(h.repoDir, ["checkout", h.commit1]);
+      recordPass(h, h.commit2);
+      recordRelease(h, 4, h.commit1, "https://previous.example.com");
+      const liveSrv = await makeLiveServer(h, h.commit1);
+      const stagedSrv = await makeStagedServer(h, h.commit1);
+
+      const res = await runDeploy(h, [h.commit2], {
+        SOUS_LIVE_URL: liveSrv.url,
+        SMOKE_BYPASS_HEADER: "x-test-bypass",
+        SMOKE_BYPASS_VALUE: "bypass-secret-val",
+      });
+
+      expect(res.status).toBe(0);
+
+      const calls = readCallLog(h);
+      expect(calls).toHaveLength(5);
+      expect(calls[0]).toContain("pnpm --dir app install");
+      expect(calls[1]).toBe(
+        `fake-host deploy --prod --skip-domain --yes --build-env SOUS_RELEASE_COMMIT=${h.commit2}`,
+      );
+      expect(calls[2]).toContain("pnpm --dir app e2e:smoke");
+      expect(calls[2]).toContain("SMOKE_BASE_URL=https://staged.example.com");
+      expect(calls[2]).toContain(`SMOKE_EXPECT_COMMIT=${h.commit2}`);
+      expect(calls[3]).toBe("fake-host promote https://staged.example.com --yes");
+      expect(calls[4]).toContain("pnpm --dir app e2e:smoke");
+      expect(calls[4]).toContain(`SMOKE_BASE_URL=${liveSrv.url}`);
+      expect(calls[4]).toContain(`SMOKE_EXPECT_COMMIT=${h.commit2}`);
+
+      // Both deploy and promote ran inside the detached worktree at the target sha.
+      const repoRealPath = realpathSync(h.repoDir);
+      const meta = readHostMeta(h);
+      expect(meta).toHaveLength(2);
+      expect(meta[0]?.subcmd).toBe("deploy");
+      expect(meta[0]?.pwd).not.toBe(repoRealPath);
+      expect(meta[0]?.head).toBe(h.commit2);
+      expect(meta[1]?.subcmd).toBe("promote");
+      expect(meta[1]?.pwd).not.toBe(repoRealPath);
+      expect(meta[1]?.head).toBe(h.commit2);
+
+      // Version requests sent the bypass header and no temp files were left behind.
+      expect(stagedSrv.receivedHeaders.length).toBeGreaterThanOrEqual(1);
+      expect(stagedSrv.receivedHeaders[0]?.["x-test-bypass"]).toBe(
+        "bypass-secret-val",
+      );
+      expect(liveSrv.receivedHeaders.length).toBeGreaterThanOrEqual(2);
+      expect(liveSrv.receivedHeaders[0]?.["x-test-bypass"]).toBe(
+        "bypass-secret-val",
+      );
+      expect(readdirSync(h.tmpDir)).toEqual([]);
+
+      const releaseLines = readFileSync(h.releasesLogFile, "utf8")
+        .split("\n")
+        .filter((line) => line.length > 0);
+      expect(releaseLines).toHaveLength(2);
+      expect(releaseLines[1]).toMatch(
+        new RegExp(
+          `^5 ${h.commit2} https://staged\\.example\\.com \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$`,
+        ),
+      );
+
+      const tail = res.stdout.slice(res.stdout.lastIndexOf("Rollback command:"));
+      expect(tail).toContain("fake-host rollback https://previous.example.com --yes");
+
+      expect(existsSync(h.lockDir)).toBe(false);
+      const worktrees = git(h.repoDir, ["worktree", "list"])
+        .split("\n")
+        .filter((line) => line.length > 0);
+      expect(worktrees).toHaveLength(1);
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it(
+    "DEPLOY-11: staged version mismatch, missing staged URL, or staged smoke failure stops before promotion and leaves releases.log unchanged",
+    async () => {
+      // Case A: staged copy answers the old commit.
+      const h1 = makeHarness();
+      recordPass(h1, h1.commit2);
+      recordRelease(h1, 4, h1.commit1, "https://previous.example.com");
+      const beforeLog1 = readFileSync(h1.releasesLogFile, "utf8");
+      const liveSrv1 = await makeLiveServer(h1, h1.commit1);
+      await makeStagedServer(h1, h1.commit1);
+      writeFileSync(h1.keepStagedCommitMarker, "1\n", "utf8");
+
+      const mismatchRes = await runDeploy(h1, [h1.commit2], {
+        SOUS_LIVE_URL: liveSrv1.url,
+        SOUS_LIVE_WAIT_SECONDS: "1",
+      });
+      expect(mismatchRes.status).not.toBe(0);
+      expect(mismatchRes.stderr).toContain(
+        `the staged copy answers ${h1.commit1}, expected ${h1.commit2}; nothing was promoted`,
+      );
+      expect(readCallLog(h1).some((line) => line.includes("promote"))).toBe(false);
+      expect(readFileSync(h1.releasesLogFile, "utf8")).toBe(beforeLog1);
+      expect(existsSync(h1.lockDir)).toBe(false);
+
+      // Case B: host deploy prints no https:// URL.
+      const h2 = makeHarness();
+      recordPass(h2, h2.commit2);
+      recordRelease(h2, 4, h2.commit1, "https://previous.example.com");
+      const beforeLog2 = readFileSync(h2.releasesLogFile, "utf8");
+      const liveSrv2 = await makeLiveServer(h2, h2.commit1);
+      await makeStagedServer(h2, h2.commit1);
+      writeFileSync(h2.hostNoUrlMarker, "1\n", "utf8");
+
+      const noUrlRes = await runDeploy(h2, [h2.commit2], {
+        SOUS_LIVE_URL: liveSrv2.url,
+      });
+      expect(noUrlRes.status).not.toBe(0);
+      expect(noUrlRes.stderr).toContain("https://");
+      expect(readCallLog(h2).some((line) => line.includes("promote"))).toBe(false);
+      expect(readFileSync(h2.releasesLogFile, "utf8")).toBe(beforeLog2);
+      expect(existsSync(h2.lockDir)).toBe(false);
+
+      // Case C: staged smoke check fails.
+      const h3 = makeHarness();
+      recordPass(h3, h3.commit2);
+      recordRelease(h3, 4, h3.commit1, "https://previous.example.com");
+      const beforeLog3 = readFileSync(h3.releasesLogFile, "utf8");
+      const liveSrv3 = await makeLiveServer(h3, h3.commit1);
+      await makeStagedServer(h3, h3.commit1);
+      writeFileSync(h3.smokeFailUrlMarker, "https://staged.example.com\n", "utf8");
+
+      const smokeRes = await runDeploy(h3, [h3.commit2], {
+        SOUS_LIVE_URL: liveSrv3.url,
+      });
+      expect(smokeRes.status).not.toBe(0);
+      expect(smokeRes.stderr).toContain("nothing was promoted");
+      expect(readCallLog(h3).some((line) => line.includes("promote"))).toBe(false);
+      expect(readFileSync(h3.releasesLogFile, "utf8")).toBe(beforeLog3);
+      expect(existsSync(h3.lockDir)).toBe(false);
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it(
+    "DEPLOY-12: failed promote, stale live version after promote, or live smoke failure exits 1, prints rollback line, and leaves releases.log unchanged",
+    async () => {
+      // Case A: live smoke fails after promote switches live version.
+      const h1 = makeHarness();
+      recordPass(h1, h1.commit2);
+      recordRelease(h1, 4, h1.commit1, "https://previous.example.com");
+      const beforeLog1 = readFileSync(h1.releasesLogFile, "utf8");
+      const liveSrv1 = await makeLiveServer(h1, h1.commit1);
+      await makeStagedServer(h1, h1.commit1);
+      writeFileSync(h1.smokeFailUrlMarker, `${liveSrv1.url}\n`, "utf8");
+
+      const smokeFailRes = await runDeploy(h1, [h1.commit2], {
+        SOUS_LIVE_URL: liveSrv1.url,
+      });
+      expect(smokeFailRes.status).toBe(1);
+      expect(smokeFailRes.stderr).toContain(
+        "fake-host rollback https://previous.example.com --yes",
+      );
+      expect(readFileSync(h1.releasesLogFile, "utf8")).toBe(beforeLog1);
+      expect(
+        readCallLog(h1).some((line) =>
+          line.includes("fake-host promote https://staged.example.com --yes"),
+        ),
+      ).toBe(true);
+      expect(existsSync(h1.lockDir)).toBe(false);
+
+      // Case B: stand-in smoke passes but live copy keeps answering the old commit.
+      const h2 = makeHarness();
+      recordPass(h2, h2.commit2);
+      recordRelease(h2, 4, h2.commit1, "https://previous.example.com");
+      const beforeLog2 = readFileSync(h2.releasesLogFile, "utf8");
+      const liveSrv2 = await makeLiveServer(h2, h2.commit1);
+      await makeStagedServer(h2, h2.commit1);
+      writeFileSync(h2.promoteNoSwitchMarker, "1\n", "utf8");
+
+      const staleLiveRes = await runDeploy(h2, [h2.commit2], {
+        SOUS_LIVE_URL: liveSrv2.url,
+        SOUS_LIVE_WAIT_SECONDS: "1",
+      });
+      expect(staleLiveRes.status).toBe(1);
+      expect(staleLiveRes.stderr).toContain("does not answer the new commit");
+      expect(staleLiveRes.stderr).toContain(
+        "fake-host rollback https://previous.example.com --yes",
+      );
+      expect(readFileSync(h2.releasesLogFile, "utf8")).toBe(beforeLog2);
+      expect(existsSync(h2.lockDir)).toBe(false);
+
+      // Case C: host promote command itself fails (after migrating the database).
+      const h3 = makeHarness();
+      const migCommit3 = commitAndPushNewMigration(h3);
+      recordPass(h3, migCommit3);
+      recordRelease(h3, 4, h3.commit1, "https://previous.example.com");
+      const beforeLog3 = readFileSync(h3.releasesLogFile, "utf8");
+      const liveSrv3 = await makeLiveServer(h3, h3.commit1);
+      await makeStagedServer(h3, h3.commit1);
+      writeFileSync(h3.promoteFailMarker, "1\n", "utf8");
+
+      const failPromoteRes = await runDeploy(h3, [migCommit3], {
+        SOUS_LIVE_URL: liveSrv3.url,
+        SOUS_DEPLOY_ENV_FILE: h3.deployEnvFile,
+        SOUS_BACKUP_DIR: h3.backupDir,
+      });
+      expect(failPromoteRes.status).toBe(1);
+      expect(failPromoteRes.stderr).toContain(
+        "promote failed; its outcome is unknown, check what the live address answers",
+      );
+      expect(failPromoteRes.stderr).toContain("migrated the database");
+      expect(failPromoteRes.stderr).toContain(
+        "fake-host rollback https://previous.example.com --yes",
+      );
+      expect(readFileSync(h3.releasesLogFile, "utf8")).toBe(beforeLog3);
+      expect(existsSync(h3.lockDir)).toBe(false);
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it(
+    "DEPLOY-13: real run with migration passes PG* env (never password in args), isolates db:migrate env, and stops on failed/empty dump or failed migrate",
+    async () => {
+      // Happy path: pg_dump via PG* env before db:migrate, non-empty dump, clean env, no password in args or output.
+      const h1 = makeHarness();
+      const migCommit1 = commitAndPushNewMigration(h1);
+      recordPass(h1, migCommit1);
+      recordRelease(h1, 1, h1.commit1, "https://previous.example.com");
+      const srv1 = await makeLiveServer(h1, h1.commit1);
+      await makeStagedServer(h1, h1.commit1);
+
+      const okRes = await runDeploy(h1, [migCommit1], {
+        SOUS_LIVE_URL: srv1.url,
+        SOUS_DEPLOY_ENV_FILE: h1.deployEnvFile,
+        SOUS_BACKUP_DIR: h1.backupDir,
+      });
+
+      expect(okRes.status).toBe(0);
+      expect(okRes.stdout).not.toContain("secretpass");
+      expect(okRes.stderr).not.toContain("secretpass");
+
+      const calls1 = readCallLog(h1);
+      const dumpIdx = calls1.findIndex((line) => line.startsWith("pg_dump "));
+      const migrateIdx = calls1.findIndex((line) =>
+        line.includes("pnpm --dir app db:migrate"),
+      );
+      const deployIdx = calls1.findIndex((line) =>
+        line.startsWith("fake-host deploy "),
+      );
+      expect(dumpIdx).toBeGreaterThan(-1);
+      expect(migrateIdx).toBeGreaterThan(dumpIdx);
+      expect(deployIdx).toBeGreaterThan(migrateIdx);
+
+      // Password never appears in pg_dump or pnpm arguments.
+      expect(calls1[dumpIdx]).not.toContain("secretpass");
+      expect(calls1[migrateIdx]).not.toContain("secretpass");
+
+      // pg_dump received PG* connection variables including PGPASSWORD and PGSSLMODE.
+      const pgEnvRuns = readPgDumpEnvLog(h1);
+      expect(pgEnvRuns).toHaveLength(1);
+      expect(pgEnvRuns[0]).toContain("PGPASSWORD");
+      expect(pgEnvRuns[0]).toContain("PGHOST");
+      expect(pgEnvRuns[0]).toContain("PGPORT");
+      expect(pgEnvRuns[0]).toContain("PGUSER");
+      expect(pgEnvRuns[0]).toContain("PGDATABASE");
+      expect(pgEnvRuns[0]).toContain("PGSSLMODE");
+
+      // db:migrate received only DATABASE_URL (plus PATH, HOME, and bash's PWD, SHLVL, _).
+      const envMatch = / \| env=([^|]*) \| /.exec(calls1[migrateIdx] ?? "");
+      expect(envMatch).not.toBeNull();
+      const migrateEnvVars = (envMatch?.[1] ?? "")
+        .split(",")
+        .filter((name) => name.length > 0);
+      expect(migrateEnvVars).toContain("DATABASE_URL");
+      const allowedMigrateEnv = new Set(["DATABASE_URL", "PWD", "SHLVL", "_"]);
+      for (const name of migrateEnvVars) {
+        expect(allowedMigrateEnv.has(name)).toBe(true);
+      }
+
+      const dumps1 = readdirSync(h1.backupDir).filter((f) => f.endsWith(".dump"));
+      expect(dumps1).toHaveLength(1);
+      expect(statSync(path.join(h1.backupDir, dumps1[0]!)).size).toBeGreaterThan(0);
+      expect(readdirSync(h1.tmpDir)).toEqual([]);
+
+      // Failing pg_dump (non-zero exit even when a partial file was written): stops before db:migrate and host.
+      const hFailDump = makeHarness();
+      const migCommitFailDump = commitAndPushNewMigration(hFailDump);
+      recordPass(hFailDump, migCommitFailDump);
+      recordRelease(hFailDump, 1, hFailDump.commit1, "https://previous.example.com");
+      const srvFailDump = await makeLiveServer(hFailDump, hFailDump.commit1);
+      await makeStagedServer(hFailDump, hFailDump.commit1);
+      writeFileSync(hFailDump.pgDumpFailMarker, "1\n", "utf8");
+
+      const failDumpRes = await runDeploy(hFailDump, [migCommitFailDump], {
+        SOUS_LIVE_URL: srvFailDump.url,
+        SOUS_DEPLOY_ENV_FILE: hFailDump.deployEnvFile,
+        SOUS_BACKUP_DIR: hFailDump.backupDir,
+      });
+      expect(failDumpRes.status).not.toBe(0);
+      expect(failDumpRes.stderr).toContain("pg_dump failed");
+      const callsFailDump = readCallLog(hFailDump);
+      expect(callsFailDump.some((line) => line.startsWith("pg_dump "))).toBe(true);
+      expect(callsFailDump.some((line) => line.includes("db:migrate"))).toBe(false);
+      expect(hostCalls(hFailDump)).toEqual([]);
+
+      // Empty-dump marker: refused before db:migrate and host CLI.
+      const h2 = makeHarness();
+      const migCommit2 = commitAndPushNewMigration(h2);
+      recordPass(h2, migCommit2);
+      recordRelease(h2, 1, h2.commit1, "https://previous.example.com");
+      const srv2 = await makeLiveServer(h2, h2.commit1);
+      await makeStagedServer(h2, h2.commit1);
+      writeFileSync(h2.emptyDumpMarker, "1\n", "utf8");
+
+      const emptyRes = await runDeploy(h2, [migCommit2], {
+        SOUS_LIVE_URL: srv2.url,
+        SOUS_DEPLOY_ENV_FILE: h2.deployEnvFile,
+        SOUS_BACKUP_DIR: h2.backupDir,
+      });
+
+      expect(emptyRes.status).not.toBe(0);
+      expect(emptyRes.stderr).toContain("empty");
+      expect(emptyRes.stdout).not.toContain("secretpass");
+      expect(emptyRes.stderr).not.toContain("secretpass");
+      const calls2 = readCallLog(h2);
+      expect(calls2.some((line) => line.startsWith("pg_dump "))).toBe(true);
+      expect(calls2.some((line) => line.includes("db:migrate"))).toBe(false);
+      expect(hostCalls(h2)).toEqual([]);
+
+      // Migrate-fails marker: exit 1, output names dump path and scratch-restore note, host never called.
+      const h3 = makeHarness();
+      const migCommit3 = commitAndPushNewMigration(h3);
+      recordPass(h3, migCommit3);
+      recordRelease(h3, 1, h3.commit1, "https://previous.example.com");
+      const srv3 = await makeLiveServer(h3, h3.commit1);
+      await makeStagedServer(h3, h3.commit1);
+      writeFileSync(h3.migrateFailMarker, "1\n", "utf8");
+
+      const failMigRes = await runDeploy(h3, [migCommit3], {
+        SOUS_LIVE_URL: srv3.url,
+        SOUS_DEPLOY_ENV_FILE: h3.deployEnvFile,
+        SOUS_BACKUP_DIR: h3.backupDir,
+      });
+
+      expect(failMigRes.status).toBe(1);
+      const dumps3 = readdirSync(h3.backupDir).filter((f) => f.endsWith(".dump"));
+      expect(dumps3).toHaveLength(1);
+      const dumpPath3 = path.join(h3.backupDir, dumps3[0]!);
+      expect(statSync(dumpPath3).size).toBeGreaterThan(0);
+      expect(failMigRes.stderr).toContain(dumpPath3);
+      expect(failMigRes.stderr).toContain(
+        "restore it into a scratch database first (docs/deploy.md, Backup and restore)",
+      );
+      expect(failMigRes.stdout).not.toContain("secretpass");
+      expect(failMigRes.stderr).not.toContain("secretpass");
+      expect(hostCalls(h3)).toEqual([]);
+      expect(readdirSync(h3.tmpDir)).toEqual([]);
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it("DEPLOY-14: dry run redacts host tokens in printed deploy, promote, and rollback commands", async () => {
+    const h = makeHarness();
+    recordPass(h, h.commit2);
+    recordRelease(h, 4, h.commit1, "https://previous.example.com");
+    const srv = await makeLiveServer(h, h.commit1);
+
+    const resToken = await runDeploy(h, ["--dry-run", h.commit2], {
+      SOUS_LIVE_URL: srv.url,
+      SOUS_HOST_ARGS: "--scope example-team --token abc123",
+    });
+    expect(resToken.status).toBe(0);
+    expect(resToken.stdout).toContain("--scope example-team --token <redacted>");
+    expect(resToken.stdout).not.toContain("abc123");
+    expect(resToken.stderr).not.toContain("abc123");
+
+    const resShort = await runDeploy(h, ["--dry-run", h.commit2], {
+      SOUS_LIVE_URL: srv.url,
+      SOUS_HOST_ARGS: "--scope example-team -t def456",
+    });
+    expect(resShort.status).toBe(0);
+    expect(resShort.stdout).toContain("--scope example-team -t <redacted>");
+    expect(resShort.stdout).not.toContain("def456");
+    expect(resShort.stderr).not.toContain("def456");
+
+    const resEquals = await runDeploy(h, ["--dry-run", h.commit2], {
+      SOUS_LIVE_URL: srv.url,
+      SOUS_HOST_ARGS: "--scope example-team --token=ghi789",
+    });
+    expect(resEquals.status).toBe(0);
+    expect(resEquals.stdout).toContain("--scope example-team --token=<redacted>");
+    expect(resEquals.stdout).not.toContain("ghi789");
+    expect(resEquals.stderr).not.toContain("ghi789");
+  });
+
+  it(
+    "DEPLOY-15: tracing is disabled under bash -x and SHELLOPTS=xtrace so no password, token, or bypass value leaks",
+    async () => {
+      const hostToken = "hosttok-98765";
+      const bypassVal = "bypass-secret-54321";
+
+      // Run 1: bash -x scripts/deploy.sh ...
+      const h1 = makeHarness();
+      const migCommit1 = commitAndPushNewMigration(h1);
+      recordPass(h1, migCommit1);
+      recordRelease(h1, 1, h1.commit1, "https://previous.example.com");
+      const liveSrv1 = await makeLiveServer(h1, h1.commit1);
+      await makeStagedServer(h1, h1.commit1);
+
+      const resDashX = await runDeploy(
+        h1,
+        [migCommit1],
+        {
+          SOUS_LIVE_URL: liveSrv1.url,
+          SOUS_DEPLOY_ENV_FILE: h1.deployEnvFile,
+          SOUS_BACKUP_DIR: h1.backupDir,
+          SOUS_HOST_ARGS: `--scope example-team --token ${hostToken}`,
+          SMOKE_BYPASS_HEADER: "x-test-bypass",
+          SMOKE_BYPASS_VALUE: bypassVal,
+        },
+        ["-x"],
+      );
+      expect(resDashX.status).toBe(0);
+      for (const secret of ["secretpass", hostToken, bypassVal]) {
+        expect(resDashX.stdout).not.toContain(secret);
+        expect(resDashX.stderr).not.toContain(secret);
+      }
+
+      // Run 2: SHELLOPTS=xtrace in environment.
+      const h2 = makeHarness();
+      const migCommit2 = commitAndPushNewMigration(h2);
+      recordPass(h2, migCommit2);
+      recordRelease(h2, 1, h2.commit1, "https://previous.example.com");
+      const liveSrv2 = await makeLiveServer(h2, h2.commit1);
+      await makeStagedServer(h2, h2.commit1);
+
+      const resShellOpts = await runDeploy(h2, [migCommit2], {
+        SHELLOPTS: "xtrace",
+        SOUS_LIVE_URL: liveSrv2.url,
+        SOUS_DEPLOY_ENV_FILE: h2.deployEnvFile,
+        SOUS_BACKUP_DIR: h2.backupDir,
+        SOUS_HOST_ARGS: `--scope example-team --token ${hostToken}`,
+        SMOKE_BYPASS_HEADER: "x-test-bypass",
+        SMOKE_BYPASS_VALUE: bypassVal,
+      });
+      expect(resShellOpts.status).toBe(0);
+      for (const secret of ["secretpass", hostToken, bypassVal]) {
+        expect(resShellOpts.stdout).not.toContain(secret);
+        expect(resShellOpts.stderr).not.toContain(secret);
+      }
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it("DEPLOY-16: failing git migration listing stops the run instead of reporting no new migrations", async () => {
+    const h = makeHarness();
+    // Create a migration commit on a separate branch, push to origin/main,
+    // then return the working tree to commit1 so checkout stays readable.
+    git(h.repoDir, ["checkout", "-b", "mig-branch", h.commit1]);
+    writeFileSync(
+      path.join(h.repoDir, "app/drizzle/migrations/0001_corrupt_test.sql"),
+      "ALTER TABLE items ADD COLUMN note text;\n",
+      "utf8",
+    );
+    git(h.repoDir, ["add", "app/drizzle/migrations/0001_corrupt_test.sql"]);
+    git(h.repoDir, ["commit", "-m", "branch migration commit"]);
+    const targetCommit = git(h.repoDir, ["rev-parse", "HEAD"]);
+    git(h.repoDir, ["push", "--force", "origin", "HEAD:main"]);
+    git(h.repoDir, ["checkout", h.commit1]);
+
+    // Delete the loose tree object for the target commit's app/drizzle/migrations.
+    const migTreeHash = git(h.repoDir, [
+      "rev-parse",
+      `${targetCommit}:app/drizzle/migrations`,
+    ]);
+    const looseObjPath = path.join(
+      h.repoDir,
+      ".git/objects",
+      migTreeHash.slice(0, 2),
+      migTreeHash.slice(2),
+    );
+    expect(existsSync(looseObjPath)).toBe(true);
+    rmSync(looseObjPath);
+
+    recordPass(h, targetCommit);
+    recordRelease(h, 1, h.commit1, "https://previous.example.com");
+    const srv = await makeLiveServer(h, h.commit1);
+
+    const res = await runDeploy(h, ["--dry-run", targetCommit], {
+      SOUS_LIVE_URL: srv.url,
+      SOUS_DEPLOY_ENV_FILE: h.deployEnvFile,
+      SOUS_BACKUP_DIR: h.backupDir,
+    });
+
+    expect(res.status).not.toBe(0);
+    expect(res.stderr.length).toBeGreaterThan(0);
+    expect(res.stdout).not.toContain("New migrations: none");
+    expect(hostCalls(h)).toEqual([]);
+  });
+
+  it(
+    "DEPLOY-17: real first release with --first-release 7 and empty log records the exact release line",
+    async () => {
+      const h = makeHarness();
+      recordPass(h, h.commit2);
+      const liveSrv = await makeLiveServer(h, null);
+      await makeStagedServer(h, null);
+
+      const res = await runDeploy(h, ["--first-release", "7", h.commit2], {
+        SOUS_LIVE_URL: liveSrv.url,
+        SOUS_DEPLOY_ENV_FILE: h.deployEnvFile,
+        SOUS_BACKUP_DIR: h.backupDir,
+      });
+
+      expect(res.status).toBe(0);
+      expect(existsSync(h.releasesLogFile)).toBe(true);
+      const lines = readFileSync(h.releasesLogFile, "utf8")
+        .split("\n")
+        .filter((line) => line.length > 0);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(
+        new RegExp(
+          `^7 ${h.commit2} https://staged\\.example\\.com \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$`,
+        ),
+      );
+      expect(res.stdout).toContain("no recorded release matches the live commit");
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it("RCHECK-1: release-check.sh refuses an unknown commit quickly without installing", () => {
+    const h = makeHarness();
+
+    const res = spawnSync("bash", ["scripts/release-check.sh", "not-a-commit"], {
+      cwd: h.repoDir,
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: h.rootDir,
+        SOUS_RELEASE_STATE_DIR: h.stateDir,
+      },
+      encoding: "utf8",
+    });
+
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain("not-a-commit");
+    expect(existsSync(h.passLogFile)).toBe(false);
+  }, REAL_RUN_TIMEOUT_MS);
+
+  it.skipIf(process.platform !== "darwin")(
+    "RCHECK-2: release-check.sh sets CI=1 for every step and records a pass only when all steps and reports succeed (skipped outside macOS because screenshot checks only run on macOS)",
+    async () => {
+      // Case A: every step succeeds -> one pass line for sha, CI=1 on every step.
+      const hOk = makeReleaseCheckHarness();
+      const okRes = await runReleaseCheck(hOk, hOk.commit1);
+      expect(okRes.status).toBe(0);
+      expect(existsSync(hOk.passLogFile)).toBe(true);
+      const passLines = readFileSync(hOk.passLogFile, "utf8")
+        .split("\n")
+        .filter((line) => line.length > 0);
+      expect(passLines).toHaveLength(1);
+      expect(passLines[0]).toMatch(
+        new RegExp(
+          `^${hOk.commit1} \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z e2e=3/0 visual=2/0$`,
+        ),
+      );
+      const okCalls = readFileSync(hOk.callLogFile, "utf8")
+        .split("\n")
+        .filter((line) => line.length > 0);
+      const stepCalls = okCalls.filter((line) => !line.includes("e2e:db:down"));
+      expect(stepCalls.length).toBeGreaterThanOrEqual(12);
+      for (const line of stepCalls) {
+        expect(line).toContain("| CI=1");
+      }
+
+      // Case B: middle step (test:run) fails -> no pass line and no later step called.
+      const hMid = makeReleaseCheckHarness();
+      writeFileSync(hMid.failStepMarker, "test:run", "utf8");
+      const midRes = await runReleaseCheck(hMid, hMid.commit1);
+      expect(midRes.status).not.toBe(0);
+      expect(existsSync(hMid.passLogFile)).toBe(false);
+      const midCalls = readFileSync(hMid.callLogFile, "utf8")
+        .split("\n")
+        .filter((line) => line.length > 0);
+      expect(midCalls.some((line) => line.includes("test:run"))).toBe(true);
+      expect(midCalls.some((line) => line.includes(" build"))).toBe(false);
+      expect(midCalls.some((line) => line.includes("e2e:db:up"))).toBe(false);
+      expect(midCalls.some((line) => line.includes(" e2e "))).toBe(false);
+      expect(midCalls.some((line) => line.includes("e2e:visual"))).toBe(false);
+
+      // Case C: visual screenshot report shows one unexpected failure -> no pass line.
+      const hVis = makeReleaseCheckHarness();
+      writeFileSync(hVis.visualUnexpectedMarker, "1\n", "utf8");
+      const visRes = await runReleaseCheck(hVis, hVis.commit1);
+      expect(visRes.status).not.toBe(0);
+      expect(existsSync(hVis.passLogFile)).toBe(false);
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+});
