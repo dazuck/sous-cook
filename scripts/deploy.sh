@@ -864,12 +864,18 @@ mkdir -p "${worktree_dir}/.vercel"
 cp "${SOUS_HOST_LINK_FILE}" "${worktree_dir}/.vercel/project.json"
 
 stage_out="${tmp_dir}/stage.stdout"
+print_stage_out() {
+  cat "${stage_out}"
+  if [ -s "${stage_out}" ] && [ "$(tail -c 1 "${stage_out}" | wc -l)" -eq 0 ]; then
+    printf '\n'
+  fi
+}
 if ! (cd "${worktree_dir}" && "${host_cli}" deploy --prod --skip-domain --yes --build-env "SOUS_RELEASE_COMMIT=${sha}" ${host_args[@]+"${host_args[@]}"}) > "${stage_out}"; then
-  cat "${stage_out}" >&2
+  print_stage_out >&2
   printf 'deploy: staging command failed\n' >&2
   exit 1
 fi
-cat "${stage_out}"
+print_stage_out
 
 parse_staged_url() {
   local stage_file="$1"

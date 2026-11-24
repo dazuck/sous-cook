@@ -27,6 +27,7 @@ const RELEASE_CHECK_SCRIPT_SRC = path.join(
   REPO_ROOT,
   "scripts/release-check.sh",
 );
+const DB_UP_SCRIPT_SRC = path.join(REPO_ROOT, "app/e2e/db-up.sh");
 const REAL_RUN_TIMEOUT_MS = 30_000;
 
 interface VersionServer {
@@ -711,8 +712,14 @@ interface ReleaseCheckHarness {
   binDir: string;
   tmpDir: string;
   callLogFile: string;
+  pnpmOwnerLogFile: string;
+  dockerEnvLogFile: string;
   failStepMarker: string;
   visualUnexpectedMarker: string;
+  dockerExistsMarker: string;
+  dockerOwnerFile: string;
+  createDockerOnStepMarker: string;
+  dockerOwnerOnStepMarker: string;
   passLogFile: string;
   commit1: string;
 }
@@ -724,8 +731,20 @@ function createReleaseCheckHarness(): ReleaseCheckHarness {
   const binDir = path.join(rootDir, "bin");
   const tmpDir = path.join(rootDir, "tmp");
   const callLogFile = path.join(rootDir, "calls.log");
+  const pnpmOwnerLogFile = path.join(rootDir, "pnpm-owner.log");
+  const dockerEnvLogFile = path.join(rootDir, "docker-env.log");
   const failStepMarker = path.join(rootDir, "fail-step.marker");
   const visualUnexpectedMarker = path.join(rootDir, "visual-unexpected.marker");
+  const dockerExistsMarker = path.join(rootDir, "docker-exists.marker");
+  const dockerOwnerFile = path.join(rootDir, "docker-owner.txt");
+  const createDockerOnStepMarker = path.join(
+    rootDir,
+    "create-docker-on-step.marker",
+  );
+  const dockerOwnerOnStepMarker = path.join(
+    rootDir,
+    "docker-owner-on-step.marker",
+  );
 
   mkdirSync(repoDir, { recursive: true });
   mkdirSync(stateDir, { recursive: true });
@@ -749,6 +768,7 @@ function createReleaseCheckHarness(): ReleaseCheckHarness {
       "{ set +x; } 2>/dev/null",
       "set -euo pipefail",
       `printf 'pnpm %s | CI=%s\\n' "$*" "\${CI:-}" >> "${callLogFile}"`,
+      `printf 'pnpm %s | E2E_PG_OWNER=%s\\n' "$*" "\${E2E_PG_OWNER-<unset>}" >> "${pnpmOwnerLogFile}"`,
       'dir_arg=""',
       'cmd=""',
       'next_is_dir=0',
@@ -762,6 +782,26 @@ function createReleaseCheckHarness(): ReleaseCheckHarness {
       '    cmd="${arg}"',
       "  fi",
       "done",
+      `if [ -f "${createDockerOnStepMarker}" ]; then`,
+      `  appear_cmd="$(cat "${createDockerOnStepMarker}")"`,
+      '  if [ "${cmd}" = "${appear_cmd}" ]; then',
+      `    printf "1\\n" > "${dockerExistsMarker}"`,
+      `    if [ -f "${dockerOwnerOnStepMarker}" ]; then`,
+      `      cp "${dockerOwnerOnStepMarker}" "${dockerOwnerFile}"`,
+      "    fi",
+      "  fi",
+      "fi",
+      'if [ "${cmd}" = "e2e:db:up" ]; then',
+      `  if [ ! -e "${dockerExistsMarker}" ]; then`,
+      `    printf "1\\n" > "${dockerExistsMarker}"`,
+      '    if [ -n "${E2E_PG_OWNER:-}" ]; then',
+      `      printf '%s\\n' "\${E2E_PG_OWNER}" > "${dockerOwnerFile}"`,
+      "    fi",
+      "  fi",
+      "fi",
+      'if [ "${cmd}" = "e2e:db:down" ]; then',
+      `  rm -f "${dockerExistsMarker}" "${dockerOwnerFile}"`,
+      "fi",
       `if [ -f "${failStepMarker}" ]; then`,
       `  fail_cmd="$(cat "${failStepMarker}")"`,
       '  if [ "${cmd}" = "${fail_cmd}" ]; then',
@@ -787,6 +827,66 @@ function createReleaseCheckHarness(): ReleaseCheckHarness {
   );
   chmodSync(fakePnpmPath, 0o755);
 
+  const fakeDockerPath = path.join(binDir, "docker");
+  writeFileSync(
+    fakeDockerPath,
+    [
+      "#!/usr/bin/env bash",
+      "{ set +x; } 2>/dev/null",
+      "set -euo pipefail",
+      `printf 'docker %s\\n' "$*" >> "${callLogFile}"`,
+      `printf 'DOCKER_HOST=%s | DOCKER_CONTEXT=%s\\n' "\${DOCKER_HOST-<unset>}" "\${DOCKER_CONTEXT-<unset>}" >> "${dockerEnvLogFile}"`,
+      'subcmd="${1:-}"',
+      'if [ "${subcmd}" = "container" ] && [ "${2:-}" = "inspect" ]; then',
+      "  shift 2",
+      '  fmt=""',
+      '  target=""',
+      '  while [ "$#" -gt 0 ]; do',
+      '    case "$1" in',
+      "      --format|-f)",
+      '        fmt="${2:-}"',
+      "        shift 2",
+      "        ;;",
+      "      --format=*)",
+      '        fmt="${1#--format=}"',
+      "        shift",
+      "        ;;",
+      "      *)",
+      '        target="$1"',
+      "        shift",
+      "        ;;",
+      "    esac",
+      "  done",
+      `  if [ -e "${dockerExistsMarker}" ]; then`,
+      '    if [ -n "${fmt}" ]; then',
+      `      if [ -f "${dockerOwnerFile}" ]; then`,
+      `        cat "${dockerOwnerFile}"`,
+      "      else",
+      '        printf "\\n"',
+      "      fi",
+      "    else",
+      '      printf \'[{"Name":"/%s"}]\\n\' "${target}"',
+      "    fi",
+      "    exit 0",
+      "  fi",
+      '  printf \'Error: No such container: %s\\n\' "${target}" >&2',
+      "  exit 1",
+      "fi",
+      'if [ "${subcmd}" = "inspect" ]; then',
+      `  if [ -e "${dockerExistsMarker}" ]; then`,
+      '    printf \'[{"Name":"/%s"}]\\n\' "${2:-}"',
+      "    exit 0",
+      "  fi",
+      '  printf \'Error: No such object: %s\\n\' "${2:-}" >&2',
+      "  exit 1",
+      "fi",
+      "exit 0",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  chmodSync(fakeDockerPath, 0o755);
+
   git(repoDir, ["init", "-b", "main"]);
   writeFileSync(path.join(repoDir, "README.md"), "release check repo\n", "utf8");
   writeFileSync(
@@ -805,8 +905,14 @@ function createReleaseCheckHarness(): ReleaseCheckHarness {
     binDir,
     tmpDir,
     callLogFile,
+    pnpmOwnerLogFile,
+    dockerEnvLogFile,
     failStepMarker,
     visualUnexpectedMarker,
+    dockerExistsMarker,
+    dockerOwnerFile,
+    createDockerOnStepMarker,
+    dockerOwnerOnStepMarker,
     passLogFile: path.join(stateDir, "release-passes.log"),
     commit1,
   };
@@ -1977,7 +2083,9 @@ describe("release scripts", () => {
       const okCalls = readFileSync(hOk.callLogFile, "utf8")
         .split("\n")
         .filter((line) => line.length > 0);
-      const stepCalls = okCalls.filter((line) => !line.includes("e2e:db:down"));
+      const stepCalls = okCalls.filter(
+        (line) => line.startsWith("pnpm ") && !line.includes("e2e:db:down"),
+      );
       expect(stepCalls.length).toBeGreaterThanOrEqual(12);
       for (const line of stepCalls) {
         expect(line).toContain("| CI=1");
@@ -2721,6 +2829,62 @@ describe("release scripts", () => {
   );
 
   it(
+    "DEPLOY-27: prints a newline after host staging output with no trailing newline so Staged URL starts its own line",
+    async () => {
+      const h = makeHarness();
+      recordPass(h, h.commit2);
+      recordRelease(h, 4, h.commit1, "https://previous.example.com");
+      const liveSrv = await makeLiveServer(h, h.commit1);
+      await makeStagedServer(h, h.commit1);
+
+      writeFileSync(h.hostStdoutFile, "https://staged.example.com", "utf8");
+
+      const noNewlineRes = await runDeploy(h, [h.commit2], {
+        SOUS_LIVE_URL: liveSrv.url,
+      });
+      expect(noNewlineRes.status).toBe(0);
+      expect(noNewlineRes.stdout).not.toContain(
+        "https://staged.example.comStaged URL:",
+      );
+      const noNewlineLines = noNewlineRes.stdout.split("\n");
+      const urlLineIdx = noNewlineLines.indexOf("https://staged.example.com");
+      expect(urlLineIdx).toBeGreaterThan(-1);
+      expect(noNewlineLines[urlLineIdx + 1]).toBe(
+        "Staged URL: https://staged.example.com",
+      );
+
+      // When host output already ends with a newline, no extra blank line is added.
+      const hWithNewline = makeHarness();
+      recordPass(hWithNewline, hWithNewline.commit2);
+      recordRelease(
+        hWithNewline,
+        4,
+        hWithNewline.commit1,
+        "https://previous.example.com",
+      );
+      const liveSrv2 = await makeLiveServer(hWithNewline, hWithNewline.commit1);
+      await makeStagedServer(hWithNewline, hWithNewline.commit1);
+      writeFileSync(
+        hWithNewline.hostStdoutFile,
+        "https://staged.example.com\n",
+        "utf8",
+      );
+
+      const withNewlineRes = await runDeploy(hWithNewline, [hWithNewline.commit2], {
+        SOUS_LIVE_URL: liveSrv2.url,
+      });
+      expect(withNewlineRes.status).toBe(0);
+      expect(withNewlineRes.stdout).toContain(
+        "https://staged.example.com\nStaged URL: https://staged.example.com\n",
+      );
+      expect(withNewlineRes.stdout).not.toContain(
+        "https://staged.example.com\n\nStaged URL:",
+      );
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it(
     "DEPLOY-25: real run with SOUS_EXPECT_SIGN_IN=off passes SMOKE_EXPECT_SIGN_IN=off to both smoke calls",
     async () => {
       const h = makeHarness();
@@ -2971,6 +3135,492 @@ describe("release scripts", () => {
           });
         }
       }
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it.skipIf(process.platform !== "darwin")(
+    "RCHECK-6: release-check.sh refuses an existing database container at start or before e2e:db:up and removes only a container it created",
+    async () => {
+      async function pickFreePort(): Promise<string> {
+        const probe = net.createServer();
+        await new Promise<void>((resolve, reject) => {
+          probe.once("error", reject);
+          probe.listen(0, "127.0.0.1", () => resolve());
+        });
+        const port = (probe.address() as AddressInfo).port;
+        await new Promise<void>((resolve, reject) => {
+          probe.close((err) => (err ? reject(err) : resolve()));
+        });
+        return String(port);
+      }
+
+      const readLines = (filePath: string): string[] =>
+        existsSync(filePath)
+          ? readFileSync(filePath, "utf8")
+              .split("\n")
+              .filter((line) => line.length > 0)
+          : [];
+
+      // Case A: container exists at start -> refuses before any pnpm step and never calls e2e:db:down or docker rm.
+      const hStart = makeReleaseCheckHarness();
+      writeFileSync(hStart.dockerExistsMarker, "1\n", "utf8");
+      const startRes = await runReleaseCheckWithEnv(hStart, hStart.commit1, {
+        E2E_APP_PORT: await pickFreePort(),
+        E2E_PG_CONTAINER: "existing-pg",
+        E2E_PG_PORT: "55743",
+      });
+      expect(startRes.status).not.toBe(0);
+      expect(startRes.stderr).toContain("existing-pg");
+      expect(startRes.stderr).toContain("already exists");
+      expect(startRes.stderr).toContain("e2e:db:down");
+      expect(startRes.stderr).toContain("E2E_PG_CONTAINER");
+      expect(startRes.stderr).toContain("E2E_PG_PORT");
+      expect(existsSync(hStart.passLogFile)).toBe(false);
+      const startCalls = readLines(hStart.callLogFile);
+      expect(startCalls).toEqual(["docker container inspect existing-pg"]);
+      expect(startCalls.some((line) => line.startsWith("pnpm "))).toBe(false);
+      expect(startCalls.some((line) => line.includes("e2e:db:down"))).toBe(false);
+      expect(startCalls.some((line) => line.includes("docker rm"))).toBe(false);
+
+      // Case B: container appears between start and the db step -> refuses before e2e:db:up and never calls e2e:db:down.
+      const hAppear = makeReleaseCheckHarness();
+      writeFileSync(hAppear.createDockerOnStepMarker, "build", "utf8");
+      const appearRes = await runReleaseCheckWithEnv(hAppear, hAppear.commit1, {
+        E2E_APP_PORT: await pickFreePort(),
+        E2E_PG_CONTAINER: "appeared-pg",
+        E2E_PG_PORT: "55744",
+      });
+      expect(appearRes.status).not.toBe(0);
+      expect(appearRes.stderr).toContain("appeared-pg");
+      expect(appearRes.stderr).toContain("already exists");
+      expect(appearRes.stderr).toContain("e2e:db:down");
+      expect(existsSync(hAppear.passLogFile)).toBe(false);
+      const appearCalls = readLines(hAppear.callLogFile);
+      expect(
+        appearCalls.filter(
+          (line) => line === "docker container inspect appeared-pg",
+        ),
+      ).toHaveLength(2);
+      expect(appearCalls.some((line) => line.includes(" build "))).toBe(true);
+      expect(appearCalls.some((line) => line.includes("e2e:db:up"))).toBe(false);
+      expect(appearCalls.some((line) => line.includes("e2e:db:down"))).toBe(false);
+      expect(appearCalls.some((line) => line.includes("docker rm"))).toBe(false);
+
+      // Case C: normal run checks twice, passes E2E_PG_OWNER only to e2e:db:up,
+      // runs every docker call with a clean environment, and removes the
+      // container in cleanup because its owner label matches.
+      const hOk = makeReleaseCheckHarness();
+      const okRes = await runReleaseCheckWithEnv(hOk, hOk.commit1, {
+        E2E_APP_PORT: await pickFreePort(),
+        E2E_PG_CONTAINER: "clean-pg",
+        E2E_PG_PORT: "55745",
+        DOCKER_HOST: "tcp://127.0.0.1:23750",
+        DOCKER_CONTEXT: "leaked-context",
+      });
+      expect(okRes.status).toBe(0);
+      expect(existsSync(hOk.passLogFile)).toBe(true);
+      const okCalls = readLines(hOk.callLogFile);
+      expect(
+        okCalls.filter((line) => line === "docker container inspect clean-pg"),
+      ).toHaveLength(2);
+      expect(
+        okCalls.some(
+          (line) =>
+            line.startsWith("docker container inspect --format ") &&
+            line.includes("sous.e2e.owner") &&
+            line.endsWith(" clean-pg"),
+        ),
+      ).toBe(true);
+      expect(okCalls.some((line) => line.includes("e2e:db:up"))).toBe(true);
+      expect(okCalls.some((line) => line.includes("e2e:db:down"))).toBe(true);
+      expect(existsSync(hOk.dockerExistsMarker)).toBe(false);
+
+      const ownerLines = readLines(hOk.pnpmOwnerLogFile);
+      const dbUpOwnerLines = ownerLines.filter((line) =>
+        line.includes("e2e:db:up"),
+      );
+      expect(dbUpOwnerLines).toHaveLength(1);
+      expect(dbUpOwnerLines[0]).toMatch(
+        /\| E2E_PG_OWNER=[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/,
+      );
+      const nonDbUpOwnerLines = ownerLines.filter(
+        (line) => !line.includes("e2e:db:up"),
+      );
+      expect(nonDbUpOwnerLines.length).toBeGreaterThanOrEqual(12);
+      for (const line of nonDbUpOwnerLines) {
+        expect(line).toContain("| E2E_PG_OWNER=<unset>");
+      }
+
+      const dockerEnvLines = readLines(hOk.dockerEnvLogFile);
+      expect(dockerEnvLines).toHaveLength(3);
+      for (const line of dockerEnvLines) {
+        expect(line).toBe("DOCKER_HOST=<unset> | DOCKER_CONTEXT=<unset>");
+      }
+
+      // Case D1: when e2e:db:up fails and the container carries another
+      // owner's label, cleanup must not call e2e:db:down.
+      const hOtherOwner = makeReleaseCheckHarness();
+      writeFileSync(hOtherOwner.createDockerOnStepMarker, "e2e:db:up", "utf8");
+      writeFileSync(
+        hOtherOwner.dockerOwnerOnStepMarker,
+        "other-run-owner-99\n",
+        "utf8",
+      );
+      writeFileSync(hOtherOwner.failStepMarker, "e2e:db:up", "utf8");
+      const otherOwnerRes = await runReleaseCheckWithEnv(
+        hOtherOwner,
+        hOtherOwner.commit1,
+        {
+          E2E_APP_PORT: await pickFreePort(),
+          E2E_PG_CONTAINER: "raced-pg",
+          E2E_PG_PORT: "55746",
+        },
+      );
+      expect(otherOwnerRes.status).not.toBe(0);
+      expect(existsSync(hOtherOwner.passLogFile)).toBe(false);
+      const otherOwnerCalls = readLines(hOtherOwner.callLogFile);
+      expect(otherOwnerCalls.some((line) => line.includes("e2e:db:up"))).toBe(
+        true,
+      );
+      expect(
+        otherOwnerCalls.some(
+          (line) =>
+            line.startsWith("docker container inspect --format ") &&
+            line.includes("sous.e2e.owner") &&
+            line.endsWith(" raced-pg"),
+        ),
+      ).toBe(true);
+      expect(otherOwnerCalls.some((line) => line.includes("e2e:db:down"))).toBe(
+        false,
+      );
+      expect(existsSync(hOtherOwner.dockerExistsMarker)).toBe(true);
+
+      // Case D2: when e2e:db:up fails after creating the container with this
+      // run's label, and when a later step (e2e) fails, cleanup calls e2e:db:down.
+      for (const failCmd of ["e2e:db:up", "e2e"] as const) {
+        const hAfter = makeReleaseCheckHarness();
+        writeFileSync(hAfter.failStepMarker, failCmd, "utf8");
+        const afterRes = await runReleaseCheckWithEnv(hAfter, hAfter.commit1, {
+          E2E_APP_PORT: await pickFreePort(),
+          E2E_PG_CONTAINER: "cleanup-pg",
+          E2E_PG_PORT: "55746",
+        });
+        expect(afterRes.status).not.toBe(0);
+        expect(existsSync(hAfter.passLogFile)).toBe(false);
+        const afterCalls = readLines(hAfter.callLogFile);
+        expect(afterCalls.some((line) => line.includes("e2e:db:up"))).toBe(true);
+        expect(afterCalls.some((line) => line.includes("e2e:db:down"))).toBe(true);
+        expect(existsSync(hAfter.dockerExistsMarker)).toBe(false);
+      }
+
+      // Case E: a step failing before the db step never calls e2e:db:down.
+      const hBefore = makeReleaseCheckHarness();
+      writeFileSync(hBefore.failStepMarker, "build", "utf8");
+      const beforeRes = await runReleaseCheckWithEnv(hBefore, hBefore.commit1, {
+        E2E_APP_PORT: await pickFreePort(),
+        E2E_PG_CONTAINER: "before-db-pg",
+        E2E_PG_PORT: "55747",
+      });
+      expect(beforeRes.status).not.toBe(0);
+      expect(existsSync(hBefore.passLogFile)).toBe(false);
+      const beforeCalls = readLines(hBefore.callLogFile);
+      expect(beforeCalls.some((line) => line.includes(" build "))).toBe(true);
+      expect(beforeCalls.some((line) => line.includes("e2e:db:up"))).toBe(false);
+      expect(beforeCalls.some((line) => line.includes("e2e:db:down"))).toBe(false);
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it(
+    "DBUP-1: app/e2e/db-up.sh enforces E2E_PG_OWNER validation, labels new containers, refuses existing containers when set, and preserves existing behaviour when unset",
+    async () => {
+      interface DbUpHarness {
+        rootDir: string;
+        binDir: string;
+        callLogFile: string;
+        pnpmLogFile: string;
+        existsMarker: string;
+        stateFile: string;
+        runFailMarker: string;
+      }
+
+      function makeDbUpHarness(): DbUpHarness {
+        const rootDir = mkdtempSync(path.join(os.tmpdir(), "sous-dbup-test-"));
+        cleanupDirs.push(rootDir);
+        const binDir = path.join(rootDir, "bin");
+        const callLogFile = path.join(rootDir, "docker-calls.log");
+        const pnpmLogFile = path.join(rootDir, "pnpm-calls.log");
+        const existsMarker = path.join(rootDir, "container-exists.marker");
+        const stateFile = path.join(rootDir, "container-state.txt");
+        const runFailMarker = path.join(rootDir, "docker-run-fail.marker");
+        mkdirSync(binDir, { recursive: true });
+
+        const fakeDocker = path.join(binDir, "docker");
+        writeFileSync(
+          fakeDocker,
+          [
+            "#!/usr/bin/env bash",
+            "{ set +x; } 2>/dev/null",
+            "set -euo pipefail",
+            `printf 'docker %s\\n' "$*" >> "${callLogFile}"`,
+            'subcmd="${1:-}"',
+            'case "${subcmd}" in',
+            "  info)",
+            "    exit 0",
+            "    ;;",
+            "  inspect)",
+            "    shift",
+            '    has_format=0',
+            '    while [ "$#" -gt 0 ]; do',
+            '      case "$1" in',
+            "        --format|-f) has_format=1; shift 2 ;;",
+            "        --format=*) has_format=1; shift ;;",
+            "        *) shift ;;",
+            "      esac",
+            "    done",
+            `    if [ ! -e "${existsMarker}" ]; then`,
+            '      printf "Error: No such object\\n" >&2',
+            "      exit 1",
+            "    fi",
+            '    if [ "${has_format}" -eq 1 ]; then',
+            `      if [ -f "${stateFile}" ]; then`,
+            `        cat "${stateFile}"`,
+            "      else",
+            '        printf "false||\\n"',
+            "      fi",
+            "    else",
+            '      printf "[{}]\\n"',
+            "    fi",
+            "    exit 0",
+            "    ;;",
+            "  rm)",
+            `    rm -f "${existsMarker}" "${stateFile}"`,
+            "    exit 0",
+            "    ;;",
+            "  run)",
+            `    if [ -e "${runFailMarker}" ]; then`,
+            '      printf "docker: Error response from daemon: Conflict. Container name already in use.\\n" >&2',
+            "      exit 1",
+            "    fi",
+            `    printf "1\\n" > "${existsMarker}"`,
+            '    printf "fake-container-id\\n"',
+            "    exit 0",
+            "    ;;",
+            "  exec)",
+            "    exit 0",
+            "    ;;",
+            "  *)",
+            '    printf "fake docker: unexpected command %s\\n" "$*" >&2',
+            "    exit 1",
+            "    ;;",
+            "esac",
+            "",
+          ].join("\n"),
+          "utf8",
+        );
+        chmodSync(fakeDocker, 0o755);
+
+        const fakePnpm = path.join(binDir, "pnpm");
+        writeFileSync(
+          fakePnpm,
+          [
+            "#!/usr/bin/env bash",
+            "{ set +x; } 2>/dev/null",
+            "set -euo pipefail",
+            `printf 'pnpm %s | DATABASE_URL=%s\\n' "$*" "\${DATABASE_URL-<unset>}" >> "${pnpmLogFile}"`,
+            "exit 0",
+            "",
+          ].join("\n"),
+          "utf8",
+        );
+        chmodSync(fakePnpm, 0o755);
+
+        return {
+          rootDir,
+          binDir,
+          callLogFile,
+          pnpmLogFile,
+          existsMarker,
+          stateFile,
+          runFailMarker,
+        };
+      }
+
+      function runDbUp(
+        harness: DbUpHarness,
+        envOverrides: Record<string, string | undefined>,
+      ): RunResult {
+        const env: NodeJS.ProcessEnv = {
+          PATH: `${harness.binDir}:${process.env.PATH ?? ""}`,
+          HOME: harness.rootDir,
+          E2E_APP_PORT: "4145",
+          E2E_PG_PORT: "55745",
+          E2E_PG_CONTAINER: "dbup-test-pg",
+        };
+        for (const [k, v] of Object.entries(envOverrides)) {
+          if (v === undefined) {
+            delete env[k];
+          } else {
+            env[k] = v;
+          }
+        }
+        const res = spawnSync("sh", [DB_UP_SCRIPT_SRC], {
+          cwd: REPO_ROOT,
+          env,
+          encoding: "utf8",
+        });
+        return {
+          status: res.status,
+          stdout: res.stdout,
+          stderr: res.stderr,
+        };
+      }
+
+      const readLines = (filePath: string): string[] =>
+        existsSync(filePath)
+          ? readFileSync(filePath, "utf8")
+              .split("\n")
+              .filter((line) => line.length > 0)
+          : [];
+
+      // Case 1: invalid E2E_PG_OWNER is refused before any docker call.
+      const invalidOwners = [
+        "-leading-dash",
+        ".leading-dot",
+        "_leading-underscore",
+        "has space",
+        "has/slash",
+        "has:colon",
+        "has=equals",
+        "a".repeat(129),
+      ];
+      for (const badOwner of invalidOwners) {
+        const h = makeDbUpHarness();
+        const res = runDbUp(h, { E2E_PG_OWNER: badOwner });
+        expect(res.status).toBe(1);
+        expect(res.stderr).toContain("E2E_PG_OWNER");
+        expect(existsSync(h.callLogFile)).toBe(false);
+        expect(existsSync(h.pnpmLogFile)).toBe(false);
+      }
+
+      // Case 2: E2E_PG_OWNER set and container already exists (matching or
+      // mismatched) -> exits 1 and never calls docker rm, docker run, docker
+      // exec, or pnpm.
+      for (const existingState of [
+        "true|127.0.0.1:55745|trust\n",
+        "false|127.0.0.1:55799|\n",
+      ]) {
+        const h = makeDbUpHarness();
+        writeFileSync(h.existsMarker, "1\n", "utf8");
+        writeFileSync(h.stateFile, existingState, "utf8");
+        const res = runDbUp(h, { E2E_PG_OWNER: "run-owner.1_abc" });
+        expect(res.status).toBe(1);
+        expect(res.stderr).toContain("dbup-test-pg");
+        expect(res.stderr).toContain("already exists");
+        const dockerCalls = readLines(h.callLogFile);
+        expect(dockerCalls.some((line) => line.startsWith("docker rm"))).toBe(
+          false,
+        );
+        expect(dockerCalls.some((line) => line.startsWith("docker run"))).toBe(
+          false,
+        );
+        expect(dockerCalls.some((line) => line.startsWith("docker exec"))).toBe(
+          false,
+        );
+        expect(existsSync(h.pnpmLogFile)).toBe(false);
+      }
+
+      // Case 3: E2E_PG_OWNER set and no container -> calls docker run with
+      // --label sous.e2e.owner=<value> (including 128-char boundary).
+      for (const validOwner of ["run-owner.1_abc", "a".repeat(128)]) {
+        const h = makeDbUpHarness();
+        const res = runDbUp(h, { E2E_PG_OWNER: validOwner });
+        expect(res.status).toBe(0);
+        const dockerCalls = readLines(h.callLogFile);
+        const runCall = dockerCalls.find((line) =>
+          line.startsWith("docker run "),
+        );
+        expect(runCall).toBeDefined();
+        expect(runCall).toContain(`--label sous.e2e.owner=${validOwner}`);
+        expect(runCall).toContain("--name dbup-test-pg");
+        expect(dockerCalls.some((line) => line.startsWith("docker rm"))).toBe(
+          false,
+        );
+        expect(readLines(h.pnpmLogFile)).toEqual([
+          "pnpm db:migrate | DATABASE_URL=postgres://postgres@127.0.0.1:55745/sous_e2e",
+        ]);
+      }
+
+      // Case 3b: E2E_PG_OWNER set and docker run fails on a name conflict race
+      // -> exits 1 without calling docker rm, docker exec, or pnpm.
+      const hRace = makeDbUpHarness();
+      writeFileSync(hRace.runFailMarker, "1\n", "utf8");
+      const raceRes = runDbUp(hRace, { E2E_PG_OWNER: "run-owner-race" });
+      expect(raceRes.status).toBe(1);
+      const raceCalls = readLines(hRace.callLogFile);
+      expect(
+        raceCalls.some(
+          (line) =>
+            line.startsWith("docker run ") &&
+            line.includes("--label sous.e2e.owner=run-owner-race"),
+        ),
+      ).toBe(true);
+      expect(raceCalls.some((line) => line.startsWith("docker rm"))).toBe(false);
+      expect(raceCalls.some((line) => line.startsWith("docker exec"))).toBe(
+        false,
+      );
+      expect(existsSync(hRace.pnpmLogFile)).toBe(false);
+
+      // Case 4a: without E2E_PG_OWNER and no container -> creates without label.
+      const hCreate = makeDbUpHarness();
+      const createRes = runDbUp(hCreate, { E2E_PG_OWNER: undefined });
+      expect(createRes.status).toBe(0);
+      const createCalls = readLines(hCreate.callLogFile);
+      const createRun = createCalls.find((line) =>
+        line.startsWith("docker run "),
+      );
+      expect(createRun).toBeDefined();
+      expect(createRun).not.toContain("--label");
+      expect(createCalls.some((line) => line.startsWith("docker rm"))).toBe(
+        false,
+      );
+      expect(readLines(hCreate.pnpmLogFile)).toHaveLength(1);
+
+      // Case 4b: without E2E_PG_OWNER and existing matching container -> reuses
+      // without docker rm or docker run.
+      const hReuse = makeDbUpHarness();
+      writeFileSync(hReuse.existsMarker, "1\n", "utf8");
+      writeFileSync(hReuse.stateFile, "true|127.0.0.1:55745|trust\n", "utf8");
+      const reuseRes = runDbUp(hReuse, { E2E_PG_OWNER: undefined });
+      expect(reuseRes.status).toBe(0);
+      const reuseCalls = readLines(hReuse.callLogFile);
+      expect(reuseCalls.some((line) => line.startsWith("docker rm"))).toBe(
+        false,
+      );
+      expect(reuseCalls.some((line) => line.startsWith("docker run"))).toBe(
+        false,
+      );
+      expect(reuseCalls.some((line) => line.startsWith("docker exec"))).toBe(
+        true,
+      );
+      expect(readLines(hReuse.pnpmLogFile)).toHaveLength(1);
+
+      // Case 4c: without E2E_PG_OWNER and existing mismatched container ->
+      // removes and recreates without label.
+      const hReplace = makeDbUpHarness();
+      writeFileSync(hReplace.existsMarker, "1\n", "utf8");
+      writeFileSync(hReplace.stateFile, "false|127.0.0.1:55799|\n", "utf8");
+      const replaceRes = runDbUp(hReplace, { E2E_PG_OWNER: undefined });
+      expect(replaceRes.status).toBe(0);
+      const replaceCalls = readLines(hReplace.callLogFile);
+      expect(replaceCalls).toContain("docker rm -f dbup-test-pg");
+      const replaceRun = replaceCalls.find((line) =>
+        line.startsWith("docker run "),
+      );
+      expect(replaceRun).toBeDefined();
+      expect(replaceRun).not.toContain("--label");
+      expect(readLines(hReplace.pnpmLogFile)).toHaveLength(1);
     },
     REAL_RUN_TIMEOUT_MS,
   );

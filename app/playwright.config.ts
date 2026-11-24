@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
-import { E2E_BASE_URL, E2E_LOCALE, E2E_TIMEZONE } from "./e2e/env";
+import {
+  E2E_APP_PORT,
+  E2E_BASE_URL,
+  E2E_LOCALE,
+  E2E_TIMEZONE,
+} from "./e2e/env";
 
 const skipBuild = process.env.E2E_SKIP_BUILD === "1";
 const serveCommand = [
@@ -112,7 +117,17 @@ const localConfig = defineConfig({
   ],
   webServer: {
     command: serveCommand,
-    url: `${E2E_BASE_URL}/kitchen`,
+    // Playwright races webServer.url against wait.stdout, so omitting url keeps
+    // another server that starts during the build from satisfying readiness.
+    // serve.ts checks the port before building and before spawning next start,
+    // waits for its own child's ready line and /kitchen response, then prints
+    // this line.
+    wait: {
+      stdout: new RegExp(
+        `^sous-e2e-server-ready pid=\\d+ port=${E2E_APP_PORT}$`,
+        "m",
+      ),
+    },
     timeout: 300_000,
     reuseExistingServer: false,
     gracefulShutdown: {

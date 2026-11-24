@@ -10,8 +10,11 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
+import http from "node:http";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import postgres from "postgres";
 import {
   E2E_APP_HOST,
@@ -26,6 +29,104 @@ export const FORBIDDEN_ENV_FILES = [
   ".env.production",
   ".env.production.local",
 ] as const;
+
+/**
+ * Returns true if something is accepting TCP connections on `host`:`port`.
+ * A connection refused (ECONNREFUSED) means the port is free.
+ */
+export function isPortInUse(host: string, port: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const socket = net.createConnection({ host, port });
+    let settled = false;
+    const finish = (inUse: boolean): void => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(inUse);
+    };
+
+    socket.setTimeout(500);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(true));
+    socket.once("error", (err: NodeJS.ErrnoException) => {
+      finish(err.code !== "ECONNREFUSED");
+    });
+  });
+}
+
+async function assertAppPortFree(host: string, port: number): Promise<void> {
+  if (await isPortInUse(host, port)) {
+    console.error(
+      `Refusing to start E2E server because ${host}:${port} is already in use by another server.`,
+    );
+    process.exit(1);
+  }
+}
+
+const HTTP_PROBE_TIMEOUT_MS = 5_000;
+
+export function chunkEndsWithNewline(chunk: Buffer | string): boolean {
+  if (chunk.length === 0) return false;
+  return typeof chunk === "string"
+    ? chunk.charCodeAt(chunk.length - 1) === 0x0a
+    : chunk[chunk.length - 1] === 0x0a;
+}
+
+export function formatReadyLine(
+  pid: number,
+  port: number,
+  lastByteWasNewline: boolean,
+): string {
+  const prefix = lastByteWasNewline ? "" : "\n";
+  return `${prefix}sous-e2e-server-ready pid=${pid} port=${port}\n`;
+}
+
+export function probeLocalHttp(
+  host: string,
+  port: number,
+  urlPath: string,
+  timeoutMs: number = HTTP_PROBE_TIMEOUT_MS,
+): Promise<boolean> {
+  if (timeoutMs <= 0) {
+    return Promise.resolve(false);
+  }
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const finish = (ok: boolean): void => {
+      if (settled) return;
+      settled = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      resolve(ok);
+    };
+
+    const req = http.get(
+      { host, port, path: urlPath, agent: false, timeout: timeoutMs },
+      (res) => {
+        res.once("error", () => {});
+        res.resume();
+        const status = res.statusCode ?? 0;
+        finish(status >= 200 && status < 404);
+      },
+    );
+    timer = setTimeout(() => {
+      req.destroy();
+      finish(false);
+    }, timeoutMs);
+    timer.unref();
+    req.once("timeout", () => {
+      req.destroy();
+      finish(false);
+    });
+    req.once("error", () => {
+      req.destroy();
+      finish(false);
+    });
+  });
+}
 
 /**
  * Returns the subset of Next.js .env files present in `dir`.
@@ -163,6 +264,8 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+  await assertAppPortFree(E2E_APP_HOST, E2E_APP_PORT);
+
   const forbidden = findForbiddenEnvFiles(appDir);
   if (forbidden.length > 0) {
     console.error(
@@ -182,6 +285,8 @@ async function main(): Promise<void> {
     await runNextBuild(appDir);
   }
 
+  await assertAppPortFree(E2E_APP_HOST, E2E_APP_PORT);
+
   const nextBin = path.join(appDir, "node_modules/next/dist/bin/next");
   const child: ChildProcess = spawn(
     process.execPath,
@@ -189,16 +294,18 @@ async function main(): Promise<void> {
     {
       cwd: appDir,
       env: buildServerEnv(),
-      stdio: "inherit",
+      stdio: ["inherit", "pipe", "inherit"],
     },
   );
 
   let shuttingDown = false;
+  let shutdownExitCode = 0;
   let forceKillTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const stopChild = (signal: NodeJS.Signals) => {
+  const stopChild = (signal: NodeJS.Signals, exitCode = 0) => {
     if (shuttingDown) return;
     shuttingDown = true;
+    shutdownExitCode = exitCode;
     if (child.exitCode === null && child.signalCode === null) {
       child.kill(signal);
       forceKillTimer = setTimeout(() => {
@@ -219,6 +326,78 @@ async function main(): Promise<void> {
     }
   }, 1_000);
 
+  const isChildRunning = (): boolean =>
+    !shuttingDown &&
+    child.exitCode === null &&
+    child.signalCode === null &&
+    child.pid !== undefined;
+
+  let nextReadySeen = false;
+  let readyPrinted = false;
+  let lastStdoutByteWasNewline = true;
+  let stdoutBuffer = "";
+
+  const confirmAndAnnounceReady = async (): Promise<void> => {
+    const deadline = Date.now() + 60_000;
+    while (isChildRunning()) {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) break;
+      const probeTimeoutMs = Math.min(HTTP_PROBE_TIMEOUT_MS, remainingMs);
+      if (
+        await probeLocalHttp(
+          E2E_APP_HOST,
+          E2E_APP_PORT,
+          "/kitchen",
+          probeTimeoutMs,
+        )
+      ) {
+        if (!isChildRunning()) return;
+        readyPrinted = true;
+        const readyLine = formatReadyLine(
+          child.pid!,
+          E2E_APP_PORT,
+          lastStdoutByteWasNewline,
+        );
+        lastStdoutByteWasNewline = true;
+        process.stdout.write(readyLine);
+        return;
+      }
+      if (!isChildRunning()) return;
+      const sleepMs = Math.min(100, deadline - Date.now());
+      if (sleepMs <= 0) break;
+      await new Promise<void>((resolve) => setTimeout(resolve, sleepMs));
+    }
+    if (isChildRunning()) {
+      console.error(
+        `Next.js server on ${E2E_APP_HOST}:${E2E_APP_PORT} did not answer /kitchen after reporting ready.`,
+      );
+      stopChild("SIGTERM", 1);
+    }
+  };
+
+  const checkLineForReady = (line: string): void => {
+    if (nextReadySeen) return;
+    const plain = stripVTControlCharacters(line);
+    if (/\bReady in\s+\S+/.test(plain)) {
+      nextReadySeen = true;
+      void confirmAndAnnounceReady();
+    }
+  };
+
+  child.stdout?.on("data", (chunk: Buffer | string) => {
+    if (chunk.length > 0) {
+      lastStdoutByteWasNewline = chunkEndsWithNewline(chunk);
+    }
+    process.stdout.write(chunk);
+    if (nextReadySeen) return;
+    stdoutBuffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    const lines = stdoutBuffer.split(/\r?\n/);
+    stdoutBuffer = lines.pop() ?? "";
+    for (const line of lines) {
+      checkLineForReady(line);
+    }
+  });
+
   child.on("error", (err) => {
     clearInterval(ownerWatch);
     if (forceKillTimer !== null) clearTimeout(forceKillTimer);
@@ -230,7 +409,13 @@ async function main(): Promise<void> {
     clearInterval(ownerWatch);
     if (forceKillTimer !== null) clearTimeout(forceKillTimer);
     if (shuttingDown) {
-      process.exit(0);
+      process.exit(shutdownExitCode);
+    }
+    if (!readyPrinted) {
+      console.error(
+        `Next.js server exited before reporting ready (code=${String(code)}, signal=${String(signal)}).`,
+      );
+      process.exit(code !== null && code !== 0 ? code : 1);
     }
     if (signal !== null) {
       process.exit(1);
