@@ -63,7 +63,7 @@
   --type-step: calc(64 * var(--cpx)); /* weight 600 */
   --type-title: calc(44 * var(--cpx)); /* weight 400; also timer digits */
   --type-chip: calc(30 * var(--cpx)); /* weight 500 */
-  --type-meta: calc(22 * var(--cpx)); /* weight 500 — THE FLOOR: nothing smaller */
+  --type-meta: calc(22 * var(--cpx)); /* weight 500 — THE FLOOR: nothing smaller, save its one exception (DS v1.63 §2: the whole meal's lines at 20 cpx, only where that makes a meal fit) */
 
   /* §3 spacing — on the counter every step doubles; spacious or cluttered,
    * no middle. */
