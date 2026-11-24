@@ -54,6 +54,13 @@ export const TT_PLATE = 3;
  * into the step's bottom gap).
  */
 export const BAND0 = 80;
+/**
+ * The depth by which the line's fill has gone from the end of the step in hand (levels 0 and 1) to
+ * the clock's minute (the whole cook). It eases over nearly the whole way up, so no frame of a
+ * glide takes much of it, and stands at the clock's minute just before the sheet lands (the
+ * minutes are drawn where they land, T3 fix round).
+ */
+export const LINE_FILL_NOW = 1.9;
 /** Its rung at the header (level 2; portrait's level 1): Caprasimo 40, words 26. */
 const TT_HEAD = 1;
 
@@ -62,6 +69,8 @@ export interface DerivedSheet {
   lineY: number;
   /** The whole cook's minutes, on true minutes (no break compressed). */
   total: number;
+  /** The minute the line fills to at rest and under the peek: the end of the screen in hand (`Strip.progress`, v1.54). */
+  progress: number;
   /** Level 0: the line from margin to margin, px. */
   line0: { x0: number; x1: number };
   /** Level 1: the strip map, cpx from the line's centre; and its rail, px. */
@@ -98,7 +107,8 @@ export function layoutDerived(input: LayoutInput, tasks: ReadonlyMap<string, Coo
     geo: g,
     measure,
     chrome: input.chrome ?? { more: { w: 0, h: 0 }, controls: null, hint: false },
-    toggle: (opening !== null || strip.onPrep === true) && strip.hasMise === true,
+    // The mode still switches at the first screen (`setMode`): the Prep screen, or "Prep first"'s first prep page.
+    toggle: (opening !== null || strip.modeOpen === true) && strip.hasMise === true,
     title: input.title ?? "",
     opening,
     read: input.read && !opening ? { key: input.read.key, text: input.read.text, go: input.read.go ?? null } : null,
@@ -218,6 +228,7 @@ export function layoutDerived(input: LayoutInput, tasks: ReadonlyMap<string, Coo
     derived: {
       lineY,
       total: strip.totalMinutes,
+      progress: strip.progress,
       line0: { x0: x0c * c, x1: x1c * c },
       map,
       line1: { x0: map.rail.x0 * c, x1: map.rail.x1 * c },
@@ -254,6 +265,12 @@ export interface DerivedFrame {
   /** The Paper's top on screen, px. */
   paperTop: number;
   line: LineFrame;
+  /**
+   * The progress line's fill as painted, px on level 0's track (the line never moves): to the end of
+   * the step in hand at rest and under the peek (levels 0 and 1), gliding to the clock's minute on
+   * the way to the whole cook, where it stands by `LINE_FILL_NOW` (just before the sheet lands).
+   */
+  fill: number;
   /** The strip map's stations. */
   stations: number;
   /** The timetable: shown (its marks growing from the line, `grow` 0 → 1), and its words. */
@@ -291,7 +308,12 @@ export function derivedFrame(L: DerivedLayout, s: FrameState): Frame {
   const d = depthOf(L, Y);
   const pw = clamp(s.pass ?? 0, 0, 1);
   const now = s.now ?? L.now;
-  const P0: LineFrame = { x: D.line0.x0, w: D.line0.x1 - D.line0.x0, fill: lineFill(D.total, now, D.line0.x0, D.line0.x1), ink: 0 };
+  // Level 0's fill ends where the step in hand ends, not at the clock's minute (v1.54): a timer's
+  // minutes don't move it. The whole cook (level 2) keeps the clock's minute.
+  const progress = s.progress ?? D.progress;
+  const fill0 = lineFill(D.total, progress, D.line0.x0, D.line0.x1);
+  const fill = L.opening ? fill0 : lerp(fill0, lineFill(D.total, now, D.line0.x0, D.line0.x1), sstep(1, LINE_FILL_NOW, d));
+  const P0: LineFrame = { x: D.line0.x0, w: D.line0.x1 - D.line0.x0, fill: fill0, ink: 0 };
   const P1: LineFrame = { x: D.line1.x0, w: D.line1.x1 - D.line1.x0, fill: 0, ink: 1 };
   // Level 2's fill is the clock's too (its end is the now line; T3 follow-up), on the held axis.
   const clock = ov.drawing.clock;
@@ -374,6 +396,6 @@ export function derivedFrame(L: DerivedLayout, s: FrameState): Frame {
     lanes: words,
     header,
     hint: sstep(0.6, 1, d),
-    derived: { paperTop, line, stations, lanes: d > 1.001 || L.opening ? 1 : 0, grow, words },
+    derived: { paperTop, line, fill, stations, lanes: d > 1.001 || L.opening ? 1 : 0, grow, words },
   };
 }

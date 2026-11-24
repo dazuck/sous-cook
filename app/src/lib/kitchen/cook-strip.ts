@@ -6,7 +6,7 @@
  * At rest at Now, the strip shows progress; pulled, it unfolds into the levels.
  */
 
-import { COOK_COPY, cookNow, hasPrepScreen, isDone, rowState, stepKey } from "./cook-view";
+import { COOK_COPY, cookNow, hasPrepScreen, isDone, prepPages, rowState, stepKey } from "./cook-view";
 import { flow, isPot, prepFlow, timeline } from "./cook-schedule";
 import { freeAfter, stretchesOf, type FreeTime } from "./cook-chapters";
 import { lanes } from "./cook-lanes";
@@ -21,7 +21,12 @@ export type MarkState = "done" | "in-hand" | "running" | "ahead";
 export interface StripMark {
   /** Task key or unique identifier for the mark (e.g. stepKey or "prep"). */
   key: string;
-  /** Screen position in CookState.pos. */
+  /**
+   * Screen position in CookState.pos. Prep's is the Prep screen; in "Prep
+   * first", where the prep is step pages (DS v1.59), the page in hand, else
+   * the first page with a job not done, else the first page. A prep card's
+   * (`prepMarks`) is the Prep screen, or in "Prep first" its first page.
+   */
   screen: number;
   /** Strand / branch name. Prep is COOK_COPY.prepChapter. */
   strand: string;
@@ -97,6 +102,19 @@ export interface Strip {
   rows: StripRow[];
   /** Current time in minutes (step start + elapsed timer minutes). */
   now: number;
+  /**
+   * Where the progress line's fill ends, in minutes: the end of the screen the cook is on, not its
+   * start (`now`), so the last step reads full (asked 2026-11-22; DS v1.54). A step's end is
+   * the minute the cook leaves its screen: its own end, or the next step's start when that comes
+   * first (a pot still going past it), so the line never steps back as the cook steps on, and it
+   * stands still while the step's timer runs. The last screen and a finished cook are the whole
+   * line. On Prep it is the end of the up-front prep block, or `now` where the cook has none (As I
+   * go) or has come back to Prep mid-cook. A prep page (Prep first) follows the step rule: its own
+   * end, or the next page's start where that comes first (prep pages overlap on the clock: a
+   * pickle stands while the next page's limes are cut); the last prep page is the end of the prep
+   * block, the longest stand included.
+   */
+  progress: number;
   /** Total recipe cook time in minutes. */
   totalMinutes: number;
   /** Formatted time to table: "N min", "1 h", "Ready" at 0, or "N steps to go" as written. */
@@ -115,6 +133,10 @@ export interface Strip {
   mode?: CookState["mode"];
   /** True when the cook is currently on the Prep screen (pos === 0). */
   onPrep?: boolean;
+  /** True when the sequence opens on the Prep screen (`hasPrepScreen`): Prep's mark then reads in place as Prep, not as a step. */
+  prepScreen?: boolean;
+  /** True at the first screen, where the prep mode can still switch (`setMode`). */
+  modeOpen?: boolean;
 }
 
 export interface MarkColors {
@@ -282,6 +304,9 @@ export function strip(
       marks,
       rows: [{ strand: "Cook", marks }],
       now: state.pos * 2,
+      // As written there is no line, only the equal bars (the step in hand is a whole bar in Ember);
+      // the value is the end of that bar, for the one meaning everywhere.
+      progress: Math.min(marks.length, state.pos + 1) * 2,
       totalMinutes: marks.length * 2,
       timeToTable,
       handsOnLeft: null,
@@ -291,8 +316,12 @@ export function strip(
     };
   }
 
-  const offset = hasPrepScreen(plan) ? 1 : 0;
-  const onPrep = offset === 1 && state.pos === 0;
+  // What stands before the first cooking step: the Prep screen, or "Prep
+  // first"'s prep pages (DS v1.59), which are steps of the one sequence.
+  const prepScreen = hasPrepScreen(plan, state.mode) ? 1 : 0;
+  const pages = prepPages(plan, state.mode);
+  const offset = prepScreen + pages.length;
+  const onPrep = prepScreen === 1 && state.pos === 0;
   // On Prep the strip reads the cook as it will stand on leaving, as the
   // view's row does (`rowState`): in As I go leaving ticks the mise done
   // before cooking, which makes the Prep block and recuts the stretches, so
@@ -301,6 +330,10 @@ export function strip(
   const times = timeline(plan, read.mode, read.ticked);
   const items = flow(plan, read.mode, read.ticked);
   const layout = lanes(times, items);
+  // The steps as the cook walks them: the prep pages, then the cooking steps.
+  const steps = [...pages, ...items];
+  const at = state.pos - prepScreen;
+  const onPage = !onPrep && at >= 0 && at < pages.length;
 
   const done = items.map((item) => item.tasks.every((t) => isDone(read, t.id)));
   const anyDone = done.some(Boolean);
@@ -323,7 +356,7 @@ export function strip(
     } else if (Array.isArray(timers)) {
       activeTimer =
         timers.find((t) => {
-          const currentItem = items[state.pos - offset];
+          const currentItem = steps[at];
           return (
             currentItem &&
             (t.stepId === currentItem.tasks[0]?.id ||
@@ -343,26 +376,45 @@ export function strip(
     }
   }
 
-  const currentItem = !onPrep ? items[state.pos - offset] : null;
+  const currentItem = !onPrep ? steps[at] : null;
   const stepEnd = currentItem ? currentItem.end : baseNow;
   const now = allDone ? baseNow : Math.min(stepEnd, baseNow + timerElapsedMinutes);
+
+  // The progress line's end (see `Strip.progress`): the end of the screen the cook is on.
+  const nextItem = currentItem ? steps[at + 1] : undefined;
+  let progress: number;
+  if (allDone) {
+    progress = layout.total;
+  } else if (onPage && at === pages.length - 1) {
+    // The last prep page: the end of the prep block, whichever page's job stands longest (the
+    // tacos' onion stands to 23 while the last page's avocado is sliced by 10). The pages before
+    // it follow the step rule below, as a cooking step that starts a pot does.
+    progress = Math.max(...pages.map((page) => page.end));
+  } else if (currentItem) {
+    progress = nextItem
+      ? Math.max(currentItem.start, Math.min(currentItem.end, nextItem.start))
+      : layout.total;
+  } else {
+    progress = Math.max(now, times.prep ? times.prep.end : 0);
+  }
 
   const marks: StripMark[] = [];
   const prepMarks: StripMark[] = [];
 
   // Prep mark (Prep's mise is the first mark, an ink block)
-  if (hasPrepScreen(plan) && times.prep) {
+  if (offset > 0 && times.prep) {
     const prepDone = times.prep.tasks.every((id) => isDone(read, id));
     let prepState: MarkState = "ahead";
-    if (onPrep) {
+    if (onPrep || onPage) {
       prepState = "in-hand";
     } else if (prepDone) {
       prepState = "done";
     }
+    const pageOpen = pages.findIndex((page) => page.tasks.some((t) => !isDone(state, t.id)));
 
     marks.push({
       key: "prep",
-      screen: 0,
+      screen: onPage ? state.pos : Math.max(0, pageOpen),
       strand: COOK_COPY.prepChapter,
       label: COOK_COPY.prepChapter,
       start: 0,
@@ -380,11 +432,21 @@ export function strip(
       todo: times.prep.tasks.filter((id) => !isDone(state, id)).length,
     });
 
+    // The cards whole, as As I go keys them: a card "Prep first" cuts into
+    // pages is still one mark, which goes to its first page.
     const pItems = prepFlow(plan, state.mode, read.ticked);
+    const pageOf = new Map<string, number>();
+    pages.forEach((page, i) => {
+      for (const t of page.tasks) pageOf.set(t.id, i);
+    });
     for (const item of pItems) {
       const itemDone = item.tasks.every((t) => isDone(read, t.id));
+      const itemPages = item.tasks.flatMap((t) => pageOf.get(t.id) ?? []);
       let itemState: MarkState = "ahead";
-      if (itemDone) {
+      if (onPage) {
+        if (itemPages.includes(at)) itemState = "in-hand";
+        else if (itemDone) itemState = "done";
+      } else if (itemDone) {
         itemState = "done";
       } else if (onPrep) {
         itemState = "in-hand";
@@ -395,7 +457,7 @@ export function strip(
       const nominal = itemSlots.length > 0 && itemSlots.every((s) => s.nominal);
       prepMarks.push({
         key: stepKey(item),
-        screen: 0,
+        screen: itemPages.length > 0 ? Math.min(...itemPages) : 0,
         strand: item.tasks[0]?.branch ?? "Cook",
         label: item.tasks.map((t) => t.label).join(", "),
         start: item.start,
@@ -516,6 +578,7 @@ export function strip(
     prepMarks,
     rows,
     now,
+    progress,
     totalMinutes,
     timeToTable,
     handsOnLeft,
@@ -524,6 +587,8 @@ export function strip(
     hasMise: plan.tasks.some((t) => t.kind === "mise"),
     mode: state.mode,
     onPrep,
+    prepScreen: prepScreen === 1,
+    modeOpen: state.pos === 0,
   };
 }
 

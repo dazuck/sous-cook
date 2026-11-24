@@ -37,8 +37,11 @@ import type { CookPlan, PrepMode } from "@/lib/kitchen/cook-plan";
 import type { Strip } from "@/lib/kitchen/cook-strip";
 import { COOK_COPY, type CookState, type PrepAheadGroup } from "@/lib/kitchen/cook-view";
 import { buildGetOut, type GetOutItem as CategorizedGetOutItem } from "@/lib/kitchen/get-out";
+import { footMask, useMoreBelow } from "@/hooks/useMoreBelow";
+import { MeasurementPopover } from "./MeasurementPopover";
 import type { StoredIngredientLines } from "@/lib/kitchen/ingredient-display";
 import type { OverviewPlace } from "@/lib/kitchen/overview-place";
+import { saysOf } from "@/lib/kitchen/says-of";
 import {
   fmtMinutes,
   fmtTotal,
@@ -57,6 +60,10 @@ const IN_MS = 280;
 const SOONER_HOLD_MS = 1900;
 const SOONER_FADE_MS = 600;
 const FOCUS = "outline-none focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ink";
+/** A scroller that never draws a scrollbar (Whole recipe's rule): its foot's fade is the cue. */
+const NO_SCROLLBAR = "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+/** The dotted rule's colour and offset under a Get out amount that opens (the step pairs' own; `AMOUNT_RULE` draws it). */
+const AMOUNT_RULE_INK = "decoration-ink-soft underline-offset-[0.15em]";
 
 export interface TimetableProps {
   ov: OverviewPlace;
@@ -158,6 +165,13 @@ function stackRung(step: number, lines: number, hasGetOut: boolean) {
   const runIn = hasGetOut && step > 1 + lines;
   return { tight: step > 0, runIn, shed: runIn ? step - 2 - lines : Math.max(0, step - 1) };
 }
+
+/**
+ * How many times the portrait opening's fit may re-render before a paint. React throws at 50 nested
+ * updates, and the sheet's own share the count; two whole fits of the heaviest opening (13 each) fit
+ * inside this, so the fit is cut short only when the place is laid again three times or more as it runs.
+ */
+const FIT_BURST = 32;
 
 export function Timetable(props: TimetableProps) {
   const {
@@ -321,24 +335,75 @@ export function Timetable(props: TimetableProps) {
   // made on; new inputs start again from step 0. Each step re-renders before paint, so only the fit
   // is ever seen. Until the last step still runs past it, the body clips rather than scrolls: a row
   // mid-glide past its edge never brings a scrollbar in to reflow the words (round 2 review).
+  //
+  // The step wanted is the first that fits, and it is searched for, not walked to (review round 1 of
+  // prep pages): each re-render before paint is a nested update, React allows 50 before it throws,
+  // and a walk of the roast's 22 steps, started over when the sheet lays the place again, ran it out.
+  // Within a rung (heads over their lists, then heads run in) each step gives one more line way, so
+  // the stack only gets shorter: from a step that runs over, the next tried is twice as far into the
+  // rung (0, 1, 3, 7, ...), and once one fits the first that fits is halved in on (`lo`, `hi`). The
+  // heaviest opening (twelve lines to give way) is fitted in 13 re-renders where the walk took 28.
+  // And whatever starts the fit over, it re-renders at most `FIT_BURST` times before a paint: past
+  // that it goes on from the next frame, one unfinished frame drawn in place of a page gone down.
   const phases = phasesModel?.phases ?? [];
   const stacked = ov.opening !== null && ov.sheetBottom > (ov.opening.chart.w + 2 * ov.opening.chart.x) * c;
   const shedOrder = stacked ? stackShedOrder(phases) : [];
   const hasGetOut = getOutModel.equipment.length > 0 || getOutModel.fridge.length > 0 || getOutModel.pantry.length > 0;
-  const lastStep = 1 + shedOrder.length + (hasGetOut ? 1 + shedOrder.length : 0);
+  /** The last step of the first rung: tight, every optional line given way, Get out's heads over their lists. */
+  const rungEnd = 1 + shedOrder.length;
+  const lastStep = rungEnd + (hasGetOut ? 1 + shedOrder.length : 0);
+  // The place by what it says, not which object says it: the sheet lays a new one out for the step
+  // standing under the opening too (a prep page settling its own fit, DS v1.59), and one that says
+  // the same must not start this fit again. Two full fits and a third begun pass React's limit of
+  // 50 updates before paint, which took the page down (the roast in portrait, a timer ringing).
+  const ovSays = useMemo(() => saysOf(ov), [ov]);
   const fitInputs = useMemo<readonly unknown[]>(
-    () => [ov, showAmounts, scaleNote, phasesModel, getOutModel],
-    [ov, showAmounts, scaleNote, phasesModel, getOutModel],
+    () => [ovSays, showAmounts, scaleNote, phasesModel, getOutModel],
+    [ovSays, showAmounts, scaleNote, phasesModel, getOutModel],
   );
-  const [stackFit, setStackFit] = useState<{ inputs: readonly unknown[]; step: number; scrolls: boolean } | null>(null);
+  const [stackFit, setStackFit] = useState<{
+    inputs: readonly unknown[];
+    step: number;
+    scrolls: boolean;
+    /** The furthest step of the rung in hand known to run over; one before the rung's first until one has. */
+    lo: number;
+    /** The nearest step known to fit; null until one has. */
+    hi: number | null;
+  } | null>(null);
   const fitNow = stackFit !== null && stackFit.inputs === fitInputs ? stackFit : null;
   const stackStep = fitNow?.step ?? 0;
+  const fitLo = fitNow?.lo ?? -1;
+  const fitHi = fitNow?.hi ?? null;
   /** The fit has run out of steps and the stack still runs past its body: only now may the body scroll. */
   const stackScrolls = fitNow?.scrolls ?? false;
   const openingBodyRef = useRef<HTMLDivElement | null>(null);
   const openingFlowRef = useRef<HTMLElement | null>(null);
+  // What scrolls says so with the list foot's fade while there is more below (§6 Lists, `useMoreBelow`;
+  // asked 2026-11-22): Get out's list in its column, and portrait's stack at its last resort.
+  const getOutScrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollKey = `${ov.opening !== null}|${stacked}|${stackScrolls}|${stackStep}|${showAmounts}|${hasGetOut}`;
+  const getOutMask = footMask(useMoreBelow(getOutScrollRef, scrollKey));
+  const stackBelow = useMoreBelow(openingBodyRef, scrollKey);
+  const stackMask = stacked && stackScrolls ? footMask(stackBelow) : undefined;
   /** This commit is a step of the fit: the glide waits for the stack it lands in. */
   const refitting = useRef(false);
+  /**
+   * The fit's re-renders since the last paint (`FIT_BURST`), and the frame asked for that starts
+   * the count over, null when none is. The count is started over by the frame and by nothing
+   * else, so whenever a step is counted and no frame is asked for, one is: an unmount cancels the
+   * frame and StrictMode rehearses an unmount on every mount in development, where a count armed
+   * only at zero was never started over again and every fit past its 32nd step ran a step a
+   * frame (review round 2 of prep pages).
+   */
+  const fitBurst = useRef<{ steps: number; reset: number | null }>({ steps: 0, reset: null });
+  useEffect(() => {
+    const burst = fitBurst.current;
+    return () => {
+      if (burst.reset !== null) cancelAnimationFrame(burst.reset);
+      burst.reset = null;
+      burst.steps = 0;
+    };
+  }, []);
   useLayoutEffect(() => {
     refitting.current = false;
     const body = openingBodyRef.current;
@@ -347,15 +412,51 @@ export function Timetable(props: TimetableProps) {
     // The sections' own boxes, which the glide's transforms (on the rows inside) never move.
     const b = body.getBoundingClientRect();
     const over = flow.getBoundingClientRect().bottom - b.top + body.scrollTop > b.height + 0.5;
-    if (over && stackStep < lastStep) {
-      refitting.current = true;
-      setStackFit({ inputs: fitInputs, step: stackStep + 1, scrolls: false });
-    } else if (over && !stackScrolls) {
-      // The body's scrollbar may narrow the stack, so the glide waits for this commit too.
-      refitting.current = true;
-      setStackFit({ inputs: fitInputs, step: stackStep, scrolls: true });
+    let to: { step: number; scrolls: boolean; lo: number; hi: number | null } | null = null;
+    if (!over) {
+      // It fits here. The first step that does lies after the last known to run over.
+      if (!stackScrolls && stackStep - fitLo > 1) {
+        to = { step: fitLo + Math.floor((stackStep - fitLo) / 2), scrolls: false, lo: fitLo, hi: stackStep };
+      }
+    } else if (fitHi !== null && fitHi > stackStep) {
+      // It runs over here and fits at `hi`: halve in, or take `hi` when it is the next step.
+      const gap = fitHi - stackStep;
+      to = { step: gap > 1 ? stackStep + Math.floor(gap / 2) : fitHi, scrolls: false, lo: stackStep, hi: fitHi };
+    } else {
+      // It runs over and no step is known to fit: twice as far into this rung, to the rung's end;
+      // from the first rung's end on to the second, where the lines come back; past the last, it scrolls.
+      const first = stackStep > rungEnd ? rungEnd + 1 : 0;
+      const end = stackStep > rungEnd ? lastStep : rungEnd;
+      if (stackStep < end) {
+        to = { step: Math.min(end, first + 2 * (stackStep - first) + 1), scrolls: false, lo: stackStep, hi: null };
+      } else if (stackStep < lastStep) {
+        to = { step: stackStep + 1, scrolls: false, lo: stackStep, hi: null };
+      } else if (!stackScrolls) {
+        // The body's scrollbar may narrow the stack, so the glide waits for this commit too.
+        to = { step: stackStep, scrolls: true, lo: stackStep, hi: null };
+      }
     }
-  }, [stacked, stackStep, stackScrolls, lastStep, fitInputs]);
+    if (to === null) return;
+    refitting.current = true;
+    const next = { inputs: fitInputs, ...to };
+    const burst = fitBurst.current;
+    // The count starts over once a frame has been drawn.
+    burst.reset ??= requestAnimationFrame(() => {
+      burst.reset = null;
+      burst.steps = 0;
+    });
+    burst.steps++;
+    if (burst.steps <= FIT_BURST) {
+      // Measured on the page: each step re-renders before paint.
+      setStackFit(next);
+      return;
+    }
+    // Past the cap this step waits for the next frame. It is the step from what was measured here:
+    // if the fit moves on before the frame comes (a new place laid and drawn), the step is dropped
+    // with this effect, or it would land on the newer fit and start it over from step 0.
+    const later = requestAnimationFrame(() => setStackFit(next));
+    return () => cancelAnimationFrame(later);
+  }, [stacked, stackStep, stackScrolls, fitLo, fitHi, rungEnd, lastStep, fitInputs]);
 
   // FLIP animation on mode toggle (`[data-flip-id]`) + "N min sooner" fade.
   useLayoutEffect(() => {
@@ -422,43 +523,72 @@ export function Timetable(props: TimetableProps) {
   const read = ov.read && wh?.read ? { key: ov.read.key, kind: ov.read.go, ...wh.read } : null;
   const goLabel = read?.kind === "prep" ? COOK_COPY.goToPrep : COOK_COPY.goToStep;
 
+  // An item is one piece on its line (it moves to the next line whole), and wraps inside the column
+  // only when it alone is wider than the column, so no word is ever cut at the column's edge.
   const renderIngredientItems = (items: readonly CategorizedGetOutItem[]) =>
-    items.map((it, idx) => (
-      <li
-        key={it.index}
-        data-row
-        data-ingredient-index={it.index}
-        className="inline-block whitespace-nowrap"
-        style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
-      >
-        {showAmounts && it.amount ? (
-          <>
-            <span data-amount className="font-bold text-ink">
-              {it.amount}
-            </span>{" "}
-            <span data-ingredient-name className="font-medium text-ink">
-              {it.bare.charAt(0).toLowerCase() + it.bare.slice(1)}
-            </span>
-          </>
-        ) : (
-          <>
-            {it.amount && (
-              <span data-amount className="sr-only">
-                {it.amount}{" "}
+    items.map((it, idx) => {
+      // The dot rides the item's last word (no-break spaces), so a wrapped line never starts with it.
+      // A pair that opens is a button, one box: its dot is set inside it, after the name. Outside,
+      // a pair wider than the column left the dot alone on a line of its own (review round 1).
+      const dot = idx < items.length - 1 && (
+        <span data-dot aria-hidden="true" className="text-ink-soft">
+          {"\u00a0·\u00a0"}
+        </span>
+      );
+      const opens = showAmounts && it.amount ? it.opens : undefined;
+      return (
+        <li
+          key={it.index}
+          data-row
+          data-ingredient-index={it.index}
+          className="inline-block max-w-full"
+          style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
+        >
+          {showAmounts && it.amount ? (
+            opens ? (
+              // An amount with conversions is its pair's button, as on a step (DS §5): the dotted rule
+              // under the amount, the panel drawn in the opening's layer, clear of the column's clip.
+              <MeasurementPopover
+                stated={opens.stated}
+                conversions={opens.conversions}
+                servesBase={opens.servesBase}
+                exact={opens.exact}
+                className={FOCUS}
+              >
+                <span data-amount data-amount-words className={`font-bold text-ink ${AMOUNT_RULE_INK}`}>
+                  {it.amount}
+                </span>{" "}
+                <span data-ingredient-name className="font-medium text-ink">
+                  {it.bare.charAt(0).toLowerCase() + it.bare.slice(1)}
+                </span>
+                {dot}
+              </MeasurementPopover>
+            ) : (
+              <>
+                <span data-amount className="font-bold text-ink">
+                  {it.amount}
+                </span>{" "}
+                <span data-ingredient-name className="font-medium text-ink">
+                  {it.bare.charAt(0).toLowerCase() + it.bare.slice(1)}
+                </span>
+              </>
+            )
+          ) : (
+            <>
+              {it.amount && (
+                <span data-amount className="sr-only">
+                  {it.amount}{" "}
+                </span>
+              )}
+              <span data-ingredient-name className="font-medium text-ink">
+                {it.bare}
               </span>
-            )}
-            <span data-ingredient-name className="font-medium text-ink">
-              {it.bare}
-            </span>
-          </>
-        )}
-        {idx < items.length - 1 && (
-          <span data-dot aria-hidden="true" className="text-ink-soft">
-            {"\u00a0·\u00a0"}
-          </span>
-        )}
-      </li>
-    ));
+            </>
+          )}
+          {!opens && dot}
+        </li>
+      );
+    });
 
   const firstMeanwhilePhaseKey = phases.find((p) => p.meanwhile !== null)?.key ?? null;
 
@@ -614,7 +744,9 @@ export function Timetable(props: TimetableProps) {
           }
 
           return (
-            <div data-opening className="absolute inset-0">
+            // The layer a Get out amount's conversions are drawn in (`MeasurementPopover`): the whole
+            // opening, so the panel stands clear of the column that scrolls.
+            <div data-opening data-popover-layer className="absolute inset-0">
               <Link
                 href="/kitchen"
                 prefetch={false}
@@ -652,6 +784,7 @@ export function Timetable(props: TimetableProps) {
               <div
                 ref={openingBodyRef}
                 data-opening-body
+                data-stack-step={stacked ? stackStep : undefined}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
                 className={
@@ -664,21 +797,21 @@ export function Timetable(props: TimetableProps) {
                   top: bodyTop,
                   width: px(op.chart.w),
                   height: bodyHeight,
+                  // Portrait's last resort, the stack scrolling: the foot's fade says there is more below (§6 Lists).
+                  maskImage: stackMask,
+                  WebkitMaskImage: stackMask,
                 }}
               >
-                {/* Left Column: Get out */}
+                {/* Left Column: Get out. Its head stays; its list scrolls in the column when it is taller
+                    than the body (landscape), under the foot's fade while there is more below. */}
                 {hasGetOut && (
                   <section
                     data-get-out
                     aria-label={COOK_COPY.getOut}
-                    className={
-                      stacked
-                        ? "shrink-0 flex flex-col gap-[calc(6*var(--cpx))]"
-                        : "shrink-0 flex flex-col gap-[calc(6*var(--cpx))] overflow-hidden"
-                    }
+                    className="flex shrink-0 flex-col gap-[calc(6*var(--cpx))]"
                     style={stacked ? undefined : { width: leftColWidth, maxHeight: bodyHeight }}
                   >
-                    <div className="flex items-baseline justify-between gap-[calc(10*var(--cpx))]">
+                    <div className="flex shrink-0 items-baseline justify-between gap-[calc(10*var(--cpx))]">
                       <h2
                         data-get-out-head
                         className="m-0 font-semibold whitespace-nowrap text-ink"
@@ -711,6 +844,19 @@ export function Timetable(props: TimetableProps) {
                       )}
                     </div>
 
+                    {/* The list: in landscape the column's own scroller. A finger pans it (the sheet's pull
+                        is off on the opening); it never shows a scrollbar, which would narrow the column
+                        and reflow its words, and never changes size when a scroll stops (§6 Lists). In
+                        portrait it is no scroller at all (the stack holds it whole and scrolls as one),
+                        so a finger on it pans the stack. */}
+                    <div
+                      ref={getOutScrollRef}
+                      data-get-out-scroll
+                      className={`flex flex-col gap-[calc(6*var(--cpx))]${
+                        stacked ? "" : ` min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain [touch-action:pan-y] ${NO_SCROLLBAR}`
+                      }`}
+                      style={stacked ? undefined : { maskImage: getOutMask, WebkitMaskImage: getOutMask }}
+                    >
                     {getOutModel.equipment.length > 0 && (
                       <div
                         data-get-out-group="equipment"
@@ -781,6 +927,7 @@ export function Timetable(props: TimetableProps) {
                         </ul>
                       </div>
                     )}
+                    </div>
                   </section>
                 )}
 
@@ -1258,7 +1405,8 @@ export function Timetable(props: TimetableProps) {
                 onClick={(e) => {
                   e.stopPropagation();
                   if (read.key === "prep") {
-                    onGo(0);
+                    // Prep's mark knows where Prep is: the Prep screen, or in "Prep first" the prep page with work left.
+                    onGo(prepMark?.screen ?? 0);
                     return;
                   }
                   const mark = markOf(read.key);

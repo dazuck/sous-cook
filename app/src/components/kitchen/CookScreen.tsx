@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type Dispatch,
 } from "react";
 import type { PrepMode } from "@/lib/kitchen/cook-plan";
@@ -24,9 +25,10 @@ import { strip, type Strip } from "@/lib/kitchen/cook-strip";
 import { restNudge } from "@/lib/kitchen/cook-levels";
 import { hasOpening, opensOnChart } from "@/lib/kitchen/cook-opening";
 import {
-  askStepText,
+  askInHand,
   COOK_COPY,
   cookView,
+  hasPrep,
   hasPrepScreen,
   hasUpfrontPrep,
   prepSummary,
@@ -60,6 +62,9 @@ import type { CookSnapshot } from "@/lib/kitchen/report-capture";
 import { useCookFlag, useFlagNote } from "@/hooks/useCookFlag";
 import { useCookAutoFinish } from "@/hooks/useCookAutoFinish";
 import { useKitchenVoiceCommands } from "@/hooks/useKitchenVoiceCommands";
+import { useAskForm } from "@/hooks/useAskForm";
+import { afterListen, askOnCommand, type CapsuleListen } from "@/lib/kitchen/ask-listen";
+import { photoProblem } from "@/lib/kitchen/ask-photo";
 import type { Recipe } from "@sous/pack";
 import {
   EMPTY_LIBRARY,
@@ -70,9 +75,12 @@ import type { KitchenQueueRecipeData } from "../../../drizzle/schema";
 import {
   AskSous,
   ASK_COPY,
+  ASK_SIDE_WIDTH,
+  DEFAULT_DISH_QUESTION,
   type AskSousHandle,
 } from "./AskSous";
-import { DishPhotoReview } from "./DishPhotoReview";
+import { AskCapsule, type AskCapsuleHandle, type AskWay } from "./AskCapsule";
+import { AlarmBand } from "./AlarmBand";
 import {
   CookFlow,
   type AnswerShown,
@@ -234,56 +242,85 @@ export function CookScreen({
   }, []);
 
   const askRef = useRef<AskSousHandle>(null);
-  // Ask Sous in the foot opens the panel; the panel's Collapse gives focus
-  // back to it, as the panel goes from under the focus (V5).
-  const askGhostRef = useRef<HTMLButtonElement>(null);
-  const openAsk = useCallback(() => setIsClaudeExpanded(true), []);
-  const closeAsk = useCallback(() => {
-    askGhostRef.current?.focus();
-    setIsClaudeExpanded(false);
+  // Ask Sous is the capsule at the top line's right end, and on the cook
+  // screen its panel is beside the step or a full sheet (DS §5 Ask, v1.60).
+  // How it was opened says where focus lands in it (`enter`) and which part
+  // of the capsule focus comes back to (`way`).
+  const capsuleRef = useRef<AskCapsuleHandle>(null);
+  const openingMicRef = useRef<HTMLButtonElement>(null);
+  const [askEntry, setAskEntry] = useState<{ way: AskWay; enter: "field" | "controls" }>({
+    way: "words",
+    enter: "field",
+  });
+  // The capsule's mic opened the panel to listen: "armed" until the listen
+  // starts, "heard" while and after it. Null once the cook puts a hand to
+  // the panel, or the listen has been dealt with (call 13).
+  const capsuleListen = useRef<CapsuleListen>(null);
+  const openAsk = useCallback(
+    (way: AskWay, enter: "field" | "controls") => {
+      setAskEntry({ way, enter });
+      setIsClaudeExpanded(true);
+      // Ask and a raised look-ahead never share the screen (call 21): a
+      // pinned level goes away, and so does Whole recipe, which is modal
+      // (a question asked aloud over it would otherwise open Ask's sheet
+      // under it, with nothing left to touch). The opening's chart is no
+      // pinned level.
+      if (!opening) setSheetLevel(0);
+    },
+    [opening],
+  );
+  const closeAsk = useCallback(() => setIsClaudeExpanded(false), []);
+  const openAskToType = useCallback(() => openAsk("words", "field"), [openAsk]);
+  const engageAsk = useCallback(() => {
+    capsuleListen.current = null;
   }, []);
 
   const photoInputRef = useRef<HTMLInputElement>(null);
-  const [dishPhoto, setDishPhoto] = useState<string | null>(null);
-
   const handlePhotoTrigger = useCallback(() => {
     photoInputRef.current?.click();
   }, []);
 
-  const handlePhotoFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result;
-      if (typeof dataUrl === "string") {
-        setDishPhoto(dataUrl);
+  // A photo is the cook's turn in the conversation, asked at once (call 15):
+  // no review page. A cancelled camera opens nothing; a file that cannot be
+  // read opens the panel to say so.
+  const askOpenNow = useRef(isClaudeExpanded);
+  useLayoutEffect(() => {
+    askOpenNow.current = isClaudeExpanded;
+  });
+  const handlePhotoFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      const show = (turn: (ask: AskSousHandle) => void) => {
+        capsuleListen.current = null;
+        if (!askOpenNow.current) openAsk("camera", "controls");
+        if (askRef.current) turn(askRef.current);
+      };
+      const refuse = (problem: "unread" | "not-a-photo") =>
+        show((ask) => ask.notice(problem === "unread" ? ASK_COPY.photoUnread : ASK_COPY.photoNotPhoto));
+      const unread = () => refuse("unread");
+      // Known before reading: an empty file, or one that says it is no picture.
+      const early = photoProblem(file, "data:image/");
+      if (early !== null) {
+        refuse(early);
+        return;
       }
-    };
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  }, []);
-
-  const handleDishPhotoSubmit = useCallback(
-    ({
-      photo,
-      question,
-      includeRecipeContext,
-    }: {
-      photo: string;
-      question: string;
-      includeRecipeContext: boolean;
-    }) => {
-      setDishPhoto(null);
-      setIsClaudeExpanded(true);
-      askRef.current?.askWithPhoto(photo, question, { includeRecipeContext });
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = typeof reader.result === "string" ? reader.result : null;
+        const problem = photoProblem(file, dataUrl);
+        if (problem !== null || dataUrl === null) {
+          refuse(problem ?? "unread");
+          return;
+        }
+        show((ask) => ask.askWithPhoto(dataUrl, DEFAULT_DISH_QUESTION, { shown: ASK_COPY.photoShown }));
+      };
+      reader.onerror = unread;
+      reader.readAsDataURL(file);
     },
-    [],
+    [openAsk],
   );
-
-  const handleDishPhotoRetake = useCallback(() => {
-    photoInputRef.current?.click();
-  }, []);
 
   const [clockInWell, setClockInWell] = useState(false);
   // "Now" moves with the step's own running timer, a minute at a time (N6):
@@ -409,13 +446,16 @@ export function CookScreen({
     [plan, source, state.mode, state.ticked],
   );
   const firstActivePos = useMemo(
-    () => (hasPrepScreen(plan) && !hasUpfrontPrep(plan, state.mode) ? 1 : 0),
+    () => (hasPrepScreen(plan, state.mode) && !hasUpfrontPrep(plan, state.mode) ? 1 : 0),
     [plan, state.mode],
   );
   const onNext = useCallback(() => dispatch({ type: "next" }), [dispatch]);
   const onBack = useCallback(() => {
     if (canOpen && state.pos <= firstActivePos) {
       if (state.pos > 0) dispatch({ type: "jump", pos: 0 });
+      // The opening has no step for Ask to stand beside: a panel left open
+      // would turn into a sheet over it. It closes; the conversation is kept.
+      setIsClaudeExpanded(false);
       setOpening(true);
       setSheetLevel(2);
       return;
@@ -463,10 +503,13 @@ export function CookScreen({
   );
 
   // Missed ahead work opens Claude with the question ready to edit or send.
-  const onAskAhead = useCallback((group: PrepAheadGroup) => {
-    setIsClaudeExpanded(true);
-    askRef.current?.prefill(missedAheadQuestion(group));
-  }, []);
+  const onAskAhead = useCallback(
+    (group: PrepAheadGroup) => {
+      openAsk("words", "field");
+      askRef.current?.prefill(missedAheadQuestion(group));
+    },
+    [openAsk],
+  );
 
   // Generate a session ID for the cooking session
   const [sessionId] = useState(() => `cook-queue-${Date.now()}`);
@@ -478,9 +521,14 @@ export function CookScreen({
     () => storedIngredientLines(packRecipe, storedCount, servings),
     [packRecipe, storedCount, servings],
   );
-  const ingredientTexts = useMemo(
-    () => ingredientLines.flatMap((line) => (line === null ? [] : [ingredientText(line)])),
+  // By stored index (null for a blank line), for a prep job's amounts.
+  const ingredientTextAt = useMemo(
+    () => ingredientLines.map((line) => (line === null ? null : ingredientText(line))),
     [ingredientLines],
+  );
+  const ingredientTexts = useMemo(
+    () => ingredientTextAt.flatMap((text) => (text === null ? [] : [text])),
+    [ingredientTextAt],
   );
 
   // The step in hand's kind (slice B5d, D7–D10): from the pack step its task
@@ -498,6 +546,12 @@ export function CookScreen({
     }
     return undefined;
   }, [screenTasks]);
+  // No step in hand on the opening (review round 2), and none on prep,
+  // where Sous is told the prep jobs instead (review round 3).
+  const askHand = useMemo(
+    () => askInHand(opening, view, askCurrentStepIndex, ingredientTextAt),
+    [opening, view, askCurrentStepIndex, ingredientTextAt],
+  );
   const askTimers = useMemo(() => {
     return kitchen.timers.map((t) => {
       const nowMs = tick > 0 ? tick : t.endsAtEpochMs - t.durationMs;
@@ -637,13 +691,20 @@ export function CookScreen({
   );
   const stepStates = useMemo(() => sourceStepStates(plan, state), [plan, state]);
 
-  // The steps move only while they're in view: a modal or the Ask panel over
-  // them holds the keys and swipes.
+  // The steps move only while they're in view: a modal or Ask's sheet over
+  // them holds the keys and swipes. Ask beside the step is not modal (call
+  // 5): the step stays in view, so it moves, and Ask's context follows.
   const anyModal = showInfoModal || showMarkUsedSheet;
   // Whole recipe is modal (N9): the rest is inert and the steps don't move under it.
   const wholeOpen = sheetLevel === 3;
+  // Ask's shape (call 1): beside the step on the tablet in landscape, a full
+  // sheet elsewhere, and over the opening, which has no step to keep in view.
+  const screenForm = useAskForm(isClaudeExpanded);
+  const askForm = opening ? "sheet" : screenForm;
+  const askSheetOpen = isClaudeExpanded && askForm === "sheet";
+  const askSideOpen = isClaudeExpanded && askForm === "side";
   // On the opening the steps don't move: Start is its one act (N2-10).
-  const navEnabled = !anyModal && !isClaudeExpanded && !wholeOpen && !opening;
+  const navEnabled = !anyModal && !askSheetOpen && !wholeOpen && !opening;
 
   // The top line's one open menu, More. A borrowed screen shuts it as it
   // opens, however it was opened (voice, a key), so nothing is left open
@@ -717,6 +778,7 @@ export function CookScreen({
     kitchen,
     dismiss,
     askOpen: isClaudeExpanded,
+    askModal: false,
     sheetLevel: 0 as 0 | 1 | 2 | 3,
     opening: false,
     startCook: () => {},
@@ -768,6 +830,7 @@ export function CookScreen({
       kitchen,
       dismiss,
       askOpen: isClaudeExpanded,
+      askModal: askSheetOpen,
       sheetLevel,
       opening,
       startCook,
@@ -815,9 +878,29 @@ export function CookScreen({
       v.touch();
       // A new command puts the last answer away; a new question replaces it.
       if (command !== "how-much") setAnswer(null);
-      if (v.askOpen && BACK_OUT.has(command)) {
+      // What the command does to Ask (`askOnCommand`). The capsule's mic
+      // opened the panel only to listen and it heard a command: the panel
+      // goes and the command acts as it would have from the foot's dot,
+      // whatever the conversation holds (call 13). "Close" closes Ask in
+      // either shape; next, back and done said over the sheet close it
+      // rather than move the steps under it, and beside the step they move
+      // the step while the panel stays (call 5). With a modal or More over
+      // the cook the command is theirs: the topmost thing closes first.
+      const onAsk = askOnCommand({
+        open: v.askOpen,
+        modal: v.askModal,
+        listen: capsuleListen.current,
+        over: v.anyModal || v.menuOpen,
+        close: command === "close",
+        backsOut: BACK_OUT.has(command),
+      });
+      if (onAsk !== "stays") {
+        capsuleListen.current = null;
+        // Closed as of now for what follows in this same turn: words that
+        // turn out to be a question (`askAfterTap`) open Ask again.
+        askOpenNow.current = false;
         setIsClaudeExpanded(false);
-        return;
+        if (onAsk === "closes") return;
       }
       // While the alarm rings, level commands do nothing; the echo shows what
       // was heard (N11). On the opening they are disarmed too (N2-10).
@@ -920,10 +1003,14 @@ export function CookScreen({
     [closeModals, dispatch, flag, putAwayTop],
   );
 
-  const onVoiceQuestion = useCallback((text: string) => {
-    setIsClaudeExpanded(true);
-    askRef.current?.ask(text);
-  }, []);
+  const onVoiceQuestion = useCallback(
+    (text: string) => {
+      capsuleListen.current = null;
+      if (!askOpenNow.current) openAsk("mic", "controls");
+      askRef.current?.ask(text);
+    },
+    [openAsk],
+  );
 
   const {
     mode: voiceMode,
@@ -952,6 +1039,58 @@ export function CookScreen({
     setVoiceOn(on);
     setVoiceEnabled(on);
   }, [voiceMode, voiceStatus, resetVoice, talk]);
+
+  // The capsule's mic (call 13). Where voice listens on a tap it opens the
+  // panel already listening, one listen per tap. Where it listens all the
+  // time there are no spoken questions, so the mic stays what the foot's dot
+  // was: voice's switch.
+  const onCapsuleMic = useCallback(() => {
+    if (voiceMode !== "tap") {
+      onVoiceTap();
+      return;
+    }
+    // Sous is speaking: a tap listens to nothing (the mic says so).
+    if (voiceStatus === "paused") return;
+    capsuleListen.current = "armed";
+    openAsk("mic", "controls");
+    if (voiceStatus !== "hearing") talk();
+  }, [voiceMode, voiceStatus, onVoiceTap, openAsk, talk]);
+  // A tap on the panel's own mic is the cook's hand on the panel: it stays.
+  const onPanelMic = useCallback(() => {
+    capsuleListen.current = null;
+    onVoiceTap();
+  }, [onVoiceTap]);
+  // A listen the capsule started that ended in nothing asked (silence, or
+  // words that were no question) closes the panel once the heard line has
+  // cleared, whatever the conversation holds: the cook opened it to say one
+  // thing, and a question asked would have ended the listen
+  // (`onVoiceQuestion`). A refused or stalled mic keeps it open, where it
+  // says so (call 14), whether or not it ever heard; a mic that failed to
+  // start is a listen that is over, and closes it the same way (`afterListen`).
+  useEffect(() => {
+    const next = afterListen(capsuleListen.current, {
+      open: isClaudeExpanded,
+      status: voiceStatus,
+      echo: voiceEcho !== null,
+    });
+    capsuleListen.current = next.listen;
+    if (next.close) setIsClaudeExpanded(false);
+  }, [isClaudeExpanded, voiceStatus, voiceEcho]);
+
+  // As Ask closes, focus comes back to the part of the capsule that opened
+  // it (call 7), unless the cook's focus is already somewhere on the screen:
+  // beside the step, a close by voice leaves it where it is.
+  const askWasOpen = useRef(isClaudeExpanded);
+  useEffect(() => {
+    const was = askWasOpen.current;
+    askWasOpen.current = isClaudeExpanded;
+    if (!was || isClaudeExpanded) return;
+    const at = document.activeElement;
+    if (at !== null && at !== document.body) return;
+    // On the opening there is no capsule: its own mic opened Ask.
+    if (opening) openingMicRef.current?.focus();
+    else capsuleRef.current?.focus(askEntry.way);
+  }, [isClaudeExpanded, askEntry.way, opening]);
 
   useLayoutEffect(() => {
     askAfterTap.current = (heard: string) => {
@@ -1048,18 +1187,34 @@ export function CookScreen({
   );
   // More where the sheet hosts it (N3-4(d), (f)): passed whenever the lanes
   // may host it, so the sheet has measured it before it shows.
+  // With it on the pinned whole-cook chart, Ask Sous in its short form
+  // (call 26): the top line and its capsule give way there, and a cook
+  // reading the chart can still ask by hand. Opening Ask lowers the chart
+  // (call 21). Not on the opening, whose row has its own mic.
   const sheetMore =
     opening || lanesHostMore ? (
-      <HeaderMore
-        open={moreInSheet && menu === "more"}
-        onOpenChange={(o) => setMenu(o ? "more" : null)}
-        onShowInfo={() => setShowInfoModal(true)}
-        currentItemId={queueItemId}
-        showRecentItems={showRecentItems}
-        onFlag={flagByTouch}
-        flagAck={flagAck}
-        flagNote={{ ...flagNote, open: moreInSheet && flagNote.open }}
-      />
+      <div className="flex items-center">
+        <HeaderMore
+          open={moreInSheet && menu === "more"}
+          onOpenChange={(o) => setMenu(o ? "more" : null)}
+          onShowInfo={() => setShowInfoModal(true)}
+          currentItemId={queueItemId}
+          showRecentItems={showRecentItems}
+          onFlag={flagByTouch}
+          flagAck={flagAck}
+          flagNote={{ ...flagNote, open: moreInSheet && flagNote.open }}
+        />
+        {!opening && (
+          <AskCapsule
+            place="chart"
+            label={ASK_COPY.title}
+            short={ASK_COPY.short}
+            onWords={openAskToType}
+            voice={voice}
+            onMic={onCapsuleMic}
+          />
+        )}
+      </div>
     ) : null;
   // The opening's controls (N3-4(d)): the voice dot, the well and Start.
   const openingControls = opening ? (
@@ -1067,8 +1222,28 @@ export function CookScreen({
       onStart={startCook}
       well={{ expired: timers.expired, running: timers.ledge, onDismiss: timers.onDismiss }}
       voice={voice}
+      micRef={openingMicRef}
     />
   ) : null;
+
+  // Ask Sous in the top line: not drawn while its panel is open (the panel
+  // has its own mic, camera and close).
+  const capsule = isClaudeExpanded ? null : (
+    <AskCapsule
+      ref={capsuleRef}
+      label={ASK_COPY.title}
+      short={ASK_COPY.short}
+      onWords={openAskToType}
+      voice={voice}
+      onMic={onCapsuleMic}
+      onPhoto={handlePhotoTrigger}
+    />
+  );
+  // Raising the look-ahead closes Ask (call 21).
+  const onLevel = (level: Level) => {
+    if (level > 0) setIsClaudeExpanded(false);
+    setSheetLevel(level);
+  };
 
   // One edge for the cook and everything it borrows the screen for, with a
   // map or without one: the foot has its own band (V4), so no gutters are
@@ -1078,12 +1253,19 @@ export function CookScreen({
     // The timers shown here are this cook's unless they say their recipe
     // (`TimerHere`), with the id its offers carry.
     <TimerHere queueId={queueItemId ?? "cook"}>
-    <div data-cook-root="" className="cook-edge contents">
+    <div
+      data-cook-root=""
+      className="cook-edge contents"
+      // Beside Ask's side panel the top line and the stage give up its width.
+      style={askSideOpen ? ({ "--ask-room": ASK_SIDE_WIDTH } as CSSProperties) : undefined}
+    >
       {/* While a borrowed screen has the screen, what it covers can't take focus. */}
       <div inert={anyModal} className="contents">
+        {/* Ask's sheet is modal: the cook under it can't take focus either. */}
+        <div inert={askSheetOpen} className="contents">
         <KitchenLayout
           header={
-            <div data-cook-header inert={wholeOpen || opening} className={`relative z-40${opening ? " invisible" : ""}`}>
+            <div data-cook-header inert={wholeOpen || opening} className={`relative z-40 mr-[var(--ask-room,0px)]${opening ? " invisible" : ""}`}>
             <RecipeHeader
               name={recipe.name}
               scaleNote={scaleNote}
@@ -1095,6 +1277,7 @@ export function CookScreen({
               onFlag={flagByTouch}
               flagAck={flagAck}
               flagNote={{ ...flagNote, open: !moreInSheet && flagNote.open }}
+              ask={capsule}
             />
             </div>
           }
@@ -1116,7 +1299,8 @@ export function CookScreen({
               onAskAhead={onAskAhead}
               finish={shownFinish}
               navEnabled={navEnabled}
-              ask={{ label: ASK_COPY.title, onOpen: openAsk, ref: askGhostRef, voice, onPhoto: handlePhotoTrigger, open: isClaudeExpanded }}
+              voice={voice}
+              askOpen={isClaudeExpanded}
               navRef={flowNav}
               timers={timers}
               notices={kitchen.notices}
@@ -1130,7 +1314,7 @@ export function CookScreen({
                   ? {
                       strip: stripData,
                       level: sheetLevel,
-                      onLevel: setSheetLevel,
+                      onLevel,
                       // At the chart and Whole recipe the step is gone, so its clock walks to the well (N10, N2-4).
                       onSettled: (_k, folded) => setClockInWell(folded),
                       handleRef: sheetHandle,
@@ -1154,7 +1338,7 @@ export function CookScreen({
                         chapters: view.chapters,
                         current: stepStates.current,
                         done: stepStates.done,
-                        prepLine: hasPrepScreen(plan) ? prepSummary(plan, state).text : null,
+                        prepLine: hasPrep(plan) ? prepSummary(plan, state).text : null,
                         ingredients: ingredientLines,
                         recipe: packRecipe,
                         servings,
@@ -1184,27 +1368,38 @@ export function CookScreen({
             />
           }
         />
+        </div>
 
-        {/* Ask Sous Panel - positioned over the layout */}
-        <div inert={wholeOpen} className="contents">
+        {/* Ask Sous: beside the step, or a sheet over it. Never open with
+            Whole recipe: each puts the other away (`openAsk`, `onLevel`). */}
         <AskSous
           ref={askRef}
           recipeContext={recipe.name}
           queueId={queueItemId}
-          currentStepIndex={askCurrentStepIndex}
+          currentStepIndex={askHand.index}
+          prep={askHand.prep}
           timers={askTimers}
           sessionId={sessionId}
           isExpanded={isClaudeExpanded}
           onToggle={closeAsk}
-          currentStepText={askStepText(view)}
+          currentStepText={askHand.text}
           ingredients={ingredientTexts}
           servings={servings}
           servesBase={packRecipe.serves_base}
           offlineReply={askOfflineReply}
-          voice={voice}
+          voice={{ ...voice, onTap: onPanelMic }}
           onSpeak={speakAnswer}
+          form={askForm}
+          enter={askEntry.enter}
+          onPhoto={handlePhotoTrigger}
+          escapeLive={!anyModal && !wholeOpen && menu === null}
+          onEngage={engageAsk}
+          alarm={
+            timers.expired.length > 0 ? (
+              <AlarmBand expired={timers.expired} now={tick} onDismiss={timers.onDismiss} />
+            ) : undefined
+          }
         />
-        </div>
         <input
           ref={photoInputRef}
           type="file"
@@ -1214,16 +1409,6 @@ export function CookScreen({
           className="hidden"
           aria-hidden="true"
         />
-        {dishPhoto && (
-          <DishPhotoReview
-            photo={dishPhoto}
-            recipeTitle={recipe.name}
-            currentStepSummary={askStepText(view)}
-            onSubmit={handleDishPhotoSubmit}
-            onRetake={handleDishPhotoRetake}
-            onClose={() => setDishPhoto(null)}
-          />
-        )}
         <VoiceSaid mode={voiceMode} status={voiceStatus} echo={voiceEcho} hint={voice.hint} />
       </div>
 

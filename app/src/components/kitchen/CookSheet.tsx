@@ -29,7 +29,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { COOK_COPY, cookView, initialCookState, type PrepAheadGroup } from "@/lib/kitchen/cook-view";
+import { COOK_COPY, cookView, initialCookState, levelSaid, type PrepAheadGroup } from "@/lib/kitchen/cook-view";
 import { strip as stripOf, type Strip } from "@/lib/kitchen/cook-strip";
 import { hitOutline, readStepDetails, type Nudge } from "@/lib/kitchen/cook-levels";
 import { prepWords, timedKey, timedStrip, type PotTimer } from "@/lib/kitchen/cook-overview";
@@ -50,7 +50,7 @@ import {
 } from "@/lib/kitchen/sheet-layout";
 import { GRAB, PAPER_R } from "@/lib/kitchen/sheet-derived";
 import { JUMP_MS, JUMP_REDUCED_MS, SheetMotion, type Level } from "@/lib/kitchen/sheet-motion";
-import { LINE_HIT, lineFill, type StripMapDrawing } from "@/lib/kitchen/strip-map";
+import { LINE_HIT, type StripMapDrawing } from "@/lib/kitchen/strip-map";
 import { SHEET_CONSTANTS, type PointerZone } from "@/lib/kitchen/sheet-release";
 import { ease } from "@/lib/kitchen/spring";
 import { keyBelongsToTarget } from "@/lib/kitchen/key-target";
@@ -369,8 +369,10 @@ export function CookSheet(props: CookSheetProps) {
   const drawnStrip = useRef<Strip | null>(null);
 
   // ---- painting ----
-  /** The clock's minute: the line's fill is said from it at every paint, nothing laid out (T3). */
+  /** The clock's minute: the whole cook's fill is said from it at every paint, nothing laid out (T3). */
   const liveNow = useRef<number | null>(null);
+  /** The end of the step in hand, by the clock's strip: the line's fill at rest is said from it (v1.54). */
+  const liveProgress = useRef<number | null>(null);
   /** How far the frames are a straight pass between levels 0 and 2 (0..1): a repaint mid-glide keeps it. */
   const passing = useRef(0);
   const paint = useCallback(
@@ -378,7 +380,7 @@ export function CookSheet(props: CookSheetProps) {
       const L = layoutRef.current;
       if (!L || !clipRef.current) return;
       if (s.pass !== undefined) passing.current = s.pass;
-      const F = frameAt(L, { Y: s.Y, now: liveNow.current ?? undefined, pass: passing.current });
+      const F = frameAt(L, { Y: s.Y, now: liveNow.current ?? undefined, progress: liveProgress.current ?? undefined, pass: passing.current });
       frameRef.current = F;
       apply(L, F, !s.smooth);
     },
@@ -544,7 +546,8 @@ export function CookSheet(props: CookSheetProps) {
       return null;
     }
     if (mark.key === "prep" && !drawn.asWritten) return { key: mark.key, text: prepWords(mark, false).read, go: "prep" };
-    return { key: mark.key, text: readStepDetails(mark, plan, state).text, go: mark.screen === 0 ? "prep" : "step" };
+    // A prep card goes to the Prep screen, or in "Prep first" to its own prep page, a step like any other (DS v1.59).
+    return { key: mark.key, text: readStepDetails(mark, plan, state).text, go: drawn.prepScreen && mark.screen === 0 ? "prep" : "step" };
   }, [readMark, level, drawn, plan, state]);
 
   // Each prep mode's plan from the top: the other mode's scale (both share one) and the lanes' order.
@@ -614,20 +617,37 @@ export function CookSheet(props: CookSheetProps) {
       canvasCtxRef.current = ctx;
     }
     const measure = canvasMeasure(canvasCtxRef.current);
-    const W = document.documentElement.clientWidth;
+    const VW = document.documentElement.clientWidth;
     const H = window.innerHeight;
-    const c = Math.min(Math.max(W, H) / 960, Math.min(W, H) / 600);
+    // Beside Ask's side panel the sheet's layer gives up the panel's width, as the stage does
+    // (`--ask-room`; DS §5 Ask, v1.60): the line and its marks are laid in what is left. The
+    // frame's unit and its posture stay the screen's.
+    const room = layerRef.current ? VW - layerRef.current.getBoundingClientRect().width : 0;
+    const W = room > 0.5 ? VW - room : VW;
+    const c = Math.min(Math.max(VW, H) / 960, Math.min(VW, H) / 600);
     const header = document.querySelector<HTMLElement>("[data-cook-header]");
     const top = header ? header.getBoundingClientRect().bottom : 92 * c;
     const nowEl = stack?.querySelector<HTMLElement>(':scope > [data-role="now"]') ?? null;
     const was = stack?.style.transform ?? "";
-    if (stack) stack.style.transform = "none";
+    const wasMeta = stack?.style.getPropertyValue("--look-meta") ?? "";
+    if (stack) {
+      stack.style.transform = "none";
+      // The step as it rests, its meta whole, whatever level the sheet stands at.
+      stack.style.setProperty("--look-meta", "1");
+    }
     const E = stack ? parseFloat(getComputedStyle(stack).paddingLeft) : 48;
     let step: Parameters<typeof buildLayout>[0]["step"] = null;
     if (nowEl && stepText) {
       const r = nowEl.getBoundingClientRect();
       const face = nowEl.querySelector<HTMLElement>("[data-face]:not([hidden])");
-      const textB = face ? face.getBoundingClientRect().bottom : r.top;
+      let textB = face ? face.getBoundingClientRect().bottom : r.top;
+      if (stack && face?.dataset.face === "rows") {
+        // A prep page's tick rows (DS v1.59): the lines their amounts dropped to go as the sheet
+        // rises (`PrepRows`), so what stays is the rows without them, measured as they then stand.
+        stack.style.setProperty("--look-meta", "0");
+        textB = face.getBoundingClientRect().bottom;
+        stack.style.setProperty("--look-meta", "1");
+      }
       const time = nowEl.querySelector<HTMLElement>("[data-time]");
       // A part of pairs alone has no words: its meta is what it says, and stays.
       const wordless = !face || !face.textContent?.trim();
@@ -653,7 +673,11 @@ export function CookSheet(props: CookSheetProps) {
       };
     }
     const stepTop = nowEl ? nowEl.getBoundingClientRect().top : top;
-    if (stack) stack.style.transform = was;
+    if (stack) {
+      stack.style.transform = was;
+      if (wasMeta) stack.style.setProperty("--look-meta", wasMeta);
+      else stack.style.removeProperty("--look-meta");
+    }
     // The chrome the whole cook hosts, at its size on screen (N3-4(d), (f)).
     const mw = moreWrapRef.current;
     const cw = controlsWrapRef.current;
@@ -673,7 +697,7 @@ export function CookSheet(props: CookSheetProps) {
         stepTop,
         footTop: foot.getBoundingClientRect().top,
         ledgeTop: H - LEDGE_BAR_CPX * c,
-        portrait: H > W,
+        portrait: H > VW,
       },
       step,
       nudge: nudgeIn,
@@ -735,6 +759,7 @@ export function CookSheet(props: CookSheetProps) {
     }
     drawnStrip.current = drawn;
     liveNow.current = timed.now;
+    liveProgress.current = timed.progress;
     layoutRef.current = L;
     lastBuilt.current = { rebuild, content: contentKey, strip: drawn };
     if (own) ownLayout.current = L;
@@ -844,9 +869,10 @@ export function CookSheet(props: CookSheetProps) {
   // fill) change what draws, not where: draw again.
   useEffect(() => {
     liveNow.current = timed.now;
+    liveProgress.current = timed.progress;
     const m = motion.current;
     if (m && layoutRef.current && !tweenRaf.current) paint({ Y: m.Y, smooth: false });
-  }, [alarm, nudgeShown, readMark, timed.now, paint]);
+  }, [alarm, nudgeShown, readMark, timed.now, timed.progress, paint]);
 
   /** The rows' glide is done (or cut short by a touch or a level): stand at the level. */
   function finishTween() {
@@ -959,10 +985,12 @@ export function CookSheet(props: CookSheetProps) {
     if (D && DF) {
       if (derivedRef.current) derivedRef.current.style.transform = `translateY(${(L.detents[2] - Y).toFixed(1)}px)`;
       if (paperRef.current) paperRef.current.style.transform = `translateY(${(DF.paperTop - L.detents[2]).toFixed(1)}px)`;
+      // The line never moves; its fill is the frame's: the end of the step in hand at rest and under
+      // the peek, the clock's minute at the whole cook (v1.54).
       paintLine(lineTrackRef.current, lineFillRef.current, {
         x: D.line0.x0,
         w: D.line0.x1 - D.line0.x0,
-        fill: lineFill(D.total, liveNow.current ?? L.now, D.line0.x0, D.line0.x1),
+        fill: DF.fill,
         ink: 0,
       });
       shown(stripMapRef.current, DF.stations);
@@ -1311,7 +1339,7 @@ export function CookSheet(props: CookSheetProps) {
     <>
       <div
         inert={wholeOpen}
-        className="pointer-events-none fixed inset-0 z-30 font-[family-name:var(--font-text)] text-ink"
+        className="pointer-events-none fixed inset-y-0 right-[var(--ask-room,0px)] left-0 z-30 font-[family-name:var(--font-text)] text-ink"
       >
         <div ref={layerRef} data-cook-sheet tabIndex={-1} data-level={pinned} data-settled={settled} className="absolute inset-0 outline-none">
           {/* The nudge, over the minute it names (N7, N2-8): a tap on it is a tap on the band. */}
@@ -1395,8 +1423,17 @@ export function CookSheet(props: CookSheetProps) {
               <div ref={endrRef} data-endr aria-hidden className="pointer-events-none absolute top-0 left-0 z-[3] w-px bg-ink/[.22]" />
               {/* A derived plan's parts stand on the screen's own place (from level 2's edge), not the sheet's edge:
                   the Paper rises under them, the line never moves, the timetable grows out of it (T3). */}
+              {/* This box is moved (a transform), so what it holds stacks as one, under More and the opening's
+                  controls (z-[6]) beside it. While a Get out amount's panel is open on the opening it stacks
+                  over them, so the panel is never drawn under Start, the well or More should it reach them
+                  (review round 1); it takes no touches itself, so they stay in reach. */}
               {L?.overview && D && (
-                <div ref={derivedRef} data-derived-sheet className="pointer-events-none absolute inset-x-0 top-0" style={{ height: L.geo.H }}>
+                <div
+                  ref={derivedRef}
+                  data-derived-sheet
+                  className={`pointer-events-none absolute inset-x-0 top-0${L.opening ? " has-[[data-measure-panel]]:z-[7]" : ""}`}
+                  style={{ height: L.geo.H }}
+                >
                   {!L.opening && (
                     <div
                       ref={paperRef}
@@ -1475,6 +1512,7 @@ export function CookSheet(props: CookSheetProps) {
               {openingControls != null && (
                 <div
                   ref={controlsWrapRef}
+                  data-sheet-controls
                   onClick={(e) => e.stopPropagation()}
                   className="pointer-events-auto absolute top-0 left-0 z-[6] w-max"
                   style={{
@@ -1685,7 +1723,9 @@ export function CookSheet(props: CookSheetProps) {
 
           {/* What a screen reader hears of the strip and the level. */}
           <div className="sr-only">
-            <p aria-live="polite">{settled > 0 && !opening ? `${levelName}. ${COOK_COPY.saySueBack}` : ""}</p>
+            <p data-level-said="" aria-live="polite">
+              {settled > 0 && !opening ? levelSaid(levelName, voice?.status === "listening") : ""}
+            </p>
             <ul id="cook-sheet-marks" aria-label={`${levelName}: the rest of the cook. Next: ${nextName}`}>
               {srMarks.map((t, j) => (
                 <li key={j}>{t}</li>

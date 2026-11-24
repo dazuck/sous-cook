@@ -48,6 +48,44 @@ describe("chatCooking", () => {
     expect((failure as TRPCError).cause).toBe(cut);
   });
 
+  it("hands a prep page's jobs on to the assistant, with no step (review round 3)", async () => {
+    vi.mocked(chatCookingAssistant).mockResolvedValue({
+      content: "Fine as you can.",
+      usage: { inputTokens: 80, outputTokens: 6 },
+    });
+    const prep = {
+      jobs: [
+        { text: "Mince the garlic", amounts: ["3 cloves garlic"], done: true },
+        { text: "Rinse the lentils", amounts: [], done: false },
+      ],
+    };
+
+    await caller.chatCooking({ ...INPUT, queueId: "q-dal", prep });
+
+    // The kitchen comes from the request's context, then the session, messages, recipe and options.
+    const [kitchenId, , , , options] = vi.mocked(chatCookingAssistant).mock.calls[0]!;
+    expect(kitchenId).toBe(HOME.id);
+    expect(options).toMatchObject({ queueId: "q-dal", prep });
+    expect(options?.currentStepIndex).toBeUndefined();
+  });
+
+  it("refuses prep that is not jobs of words, amounts and a tick", async () => {
+    vi.mocked(chatCookingAssistant).mockResolvedValue({
+      content: "Fine as you can.",
+      usage: { inputTokens: 80, outputTokens: 6 },
+    });
+    for (const prep of [
+      { jobs: [{ text: "Mince the garlic", amounts: [], done: "yes" }] },
+      { jobs: [{ text: "Mince the garlic", amounts: [3], done: false }] },
+      { jobs: [{ text: "Mince the garlic", done: false }] },
+      { jobs: "Mince the garlic" },
+    ]) {
+      const failure = await failureOf(caller.chatCooking({ ...INPUT, prep } as never));
+      expect((failure as TRPCError).code).toBe("BAD_REQUEST");
+    }
+    expect(chatCookingAssistant).not.toHaveBeenCalled();
+  });
+
   it("leaves any other failure as it was, so Ask says it couldn't reach Sous", async () => {
     vi.mocked(chatCookingAssistant).mockRejectedValue(new Error("The model declined to answer (blocked)"));
 

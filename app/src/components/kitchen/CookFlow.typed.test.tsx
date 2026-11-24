@@ -58,7 +58,6 @@ function draw(
       onAskAhead={vi.fn()}
       finish="ready"
       navEnabled
-      ask={{ label: "Ask Sous", onOpen: vi.fn() }}
       stepType={stepType}
       answer={answer}
       timers={timers}
@@ -102,7 +101,6 @@ describe("a checkpoint (D8)", () => {
         onAskAhead={vi.fn()}
         finish="ready"
         navEnabled
-        ask={{ label: "Ask Sous", onOpen: vi.fn() }}
         stepType={{ step, howToCheck: true, onNotYet }}
       />,
     );
@@ -206,6 +204,28 @@ describe("how much (D13)", () => {
     expect(document.querySelector("[data-face]")!.hasAttribute("data-ember")).toBe(true);
   });
 
+  it("stands over the middle of the foot it is asked from, which narrows beside Ask's side panel (v1.60)", () => {
+    // The foot beside an open panel on the tablet: 768 px of the 1280.
+    const box = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({ left: 0, right: 768, width: 768, top: 672, bottom: 800, height: 128, x: 0, y: 672, toJSON: () => ({}) });
+    try {
+      const { view, lines, step } = at("thin-white-sauce", 0);
+      draw(view, lines, { step }, { key: 1, indices: [4], shown: "Pepper: the recipe doesn't say" });
+      // An answer comes to a foot already drawn; here both arrive at once, so the lift is placed again.
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      const lift = document.querySelector<HTMLElement>("[data-answer]")!;
+      expect(lift.style.left).toBe("384px");
+      expect(lift.style.maxWidth).toContain("768px");
+      expect(lift.className).toContain("-translate-x-1/2");
+      expect(lift.className).not.toContain("left-1/2");
+    } finally {
+      box.mockRestore();
+    }
+  });
+
   it("which: each line a target, which answers", () => {
     const { view, lines, step } = at("parker-house-rolls", 0);
     const onChoose = vi.fn();
@@ -277,7 +297,6 @@ describe("with the kitchen's timers (D8, D13)", () => {
         onAskAhead={vi.fn()}
         finish="ready"
         navEnabled
-        ask={{ label: "Ask Sous", onOpen: vi.fn() }}
         stepType={{ step }}
         answer={{ key: 1, indices: [4], shown: "Pepper: the recipe doesn't say" }}
       />,

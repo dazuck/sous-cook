@@ -11,14 +11,13 @@
 import { isAsWritten, type Strip, type StripMark } from "./cook-strip";
 import {
   COOK_COPY,
-  hasPrepScreen,
   prepSummary,
   chartState,
+  screensOf,
   stepBody,
   type CookState,
 } from "./cook-view";
 import type { CookPlan } from "./cook-plan";
-import { flow } from "./cook-schedule";
 
 // ---------------------------------------------------------------------------
 // 1b. As written, the next steps (N2-2)
@@ -210,11 +209,14 @@ export function readStepDetails(
     return { text: COOK_COPY.prepChapter, minutes, isCurrent };
   }
 
-  if (mark.screen === 0 && plan && mark.tasks.length > 0) {
+  // A prep card (`Strip.prepMarks`): its own tasks' words, whichever screen
+  // it goes to (the Prep screen, or in "Prep first" its first prep page,
+  // which may hold only part of a card cut over pages).
+  if (plan && mark.cook === false && mark.tasks.length > 0 && !isAsWritten(plan)) {
     const tasks = mark.tasks
       .map((id) => plan.tasks.find((t) => t.id === id))
       .filter((t): t is NonNullable<typeof t> => Boolean(t));
-    if (tasks.length > 0) {
+    if (tasks.length > 0 && tasks.every((t) => t.kind === "mise")) {
       return {
         text: stepBody({ tasks, start: mark.start, end: mark.end, during: null, lead: null }),
         minutes,
@@ -224,14 +226,12 @@ export function readStepDetails(
   }
 
   if (plan && state && !isAsWritten(plan)) {
-    const offset = hasPrepScreen(plan) ? 1 : 0;
     // The mark's screen counts the screens the strip drew it on: on Prep, as
     // the cook stands on leaving (`chartState`, the strip's own read).
     const read = chartState(plan, state);
-    const items = flow(plan, read.mode, read.ticked);
-    const item = items[mark.screen - offset];
-    if (item) {
-      return { text: stepBody(item), minutes, isCurrent };
+    const screen = screensOf(plan, read.mode, read.ticked)[mark.screen];
+    if (screen?.kind === "step") {
+      return { text: stepBody(screen.item), minutes, isCurrent };
     }
   }
 

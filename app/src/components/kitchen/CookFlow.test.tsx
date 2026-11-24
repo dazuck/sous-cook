@@ -11,6 +11,9 @@ import {
   cookView,
   initialCookState,
   next,
+  prepEyebrow,
+  prepPages,
+  toggleTick,
   type CookState,
   type CookView,
   type PlanSource,
@@ -27,7 +30,6 @@ import type { VoiceProps } from "./VoiceDot";
 import { ZUCCHINI_PLAN, ZUCCHINI_RECIPE } from "@/lib/kitchen/__tests__/zucchini-wraps";
 import {
   CookFlow,
-  type AskControl,
   type CookFlowNav,
   type CookTimers,
   type FinishState,
@@ -100,7 +102,8 @@ function flow(
     navEnabled = true,
     timers,
     notices,
-    ask,
+    voice,
+    askOpen,
     restInert,
     opening,
   }: {
@@ -109,7 +112,8 @@ function flow(
     navEnabled?: boolean;
     timers?: CookTimers;
     notices?: string[];
-    ask?: AskControl;
+    voice?: VoiceProps;
+    askOpen?: boolean;
     restInert?: boolean;
     opening?: { onStart: () => void } | null;
   } = {},
@@ -118,20 +122,20 @@ function flow(
     onNext: vi.fn(),
     onBack: vi.fn(),
     onFinish: vi.fn(),
-    onAsk: vi.fn(),
+    onTick: vi.fn(),
   };
-  const { onAsk, ...flowHandlers } = handlers;
+  const flowHandlers = handlers;
   const props = (finishState: FinishState, nav: boolean) => (
     <CookFlow
       view={view}
       mode="first"
       ingredients={ingredients}
       onMode={vi.fn()}
-      onTick={vi.fn()}
       onAskAhead={vi.fn()}
       finish={finishState}
       navEnabled={nav}
-      ask={ask ?? { label: "Ask Sous", onOpen: onAsk }}
+      voice={voice}
+      askOpen={askOpen}
       timers={timers}
       notices={notices}
       restInert={restInert}
@@ -500,8 +504,19 @@ describe("CookFlow: the note above the steps", () => {
   });
 });
 
-// The derived plan opens on Prep.
-const PREP = cookView(ZUCCHINI_PLAN, { kind: "derived" }, initialCookState("first"));
+// The Prep screen. It is As I go's since DS v1.59: Prep first walks prep pages
+// (these tests drew Prep first's Prep screen before that slice).
+const PREP = cookView(ZUCCHINI_PLAN, { kind: "derived" }, initialCookState("go"));
+/** How many prep pages the zucchini has in Prep first: its cooking step `n` is `ZUCCHINI_PAGES + n - 1` presses in. */
+const ZUCCHINI_PAGES = prepPages(ZUCCHINI_PLAN, "first").length;
+// Prep first opens on the first of them: three small jobs, as tick rows.
+const PREP_PAGE = cookView(ZUCCHINI_PLAN, { kind: "derived" }, initialCookState("first"));
+// The second is one job (the onion greens): a step page under a Prep eyebrow.
+const PREP_PAGE_2 = cookView(
+  ZUCCHINI_PLAN,
+  { kind: "derived" },
+  next(ZUCCHINI_PLAN, initialCookState("first")),
+);
 
 /**
  * The stage, 900px wide from the left edge: the back third ends at x = 300,
@@ -625,6 +640,37 @@ describe("CookFlow: tap zones", () => {
     expect(onBack).not.toHaveBeenCalled();
   });
 
+  it("turns the page from a prep page as from any step, and a tap on a tick row is its tick", () => {
+    const { onNext, onTick } = flow(PREP_PAGE);
+    stage();
+    expect(PREP_PAGE.onPrep).toBe(false);
+    const rows = [...document.querySelectorAll<HTMLElement>("[data-prep-rows] > [data-row]")];
+    expect(rows.map((r) => r.dataset.row)).toEqual(["onion", "scape", "zuc"]);
+    // A tap on a row's words ticks it and turns nothing.
+    tapAt(rows[1]!.querySelector("p")!, 600);
+    expect(onTick).toHaveBeenCalledTimes(1);
+    expect(onTick).toHaveBeenLastCalledWith("scape");
+    expect(onNext).not.toHaveBeenCalled();
+    // Its tile ticks it too, once.
+    tapAt(within(rows[0]!).getByRole("checkbox"), 600);
+    expect(onTick).toHaveBeenCalledTimes(2);
+    expect(onTick).toHaveBeenLastCalledWith("onion");
+    expect(onNext).not.toHaveBeenCalled();
+    // Off the rows, the stage turns the page.
+    tapAt(document.querySelector("[data-prep-eyebrow]")!, 600);
+    expect(onNext).toHaveBeenCalledTimes(1);
+    expect(onTick).toHaveBeenCalledTimes(2);
+  });
+
+  it("turns the page from a prep page of one job by a tap on its words", () => {
+    const { onNext, onBack } = flow(PREP_PAGE_2);
+    stage();
+    tapAt(stepText(), 600);
+    expect(onNext).toHaveBeenCalledTimes(1);
+    tapAt(stepText(), 100);
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
   it("waits while a modal or panel is open", () => {
     const { onNext } = flow(SECOND, { navEnabled: false });
     stage();
@@ -671,11 +717,10 @@ describe("CookFlow: tap zones", () => {
 });
 
 describe("the foot", () => {
-  const ON_STEP = cookView(
-    ZUCCHINI_PLAN,
-    { kind: "derived" },
-    next(ZUCCHINI_PLAN, initialCookState("first")),
-  );
+  // The first cooking step, past the prep pages.
+  let onStep = initialCookState("first");
+  for (let i = 0; i < ZUCCHINI_PAGES; i++) onStep = next(ZUCCHINI_PLAN, onStep);
+  const ON_STEP = cookView(ZUCCHINI_PLAN, { kind: "derived" }, onStep);
 
   function band(): HTMLElement {
     return screen.getByRole("button", { name: COOK_COPY.back }).closest<HTMLElement>("[data-foot]")!;
@@ -690,86 +735,46 @@ describe("the foot", () => {
     expect(band().className).not.toContain("absolute");
   });
 
-  it("asks Sous from the foot's middle, between Back and Forward (V5)", () => {
-    const { onAsk } = flow(ON_STEP);
-    const ask = screen.getByRole("button", { name: "Ask Sous" });
+  it("keeps Back, the well and Forward, and nothing of Ask Sous: its capsule is in the top line (v1.60)", () => {
+    flow(ON_STEP, { voice: { mode: "tap", status: "ready", echo: null, onTap: vi.fn() } });
+    expect(screen.queryByRole("button", { name: "Ask Sous" })).toBeNull();
+    expect(band().querySelector("[data-voice]")).toBeNull();
+    expect(band().querySelector("[data-ask-bar], [data-ask-capsule]")).toBeNull();
+    expect([...band().querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual([
+      COOK_COPY.back,
+      COOK_COPY.forward,
+    ]);
+    // The middle's cell stays, empty, so the forward keeps its own track.
+    const middle = band().querySelector("[data-foot-middle]")!;
+    expect(middle.childElementCount).toBe(0);
+    expect(middle.getAttribute("aria-hidden")).toBe("true");
     const back = screen.getByRole("button", { name: COOK_COPY.back });
     const forward = screen.getByRole("button", { name: COOK_COPY.forward });
-    expect(band().contains(ask)).toBe(true);
-    expect(back.compareDocumentPosition(ask) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(ask.compareDocumentPosition(forward) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(ask.className).not.toMatch(/(^| )bg-/);
-    fireEvent.click(ask);
-    expect(onAsk).toHaveBeenCalledTimes(1);
+    expect(back.compareDocumentPosition(middle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(middle.compareDocumentPosition(forward) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("provides 3 direct-press controls in the Ask bar for voice, text, and photo", () => {
-    const onVoiceTap = vi.fn();
-    const onPhoto = vi.fn();
-    const onAsk = vi.fn();
-    flow(ON_STEP, {
-      ask: {
-        label: "Ask Sous",
-        onOpen: onAsk,
-        onPhoto,
-        voice: {
-          mode: "tap",
-          status: "listening",
-          echo: null,
-          onTap: onVoiceTap,
-        },
-      },
-    });
-
-    const voiceBtn = screen.getByRole("button", { name: /Talk to Sous/i });
-    const textBtn = screen.getByRole("button", { name: "Ask Sous" });
-    const photoBtn = screen.getByRole("button", { name: "Take dish photo" });
-
-    // Voice button press queues up voice prompting
-    fireEvent.click(voiceBtn);
-    expect(onVoiceTap).toHaveBeenCalledTimes(1);
-
-    // Text button press opens panel
-    fireEvent.click(textBtn);
-    expect(onAsk).toHaveBeenCalledTimes(1);
-
-    // Photo button press launches dish photo capture
-    fireEvent.click(photoBtn);
-    expect(onPhoto).toHaveBeenCalledTimes(1);
+  it("gives the stage's right side to Ask's side panel, and the foot's with it (v1.60)", () => {
+    flow(ON_STEP);
+    const stage = document.querySelector<HTMLElement>("[data-stage]")!;
+    expect(stage.parentElement!.className.split(/\s+/)).toContain("mr-[var(--ask-room,0px)]");
+    // Back and Forward stand under the step: the panel runs to the screen's bottom beside them.
+    expect(band().className.split(/\s+/)).toContain("mr-[var(--ask-room,0px)]");
   });
 
-  it("hides the voice control in the Ask bar when speech is unsupported", () => {
-    flow(ON_STEP, {
-      ask: {
-        label: "Ask Sous",
-        onOpen: vi.fn(),
-        voice: {
-          mode: "tap",
-          status: "unsupported",
-          echo: null,
-          onTap: vi.fn(),
-        },
-      },
-    });
-    expect(band().querySelector("[data-voice]")).toBeNull();
-    expect(screen.getByRole("button", { name: "Ask Sous" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Take dish photo" })).toBeTruthy();
-  });
-
-  describe("what the voice heard floats over Ask Sous (P63 (a))", () => {
-    const heard = (echo: VoiceProps["echo"], status: VoiceProps["status"] = "listening"): AskControl => ({
-      label: "Ask Sous",
-      onOpen: vi.fn(),
-      voice: { mode: "always", status, echo, onTap: vi.fn() },
+  describe("what the voice heard floats over the foot's middle (P63 (a))", () => {
+    const heard = (echo: VoiceProps["echo"], status: VoiceProps["status"] = "listening"): VoiceProps => ({
+      mode: "always",
+      status,
+      echo,
+      onTap: vi.fn(),
     });
 
-    it("keeps Ask's words and lifts the phrase over the row on Paper with its hairline", () => {
-      flow(ON_STEP, { ask: heard({ kind: "unknown", heard: "sue flip it" }) });
-      expect(screen.getByRole("button", { name: "Ask Sous" }).textContent).toBe("Ask Sous");
+    it("lifts the phrase over the row on Paper with its hairline", () => {
+      flow(ON_STEP, { voice: heard({ kind: "unknown", heard: "sue flip it" }) });
       const line = band().querySelector<HTMLElement>("[data-heard]");
       expect(line?.textContent).toBe("Didn't catch “sue flip it”");
-      // Out of the row: not one of Ask's controls, so the row never refits for it.
-      expect(line?.closest("[data-ask-bar]")).toBeNull();
+      // Out of the row's tracks, so the row never refits for it.
       expect(line?.parentElement).toBe(band());
       // DS §1's lifted surface: Paper, a hairline of ink at 11%, no shadow.
       expect(line?.className).toContain("bg-paper");
@@ -781,28 +786,27 @@ describe("the foot", () => {
     });
 
     it("lifts nothing at rest: listening with nothing heard", () => {
-      flow(ON_STEP, { ask: heard(null) });
+      flow(ON_STEP, { voice: heard(null) });
       expect(band().querySelector("[data-heard]")).toBeNull();
-      expect(screen.getByRole("button", { name: "Ask Sous" }).textContent).toBe("Ask Sous");
     });
 
-    it("lifts nothing while Ask is open: Ask's own field says what was heard", () => {
-      flow(ON_STEP, { ask: { ...heard({ kind: "asked", text: "How long do I rest it?" }), open: true } });
+    it("lifts nothing while Ask is open: Ask's own line says what was heard", () => {
+      flow(ON_STEP, { voice: heard({ kind: "unknown", heard: "sue flip it" }), askOpen: true });
       expect(band().querySelector("[data-heard]")).toBeNull();
     });
 
     it("lifts nothing while Whole recipe holds the screen: its ledge says what was heard", () => {
-      flow(ON_STEP, { ask: heard({ kind: "unknown", heard: "sue flip it" }), restInert: true });
+      flow(ON_STEP, { voice: heard({ kind: "unknown", heard: "sue flip it" }), restInert: true });
       expect(band().querySelector("[data-heard]")).toBeNull();
     });
 
     it("lifts nothing while the opening shows, where the foot steps aside", () => {
-      flow(ON_STEP, { ask: heard({ kind: "unknown", heard: "sue flip it" }), opening: { onStart: vi.fn() } });
+      flow(ON_STEP, { voice: heard({ kind: "unknown", heard: "sue flip it" }), opening: { onStart: vi.fn() } });
       expect(band().querySelector("[data-heard]")).toBeNull();
     });
 
     it("lifts nothing where the browser can't listen", () => {
-      flow(ON_STEP, { ask: heard({ kind: "unknown", heard: "sue flip it" }, "unsupported") });
+      flow(ON_STEP, { voice: heard({ kind: "unknown", heard: "sue flip it" }, "unsupported") });
       expect(band().querySelector("[data-heard]")).toBeNull();
     });
   });
@@ -835,10 +839,19 @@ describe("CookFlow: the lookahead and the chapter marker", () => {
   });
 
   it("draws no peek under Prep", () => {
-    const view = at(LONG_SAUTE, "first", 0);
+    const view = at(LONG_SAUTE, "go", 0);
     expect(view.onPrep).toBe(true);
     flow(view);
     expect(document.querySelector("[data-prep]")).not.toBeNull();
+    expect(document.querySelector('[data-role="next"]')).toBeNull();
+  });
+
+  it("draws no peek under a prep page, and no Prep screen", () => {
+    const view = at(LONG_SAUTE, "first", 0);
+    expect(view.onPrep).toBe(false);
+    flow(view);
+    expect(document.querySelector("[data-prep]")).toBeNull();
+    expect(document.querySelector("[data-prep-rows]")).not.toBeNull();
     expect(document.querySelector('[data-role="next"]')).toBeNull();
   });
 });
@@ -857,12 +870,17 @@ describe("CookFlow: fitting the stage", () => {
     t.id === "saute" ? { ...t, minutes: { est: 30, handsOff: true } } : t,
   );
 
-  /** The screen `presses` in, as I go or first, with its current step made long. */
+  /**
+   * The screen `presses` in, as I go or first, with its current step made
+   * long. In Prep first `presses` counts from the last prep page (DS v1.59),
+   * as it counted from the Prep screen: 1 is the first cooking step.
+   */
   function longAt(mode: "first" | "go", presses: number): CookView {
     const view = (tasks: typeof SAUTE) => {
       const plan = { ...ZUCCHINI_PLAN, tasks };
       let state: CookState = initialCookState(mode);
-      for (let i = 0; i < presses; i++) state = next(plan, state);
+      const skip = mode === "first" && presses > 0 ? prepPages(plan, "first").length - 1 : 0;
+      for (let i = 0; i < presses + skip; i++) state = next(plan, state);
       return cookView(plan, DERIVED, state);
     };
     const key = view(SAUTE).stack[0].key;
@@ -1048,7 +1066,6 @@ describe("CookFlow: fitting the stage", () => {
         finish="ready"
         navEnabled
         navRef={nav}
-        ask={{ label: "Ask Sous", onOpen: vi.fn() }}
         resumePart={resumePart}
         resumeWidth={resumeWidth}
         onPart={onPart}
@@ -1168,6 +1185,143 @@ describe("CookFlow: fitting the stage", () => {
     const eyebrow = line("now").querySelector<HTMLElement>("[data-mise-eyebrow]");
     expect(eyebrow).not.toBeNull();
     expect(eyebrow!.textContent).toBe(COOK_COPY.prepChapter);
+    // As I go's eyebrow is the word alone: no place, no dish (those are Prep first's prep pages').
+    expect(eyebrow!.hasAttribute("data-prep-eyebrow")).toBe(false);
+    expect(line("now").querySelector("[data-prep-rows]")).toBeNull();
+  });
+
+  describe("a prep page (Prep first, DS v1.59)", () => {
+    const eyebrow = () => line("now").querySelector<HTMLElement>("[data-prep-eyebrow]")!;
+    const rows = () => [...line("now").querySelectorAll<HTMLElement>("[data-prep-rows] > [data-row]")];
+
+    it("heads a page of one job with Prep, its place and its dish, over the job as the step's words, its time and its amounts", () => {
+      stage.height = 600;
+      fitted(PREP_PAGE_2);
+      expect(PREP_PAGE_2.now!.rows).toBeUndefined();
+      expect(eyebrow().textContent).toBe(`${COOK_COPY.prepChapter} · ${bindNumbers("2 of 2")} · Filling`);
+      // "Prep" in ink 600, the rest in the eyebrow's ink-soft 500, at the chip's size.
+      const word = eyebrow().firstElementChild!;
+      expect(word.textContent).toBe(COOK_COPY.prepChapter);
+      expect(word.className.split(/\s+/)).toEqual(expect.arrayContaining(["font-semibold", "text-ink"]));
+      expect(eyebrow().className.split(/\s+/)).toEqual(
+        expect.arrayContaining(["text-[length:var(--type-chip)]", "font-medium", "text-ink-soft"]),
+      );
+      expect(nowText()).toBe("Chop the onion greens");
+      expect(rows()).toEqual([]);
+      const meta = line("now").querySelector<HTMLElement>("[data-meta]")!;
+      // Its time, and "assumed" (the recipe doesn't list the job), as on any step.
+      expect(meta.querySelector("[data-time]")!.textContent).toBe(
+        `${bindNumbers(PREP_PAGE_2.now!.minutes!)}${COOK_COPY.assumed}`,
+      );
+      expect([...meta.querySelectorAll("[data-pairs] > li")].map((li) => li.textContent)).toEqual([
+        `a handful of onion greens (${COOK_COPY.asWritten})`,
+      ]);
+    });
+
+    it("sets a page of several small jobs as tick rows, each with its minutes and its amounts, its time in the eyebrow", () => {
+      stage.height = 600;
+      fitted(PREP_PAGE);
+      const view = PREP_PAGE.now!;
+      expect(eyebrow().textContent).toBe(
+        [COOK_COPY.prepChapter, ...prepEyebrow(view).map(bindNumbers)].join(" · "),
+      );
+      // The recipe lists none of these jobs: "assumed" once, for the page, and on no row.
+      expect(eyebrow().textContent).toMatch(/^Prep · 1.of.2 · Filling · about.5.minutes · assumed$/);
+      expect(line("now").querySelector("[data-row-assumed]")).toBeNull();
+      // Rows where a step has its words: no step text, no meta of its own.
+      expect(line("now").querySelector("p[data-face]")).toBeNull();
+      expect(line("now").querySelector("[data-meta]")).toBeNull();
+      expect(line("now").querySelector("[data-prep-rows]")!.getAttribute("data-face")).toBe("rows");
+      expect(rows().map((r) => r.querySelector("p")!.textContent)).toEqual([
+        "Slice the onion bulb",
+        "Mince the garlic scape",
+        "Cut the zucchini into thin matchsticks",
+      ]);
+      expect(rows().map((r) => r.querySelector("[data-row-minutes]")!.textContent)).toEqual(
+        ["2 min", "1 min", "2 min"].map(bindNumbers),
+      );
+      expect(rows().map((r) => [...r.querySelectorAll("[data-row-pairs] > li")].map((li) => li.textContent))).toEqual([
+        ["1 onion bulb"],
+        ["1 garlic scape"],
+        ["2 zucchini"],
+      ]);
+      // Each tick is named by its row's words.
+      const boxes = screen.getAllByRole("checkbox");
+      expect(boxes).toHaveLength(3);
+      expect(screen.getByRole("checkbox", { name: "Mince the garlic scape" })).toBe(boxes[1]);
+      expect(boxes.map((b) => b.getAttribute("aria-checked"))).toEqual(["false", "false", "false"]);
+    });
+
+    it("draws a ticked row done, its words in ink-soft, and the tick on the tile", () => {
+      stage.height = 600;
+      const ticked = toggleTick(ZUCCHINI_PLAN, initialCookState("first"), "scape");
+      const { onTick } = fitted(cookView(ZUCCHINI_PLAN, DERIVED, ticked));
+      const [onion, scape] = rows();
+      expect(within(scape!).getByRole("checkbox").getAttribute("aria-checked")).toBe("true");
+      expect(within(scape!).getByRole("checkbox").className.split(/\s+/)).toEqual(
+        expect.arrayContaining(["bg-ink", "text-paper"]),
+      );
+      expect(scape!.hasAttribute("data-done")).toBe(true);
+      expect(scape!.querySelector("p")!.className.split(/\s+/)).toContain("text-ink-soft");
+      expect(onion!.hasAttribute("data-done")).toBe(false);
+      expect(onion!.querySelector("p")!.className.split(/\s+/)).toContain("text-ink");
+      fireEvent.click(scape!.querySelector("p")!);
+      expect(onTick).toHaveBeenCalledWith("scape");
+    });
+
+    it("opens a row's amount on its conversions, and the tap is not the row's tick", () => {
+      stage.height = 600;
+      const grams: RecipeForPlan = {
+        ...ZUCCHINI_RECIPE,
+        ingredients: ZUCCHINI_RECIPE.ingredients!.map((line, i) =>
+          i === 1 ? { amount: "200", unit: "g", item: "onion" } : line,
+        ),
+      };
+      const handlers = { onNext: vi.fn(), onBack: vi.fn(), onFinish: vi.fn(), onTick: vi.fn() };
+      render(
+        <CookFlow
+          view={PREP_PAGE}
+          mode="first"
+          ingredients={linesOf("Zucchini in grams", grams)}
+          onMode={vi.fn()}
+          onAskAhead={vi.fn()}
+          finish="ready"
+          navEnabled
+          {...handlers}
+        />,
+      );
+      const amount = within(rows()[0]!).getByRole("button", { name: "200 g onion" });
+      expect(amount.className).toContain(AMOUNT_RULE);
+      expect(amount.getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(amount);
+      expect(amount.getAttribute("aria-expanded")).toBe("true");
+      expect(document.querySelector("[data-holds-keys]")?.textContent).toContain(COOK_COPY.conversionsHeading);
+      expect(handlers.onTick).not.toHaveBeenCalled();
+      expect(handlers.onNext).not.toHaveBeenCalled();
+    });
+
+    it("fits a page of rows by the step's ladder, the rows' words sized against the step's", () => {
+      stage.height = 600;
+      fitted(PREP_PAGE);
+      const words = rows()[0]!.querySelector("p")!;
+      // The words hold the chip's size down to the ladder's 0.7 (0.67 of the
+      // step's size there), between the meta floor and the chip's size.
+      expect(words.className.split(/\s+/)).toContain(
+        "text-[length:clamp(var(--type-meta),0.67em,var(--type-chip))]",
+      );
+      // A row steps down with the step, and is never taller than a target for want of words.
+      expect(rows()[0]!.className.split(/\s+/)).toContain("min-h-[min(1.25em,var(--target))]");
+      expect(document.querySelector<HTMLElement>("[data-stage]")!.className.split(/\s+/)).toContain("overflow-y-auto");
+    });
+
+    it("lets a row's amounts go with the step's meta under the look-ahead's sheet, their line with them", () => {
+      fitted(PREP_PAGE);
+      const amounts = rows()[0]!.querySelector<HTMLElement>("[data-row-pairs]")!;
+      // They fade with the meta (`--look-meta`, 1 at rest to 0 as the sheet rises)...
+      expect(amounts.style.opacity).toBe("var(--look-meta, 1)");
+      // ...and a line of them dropped under the words gives its 36 px back, half each way.
+      expect(amounts.style.marginBlock).toBe("calc((var(--look-meta, 1) - 1) * 18px)");
+    });
   });
 
   it("arms Finish on the last step as soon as FINISH_ARM_MS has elapsed", () => {
@@ -1206,19 +1360,22 @@ describe("CookFlow: fitting the stage", () => {
 
     it("keeps a foot of 16 under Prep, where a step keeps the space-5 token", () => {
       stage.height = 491;
-      const { rerender } = fitted(prepAt("first"));
+      const { rerender } = fitted(prepAt("go"));
       const stack = line("now").parentElement!;
       expect(stack.style.paddingBottom).toBe("16px");
       expect(peek()).toBeNull();
-      rerender(cookView(ZUCCHINI_PLAN, DERIVED, { ...initialCookState("first"), pos: 1 }));
+      rerender(cookView(ZUCCHINI_PLAN, DERIVED, { ...initialCookState("go"), pos: 1 }));
+      expect(stack.style.paddingBottom).toBe("var(--space-5)");
+      // A prep page is a step: it keeps a step's foot.
+      rerender(PREP_PAGE);
       expect(stack.style.paddingBottom).toBe("var(--space-5)");
     });
 
     it("renders all rows in full without [data-fold] even on a tight stage, keeping data-stage scrollable", () => {
       stage.height = 146;
-      fitted(prepAt("first"));
+      fitted(prepAt("go"));
       expect(peek()).toBeNull();
-      expect(boxes()).toHaveLength(4);
+      expect(boxes()).toHaveLength(3);
       expect(document.querySelector("[data-fold]")).toBeNull();
       expect(document.querySelector<HTMLElement>("[data-prep]")!.dataset.fit).toBe("1");
       expect(line("now").style.fontSize).toBe("");
@@ -1226,45 +1383,27 @@ describe("CookFlow: fitting the stage", () => {
       expect(stageEl.className.split(/\s+/)).toContain("overflow-y-auto");
     });
 
-    it("marks movable mise rows in Prep first with an 'or while…' sand pill and omits it on mandatory upfront or ticked rows", () => {
+    it("has no Prep screen in Prep first for a plan with prep to do: its jobs are prep pages (DS v1.59)", () => {
+      // Before that slice this screen listed all four jobs here, the movable
+      // one under an "or while…" pill; they are the two prep pages now.
       stage.height = 600;
-      const { rerender } = fitted(prepAt("first"));
-      expect(rowsShown()).toEqual([
-        "Slice the onion bulb",
-        "Mince the garlic scape",
-        "Cut the zucchini into thin matchsticks",
-        `Chop the onion greens\u2002${bindNumbers(COOK_COPY.orWhen("while you sauté"))}`,
-      ]);
-      // Accessible checkbox names stay clean task labels without the schedule pill.
-      expect(boxes().map((b) => b.getAttribute("aria-labelledby"))).toHaveLength(4);
-      expect(screen.getByRole("checkbox", { name: "Chop the onion greens" })).toBeTruthy();
-
-      // Ticking the movable row clears its "or while…" pill while keeping all rows in place in natural order.
-      rerender(prepAt("first", ["onion", "greens"]));
-      expect(rowsShown()).toEqual([
-        "Slice the onion bulb",
-        "Mince the garlic scape",
-        "Cut the zucchini into thin matchsticks",
-        "Chop the onion greens",
-      ]);
-      expect(boxes().map((b) => b.getAttribute("aria-checked"))).toEqual([
-        "true",
-        "false",
-        "false",
-        "true",
-      ]);
+      const view = cookView(ZUCCHINI_PLAN, DERIVED, initialCookState("first"));
+      expect(view.onPrep).toBe(false);
+      expect(view.prep).toBeNull();
+      fitted(view);
+      expect(document.querySelector("[data-prep]")).toBeNull();
+      expect(document.querySelector("[data-mise]")).toBeNull();
+      expect(rowsShown()).toEqual([]);
+      expect(boxes()).toHaveLength(3);
     });
 
     it("sets the ticks as hairline tiles, sand only while pressed, and heads the list with Before you start in As I go (V9)", () => {
       const tokens = (el: Element) => el.className.split(/\s+/);
       const atRest = (el: Element) => tokens(el).filter((t) => !t.startsWith("active:"));
       stage.height = 600;
-      const firstView = prepAt("first", ["onion"]);
-      const { rerender } = fitted(firstView);
+      const tickedView = prepAt("go", ["onion"]);
+      const { rerender } = fitted(tickedView);
       expect(screen.queryByRole("group", { name: COOK_COPY.modeGroup })).toBeNull();
-      const firstHead = document.querySelector<HTMLElement>("[data-before-head]");
-      expect(firstHead).not.toBeNull();
-      expect(firstHead!.textContent).toBe(bindNumbers(firstView.stack[0]!.minutes!));
 
       const [ticked, ...open] = boxes();
       expect(ticked.getAttribute("aria-checked")).toBe("true");
@@ -1290,7 +1429,7 @@ describe("CookFlow: fitting the stage", () => {
 
     it("says the recipe's time line at its head and keeps it on tight stages (T2)", () => {
       stage.height = 180;
-      fitted(prepAt("first"), { times: ["1 h 10 ·", "25 min hands-on"] });
+      fitted(prepAt("go"), { times: ["1 h 10 ·", "25 min hands-on"] });
       const times = document.querySelector<HTMLElement>("[data-times]")!;
       expect(times.closest("[data-prep]")!.firstElementChild).toBe(times);
       expect(times.textContent).toBe("1 h 10 · 25 min hands-on");
@@ -1301,14 +1440,14 @@ describe("CookFlow: fitting the stage", () => {
 
     it("draws no time line when there is nothing to say", () => {
       stage.height = 600;
-      fitted(prepAt("first"));
+      fitted(prepAt("go"));
       expect(document.querySelector("[data-times]")).toBeNull();
     });
 
     it("keeps the serving stepper, scaled Prep note, and bottom notes visible at all stage heights (B5c-3, B5c-4)", () => {
       noteHeight = 40;
       stage.height = 160;
-      fitted(prepAt("first"), {
+      fitted(prepAt("go"), {
         recipe: { serves_base: 4 },
         servings: 8,
         onServings: vi.fn(),
@@ -1368,11 +1507,11 @@ describe("CookFlow: fitting the stage", () => {
           name: /Ask Sous$/,
         });
       stage.height = 196;
-      fitted(prepAt("first", [], plan));
+      fitted(prepAt("go", [], plan));
       const soak = screen.getByRole("button", { name: /^the night before/ });
       expect(soak.textContent).toBe("the night before: soak chickpeas; rinse beans");
       expect(ask()).toHaveLength(0);
-      expect(boxes()).toHaveLength(4);
+      expect(boxes()).toHaveLength(3);
 
       fireEvent.click(soak);
       expect(soak.getAttribute("aria-expanded")).toBe("true");
@@ -1383,7 +1522,7 @@ describe("CookFlow: fitting the stage", () => {
       // Other ahead groups and all mise checkboxes stay visible when a group opens.
       expect(screen.getByRole("button", { name: /^overnight: brine chicken/ })).toBeTruthy();
       expect(screen.getByRole("button", { name: /^an hour before: chill dough/ })).toBeTruthy();
-      expect(boxes()).toHaveLength(4);
+      expect(boxes()).toHaveLength(3);
       expect(document.querySelector("[data-fold]")).toBeNull();
 
       const heading = soak.closest("h3")!;
@@ -1492,13 +1631,16 @@ describe("CookFlow: timers", () => {
     expect(screen.getByRole("timer").querySelector("[aria-hidden]")!.className).toContain("text-ink");
   });
 
-  it("stops a ringing timer with a tap on a control, and the control does nothing (B5a verify, M1)", () => {
+  it.each([
+    ["the Prep screen", PREP],
+    ["a prep page's tick row", PREP_PAGE],
+  ])("stops a ringing timer with a tap on a control, and the control does nothing: %s (B5a verify, M1)", (_name, view) => {
     const done = { ...other, endsAtEpochMs: T0 - 1000 };
     const t = timers({ offer: null, expired: [done] });
     const onTick = vi.fn();
     render(
       <CookFlow
-        view={PREP}
+        view={view}
         mode="first"
         ingredients={ZUCCHINI_INGREDIENTS}
         onMode={vi.fn()}
@@ -1506,7 +1648,6 @@ describe("CookFlow: timers", () => {
         onAskAhead={vi.fn()}
         finish="ready"
         navEnabled
-        ask={{ label: "Ask Sous", onOpen: vi.fn() }}
         timers={t}
         onNext={vi.fn()}
         onBack={vi.fn()}

@@ -15,7 +15,7 @@
  * the alarm holds the screen's one ember).
  */
 
-import { type RefObject, useEffect, useLayoutEffect, useRef } from "react";
+import { type Ref, type RefObject, useEffect, useLayoutEffect, useRef } from "react";
 import { dishName } from "@/lib/kitchen/dish-name";
 import type { ShownTimes } from "@/lib/kitchen/recipe-times";
 import { handsOnWords } from "@/lib/kitchen/time-line";
@@ -140,6 +140,7 @@ export function OpeningControls({
   onStart,
   well,
   voice,
+  micRef,
 }: {
   onStart: () => void;
   /** The kitchen's timers, where the screen draws them; null where it draws none. */
@@ -151,6 +152,8 @@ export function OpeningControls({
     onDismiss: (id: string) => void;
   } | null;
   voice?: VoiceProps;
+  /** The mic, for focus to come back to when a question it heard closes Ask. */
+  micRef?: Ref<HTMLButtonElement>;
 }) {
   const ringing = (well?.expired.length ?? 0) > 0;
   const clocks = well ? [...well.expired, ...well.running] : [];
@@ -159,7 +162,7 @@ export function OpeningControls({
   useOpeningRowFit(rowRef, `${speaks}|${ringing}|${clocks.map((t) => `${t.id}:${t.recipeName}:${t.label}`).join(",")}`);
   return (
     <div ref={rowRef} data-opening-controls className="group/foot flex items-center gap-[calc(12*var(--cpx))] whitespace-nowrap">
-      {speaks && <VoiceDotButton {...voice} />}
+      {speaks && <VoiceDotButton ref={micRef} {...voice} />}
       {well && clocks.length > 0 && (
         <div data-opening-well className="flex items-center">
           <TimerLedge timers={clocks} emberId={null} onDismiss={well.onDismiss} />

@@ -175,11 +175,11 @@ test.describe("Behaviour without a model key", () => {
     expect(row!.status).toBe("pending");
   });
 
-  test("NOKEY-5: Ask Sous on Thin White Sauce shows its unreachable error when no model key is configured", async ({
+  test("NOKEY-5: Ask Sous opens from the capsule on a prep page, sends the prep jobs in hand with no step, and shows its unreachable error when no model key is configured", async ({
     page,
     allowConsoleError,
   }) => {
-    // tRPC chat fails with HTTP 500 when no model key is configured, and AskSous.tsx:359 logs "Chat error:"
+    // tRPC chat fails with HTTP 500 when no model key is configured, and AskSous.tsx logs "Chat error:"
     allowConsoleError(/Failed to load resource: the server responded with a status of 500/);
     allowConsoleError(/^Chat error:/);
 
@@ -188,22 +188,39 @@ test.describe("Behaviour without a model key", () => {
 
     await page.goto(`/kitchen/queue/${p1!.id}`);
 
-    // Start cook and move past Prep to a step screen
-    // (CookOpening.tsx:170; CookFlow.tsx:1334)
+    // Start the cook: its first screen is the prep page
     await page.locator("[data-opening-start]").click();
-    await page.getByRole("button", { name: "Next step" }).click();
-    await expect(liveNowLine(page)).toBeVisible();
+    await expect(liveNowLine(page).locator("[data-prep-eyebrow]")).toContainText("Prep");
 
-    // Open Ask Sous from the foot bar (CookFlow.tsx:1216; AskSous.tsx:39)
-    await page.getByRole("button", { name: "Ask Sous" }).click();
+    // Open Ask Sous from the capsule at the top line's right end (AskCapsule.tsx).
+    // On the landscape tablet it is a panel beside the step; upright, a full sheet
+    // (useAskForm.ts). While it is open the capsule stands down.
+    const capsule = page.locator("[data-ask-capsule]");
+    await capsule.getByRole("button", { name: "Ask Sous" }).click();
     const askPanel = page.locator('[data-ask="open"]');
     await expect(askPanel).toBeVisible();
+    const viewport = page.viewportSize()!;
+    await expect(askPanel).toHaveAttribute(
+      "data-ask-form",
+      viewport.width > viewport.height ? "side" : "sheet",
+    );
+    await expect(capsule).toHaveCount(0);
 
-    // Type a short question and send (app/src/components/ui/Chat.tsx:117-134)
-    await askPanel.getByRole("textbox").fill("Can I use whole milk?");
+    // Type a short question and send (Chat.tsx). From a prep page the question
+    // carries the jobs in hand and no cooking step (cook-view.ts askInHand).
+    const sent = page.waitForRequest((req) => req.url().includes("chatCooking"));
+    await askPanel.getByRole("textbox").fill("How fine should the flour be?");
     await askPanel.getByRole("button", { name: "Send" }).click();
+    // One batched call, no transformer (providers.tsx): the body is { "0": input }
+    const body = (await sent).postDataJSON() as Record<string, Record<string, unknown>>;
+    const input = body["0"]!;
+    expect(input.currentStepIndex).toBeUndefined();
+    const prep = input.prep as { jobs: { text: string; amounts: string[]; done: boolean }[] };
+    expect(prep.jobs).toHaveLength(1);
+    expect(prep.jobs[0]!.done).toBe(false);
+    expect(prep.jobs[0]!.text.length).toBeGreaterThan(0);
 
-    // AskSous shows ASK_COPY.error in a Sous reply bubble (AskSous.tsx:41, 356, 548)
+    // AskSous shows ASK_COPY.error in a Sous reply bubble
     await expect(askPanel.locator('[data-from="sous"]').last()).toContainText(
       "Couldn't reach Sous. Check the connection and ask again.",
     );

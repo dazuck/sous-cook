@@ -83,7 +83,13 @@ export interface CookSnapshot {
     read?: boolean;
   };
   voice: { mode: VoiceMode | null; status: VoiceStatus };
-  /** Ask's session id joins `conversation_logs`; the words stay there. */
+  /**
+   * Ask's session id joins `conversation_logs`, where the conversation is
+   * kept. This state holds none of its words. The captured DOM does, when the
+   * flag is made with Ask open: the conversation as drawn, with a question
+   * typed and not sent emptied and each photo's data left out (`serializeDom`;
+   * DECISIONS 2026-11-22 "Ask Sous is a side panel", call 27).
+   */
   ask: { sessionId: string; open: boolean };
   /** For the panel's row only: not part of the report, which holds the plan and state it comes from. */
   step: FlagStep | null;
@@ -241,9 +247,27 @@ function redactTyped(clone: Element): void {
 }
 
 /**
+ * Leaves out every picture carried in the markup itself (a `data:` address):
+ * a photo the cook took for Ask Sous is a turn in the conversation (v1.60),
+ * and it is the cook's kitchen, not the screen's state. It would also spend
+ * the capture's bytes: one photo is larger than the whole cap. The picture's
+ * element stays, with its `alt`, marked `data-capture-redacted`, so the
+ * reader knows a photo stood there; the words around it stay.
+ */
+function redactPhotos(clone: Element): void {
+  for (const img of clone.querySelectorAll("img")) {
+    if (!img.getAttribute("src")?.trimStart().toLowerCase().startsWith("data:")) continue;
+    img.removeAttribute("src");
+    img.removeAttribute("srcset");
+    img.setAttribute("data-capture-redacted", "");
+  }
+}
+
+/**
  * The root's markup from a clone, with every `data-capture-omit` element left
- * out (the open More menu, so the report shows what was under it) and every
- * typed word emptied, cut to `DOM_MAX_BYTES` as JSON on a whole character. A
+ * out (the open More menu, so the report shows what was under it), every
+ * typed word emptied and every photo's data left out, cut to `DOM_MAX_BYTES`
+ * as JSON on a whole character. A
  * cut DOM still carries the state and events that rebuild the screen, so
  * cutting beats refusing.
  */
@@ -251,6 +275,7 @@ export function serializeDom(root: Element): { dom: string; truncated: boolean }
   const clone = root.cloneNode(true) as Element;
   for (const el of clone.querySelectorAll("[data-capture-omit]")) el.remove();
   redactTyped(clone);
+  redactPhotos(clone);
   const { text, cut } = cutToJsonBytes(clone.outerHTML, DOM_MAX_BYTES);
   return { dom: text, truncated: cut };
 }

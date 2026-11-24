@@ -469,6 +469,166 @@ describe("chatCookingAssistant", () => {
     );
   });
 
+  describe("from a prep page (review round 3)", () => {
+    // A dal whose first prep job (mince the garlic) gets ready for step 3.
+    // The screen used to send that step as the one in hand, so Sous was told
+    // steps 1 and 2 were done before the cook had lit the stove.
+    const dalPack: Pack = {
+      id: "pack-prep",
+      title: "Prep Pack",
+      version: "0.7.0",
+      creator: {
+        name: "A. Cook",
+        bio: "Weeknight cook",
+        voice_notes: "Plain.",
+      },
+      recipes: [
+        {
+          id: "weeknight-dal",
+          title: "Weeknight dal",
+          story: "Lentils, then a quick fry on top.",
+          serves_base: 4,
+          ingredients: [
+            { id: "ing-0", name: "cloves garlic", qty_canonical: { count: 3 }, scaling: "linear" },
+            { id: "ing-1", name: "onion", qty_canonical: { count: 1 }, scaling: "linear" },
+          ],
+          steps: [
+            {
+              id: "step-0",
+              type: "action",
+              text: "Simmer the lentils until soft.",
+              ingredient_refs: [],
+              technique_refs: [],
+              state_refs: [],
+            },
+            {
+              id: "step-1",
+              type: "action",
+              text: "Fry the onion until golden.",
+              ingredient_refs: ["ing-1"],
+              technique_refs: [],
+              state_refs: [],
+            },
+            {
+              id: "step-2",
+              type: "action",
+              text: "Add the garlic and cook one minute.",
+              ingredient_refs: ["ing-0"],
+              technique_refs: [],
+              state_refs: [],
+            },
+          ],
+          creator_notes: [],
+        },
+      ],
+    };
+    const prep = {
+      jobs: [
+        { text: "Mince the garlic", amounts: ["6 cloves garlic"], done: true },
+        { text: "Chop the onion", amounts: ["2 onion"], done: false },
+        { text: "Rinse the lentils", amounts: [], done: false },
+      ],
+    };
+    const QUESTION = "How fine should the garlic be?";
+
+    function queueTheDal() {
+      const projected = packRecipeToQueueData(dalPack.recipes[0], dalPack.id);
+      expect(projected.ok).toBe(true);
+      if (!projected.ok) throw new Error("the dal did not project");
+      mockGetQueueItem.mockResolvedValue({
+        id: "q-dal",
+        targetUser: "cook",
+        recipeData: projected.projection.recipeData,
+        servesEstimate: projected.projection.servesEstimate?.count ?? null,
+        servesEstimateBasis: projected.projection.servesEstimate?.basis ?? null,
+      });
+      mockLoadAppPackFiles.mockResolvedValue({
+        packs: [dalPack],
+        libraries: { commons: [], states: [] },
+        errors: [],
+      });
+    }
+
+    function lastSent(): string {
+      const call = mockAiChat.mock.calls.at(-1)![0];
+      return call.messages[call.messages.length - 1].content;
+    }
+
+    it("says the cook is in prep, on the page's jobs with their amounts, and names no step as in hand or done", async () => {
+      queueTheDal();
+      await chatCookingAssistant(KITCHEN_ID, "cook-session-prep", [{ role: "user", content: QUESTION }], "Weeknight dal", {
+        queueId: "q-dal",
+        servings: 8,
+        servesBase: 4,
+        prep,
+      });
+
+      const sent = lastSent();
+      expect(sent).toContain("[context]");
+      expect(sent).toContain("cook's place: prep, before the cooking steps; no cooking step is in hand");
+      expect(sent).toContain(
+        "prep jobs in hand: Mince the garlic (6 cloves garlic) [done]; Chop the onion (2 onion); Rinse the lentils",
+      );
+      expect(sent).not.toContain("current step:");
+      expect(sent).not.toContain("recent steps");
+      // The rest of the turn's context stands as on any step.
+      expect(sent).toContain("serving scale: 2× (serves 8, base 4)");
+      expect(sent).toContain("scaled ingredients: 6 cloves garlic; 2 onion");
+      // And Sous is told how to read it.
+      const call = mockAiChat.mock.calls.at(-1)![0];
+      expect(call.systemPrompt).toContain("says the cook is in prep");
+    });
+
+    it("prep is the place even when a step is sent with it: no step is claimed", async () => {
+      queueTheDal();
+      await chatCookingAssistant(KITCHEN_ID, "cook-session-prep", [{ role: "user", content: QUESTION }], "Weeknight dal", {
+        queueId: "q-dal",
+        currentStepIndex: 2,
+        prep,
+      });
+      const sent = lastSent();
+      expect(sent).toContain("cook's place: prep, before the cooking steps; no cooking step is in hand");
+      expect(sent).not.toContain("current step:");
+      expect(sent).not.toContain("recent steps");
+      expect(sent).not.toContain("Simmer the lentils");
+    });
+
+    it("with every job done there is no jobs line, and prep is still the place", async () => {
+      queueTheDal();
+      await chatCookingAssistant(KITCHEN_ID, "cook-session-prep", [{ role: "user", content: QUESTION }], "Weeknight dal", {
+        queueId: "q-dal",
+        prep: { jobs: [] },
+      });
+      const sent = lastSent();
+      expect(sent).toContain("cook's place: prep, before the cooking steps; no cooking step is in hand");
+      expect(sent).not.toContain("prep jobs in hand");
+      expect(sent).not.toContain("current step:");
+    });
+
+    it("says prep with the recipe as the screen's own text too (no stored recipe to read)", async () => {
+      await chatCookingAssistant(KITCHEN_ID, "cook-session-prep", [{ role: "user", content: QUESTION }], "Weeknight dal", {
+        prep,
+      });
+      const sent = lastSent();
+      expect(sent.startsWith(QUESTION)).toBe(true);
+      expect(sent).toContain("cook's place: prep, before the cooking steps; no cooking step is in hand");
+      expect(sent).toContain("prep jobs in hand: Mince the garlic (6 cloves garlic) [done]; Chop the onion (2 onion)");
+    });
+
+    it("on a cooking step nothing says prep", async () => {
+      queueTheDal();
+      await chatCookingAssistant(KITCHEN_ID, "cook-session-prep", [{ role: "user", content: QUESTION }], "Weeknight dal", {
+        queueId: "q-dal",
+        currentStepIndex: 2,
+      });
+      const sent = lastSent();
+      expect(sent).toContain("current step: step 3 (action) — Add the garlic and cook one minute.");
+      expect(sent).toContain("recent steps, oldest first: step 1 (Simmer the lentils until soft.); step 2");
+      expect(sent).not.toContain("cook's place: prep");
+      expect(sent).not.toContain("prep jobs in hand");
+    });
+  });
+
   it("logs console.warn and falls back to currentRecipe when queueId is missing or inaccessible", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     mockGetQueueItem.mockResolvedValue(null);

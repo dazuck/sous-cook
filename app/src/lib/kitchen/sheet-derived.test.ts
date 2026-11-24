@@ -9,7 +9,7 @@ import { advanceMeasure } from "./__tests__/advance-measure";
 import { timetableCorpus } from "./__tests__/timetable-corpus";
 import { buildLayout, frameAt, type Frame, type LayoutInput, type Measure, type SheetGeo, type SheetLayout } from "./sheet-layout";
 import { LINE_FROM_FOOT, SHEET1_ABOVE_LINE, lineFill } from "./strip-map";
-import { BAND0, TT_PLATE } from "./sheet-derived";
+import { BAND0, LINE_FILL_NOW, TT_PLATE } from "./sheet-derived";
 
 /** The browser's metrics, from the faces' own advances (px in, px out). */
 const measure: Measure = (text, px, weight, family) => advanceMeasure(text, px, weight, family);
@@ -62,7 +62,7 @@ const at = (p: CookPlan, pos: number, mode: "first" | "go" = "first") => {
   return s;
 };
 /** The frame at depth d, on the way the sheet's edge runs (a pull, never a pass). */
-const atDepth = (L: SheetLayout, d: number, extra: { now?: number; pass?: number } = {}): Frame => {
+const atDepth = (L: SheetLayout, d: number, extra: { now?: number; progress?: number; pass?: number } = {}): Frame => {
   const [Y0, Y1, Y2] = L.detents;
   const Y = d <= 1 ? Y0 + (Y1 - Y0) * d : Y1 + (Y2 - Y1) * (d - 1);
   return frameAt(L, { Y, ...extra });
@@ -98,20 +98,30 @@ describe("a derived plan's sheet: the line that never moves (SPEC §10, T3)", ()
     });
   }
 
-  it("at level 0 the line runs margin to margin, the done part filled from the clock; nothing is laid out again for it", () => {
+  it("at level 0 the line runs margin to margin, filled to the end of the step in hand, which the clock's minutes don't move; nothing is laid out again for it", () => {
     for (const vp of VIEWPORTS) {
-      const L = buildLayout(inputFor(roast, at(roast, 5), vp.W, vp.H));
+      const state = at(roast, 5);
+      const L = buildLayout(inputFor(roast, state, vp.W, vp.H));
       const g = L.geo;
       const D = L.derived!;
       const F = atDepth(L, 0);
       expect(F.derived!.line.x).toBeCloseTo(SIDE * g.c, 6);
       expect(F.derived!.line.w).toBeCloseTo(g.W - 2 * SIDE * g.c, 6);
       expect(F.derived!.line.ink).toBe(0);
-      expect(F.derived!.line.fill).toBeCloseTo(lineFill(D.total, L.now, D.line0.x0, D.line0.x1), 6);
-      // The clock walks on: the fill follows it at level 0, from the same layout.
+      // The end of the step in hand (asked 2026-11-22, v1.54), past the step's start.
+      const s = strip(roast, state, null);
+      expect(D.progress).toBe(s.progress);
+      expect(s.progress).toBeGreaterThan(s.now);
+      expect(F.derived!.line.fill).toBeCloseTo(lineFill(D.total, s.progress, D.line0.x0, D.line0.x1), 6);
+      expect(F.derived!.fill, "as painted").toBe(F.derived!.line.fill);
+      // The clock walks on (a timer's minutes): the fill at rest stands where it is, from the same layout.
       const later = atDepth(L, 0, { now: L.now + 7 });
-      expect(later.derived!.line.fill).toBeCloseTo(lineFill(D.total, L.now + 7, D.line0.x0, D.line0.x1), 6);
-      expect(later.derived!.line.fill).toBeGreaterThan(F.derived!.line.fill);
+      expect(later.derived!.line.fill).toBe(F.derived!.line.fill);
+      expect(later.derived!.fill).toBe(F.derived!.fill);
+      // The clock's strip moving its end (said at a paint, nothing laid out) moves the fill.
+      const on = atDepth(L, 0, { progress: s.progress + 7 });
+      expect(on.derived!.fill).toBeCloseTo(lineFill(D.total, s.progress + 7, D.line0.x0, D.line0.x1), 6);
+      expect(on.derived!.fill).toBeGreaterThan(F.derived!.fill);
       // At level 1 the line is as laid, the map's rail; at level 2 the timetable's track, its fill
       // following the clock as level 0's does (T3 follow-up: the now line is the fill's end).
       expect(atDepth(L, 1, { now: L.now + 7 }).derived!.line).toEqual(atDepth(L, 1).derived!.line);
@@ -120,6 +130,63 @@ describe("a derived plan's sheet: the line that never moves (SPEC §10, T3)", ()
       expect(two).toEqual({ ...atDepth(L, 2).derived!.line, fill });
       // (portrait's last row starts later in the cook: its fill is still empty here)
       if (!g.portrait) expect(fill).toBeGreaterThan(D.line2.fill);
+    }
+  });
+
+  it("the painted fill: the step's end at rest and under the peek, the clock's minute at the whole cook, one glide between with no jump (v1.54)", () => {
+    for (const vp of VIEWPORTS) {
+      for (const pass of [0, 1]) {
+        const state = at(roast, 5);
+        const L = buildLayout(inputFor(roast, state, vp.W, vp.H));
+        const D = L.derived!;
+        const s = strip(roast, state, null);
+        // A timer's minutes on the clock: now walks on from the step's start, short of or past its end.
+        for (const now of [s.now, s.now + 3, s.progress + 9]) {
+          const end = lineFill(D.total, s.progress, D.line0.x0, D.line0.x1);
+          const clock = lineFill(D.total, now, D.line0.x0, D.line0.x1);
+          const fillAt = (d: number) => atDepth(L, d, { now, pass }).derived!.fill;
+          // Levels 0 and 1, and every depth between: the end of the step in hand.
+          for (const d of [0, 0.01, 0.3, 0.7, 0.99, 1]) expect(fillAt(d), `depth ${d}`).toBe(end);
+          // The whole cook, from just before the sheet lands: the clock's minute.
+          for (const d of [LINE_FILL_NOW, 1.95, 1.999, 2]) expect(fillAt(d), `depth ${d}`).toBeCloseTo(clock, 6);
+          // The move is spread over the way up, not spent at its start (a glide's fastest frames):
+          // a third of the way up, under a third of it is gone; halfway through, about half.
+          expect(Math.abs(fillAt(1.3) - end), "at depth 1.3").toBeLessThanOrEqual(Math.abs(clock - end) / 3 + 1e-6);
+          expect(Math.abs(fillAt(1.45) - (end + clock) / 2), "at depth 1.45").toBeLessThanOrEqual(Math.abs(clock - end) * 0.01 + 1e-6);
+          // Between: from one to the other, never past either, in steps that never jump (the first
+          // frame off level 1 included), whichever way the sheet moves.
+          const lo = Math.min(end, clock);
+          const hi = Math.max(end, clock);
+          const N = 200;
+          let before = fillAt(1);
+          for (let i = 1; i <= N; i++) {
+            const d = 1 + (i / N) * (LINE_FILL_NOW - 1);
+            const f = fillAt(d);
+            expect(f, `depth ${d}`).toBeGreaterThanOrEqual(lo - 1e-6);
+            expect(f, `depth ${d}`).toBeLessThanOrEqual(hi + 1e-6);
+            expect(Math.abs(f - before), `the step to depth ${d}`).toBeLessThanOrEqual((hi - lo) * (2 / N) + 1e-6);
+            if (clock >= end) expect(f).toBeGreaterThanOrEqual(before - 1e-6);
+            else expect(f).toBeLessThanOrEqual(before + 1e-6);
+            before = f;
+          }
+        }
+      }
+    }
+  });
+
+  it("on the last step the painted line is full at rest and under the peek, on every plan", () => {
+    const vp = VIEWPORTS[0];
+    for (const p of [roast, plan("indian-dal-tadka")]) {
+      let state = initialCookState("first");
+      for (let i = 0; i < 80; i++) {
+        const after = next(p, state);
+        if (after.pos === state.pos) break;
+        state = after;
+      }
+      const L = buildLayout(inputFor(p, state, vp.W, vp.H));
+      const D = L.derived!;
+      for (const d of [0, 0.5, 1]) expect(atDepth(L, d).derived!.fill).toBeCloseTo(D.line0.x1 - D.line0.x0, 6);
+      expect(strip(p, state, null).now).toBeLessThan(D.total);
     }
   });
 

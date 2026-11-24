@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import type { FlagAck, FlagNoteProps } from "@/hooks/useCookFlag";
 import type { CookView } from "@/lib/kitchen/cook-view";
@@ -61,11 +61,17 @@ interface RecipeHeaderProps {
   flagAck?: FlagAck;
   /** The note on the flag just taken by touch (decision 8; `useFlagNote`). */
   flagNote?: FlagNoteProps;
+  /**
+   * Ask Sous's capsule, at the line's right end after More (DS §5 Ask,
+   * v1.60); none while Ask's panel is open. It is in the cell the place's
+   * ladder measures, so the place and the name fit beside it.
+   */
+  ask?: ReactNode;
 }
 
 /**
  * The cook view's top line (slice V; DS §6's chrome band): at the left the
- * recipe's name; at the right More. Recipe info lives in More.
+ * recipe's name; at the right More, then Ask Sous. Recipe info lives in More.
  *
  * It sits straight on the ground, with no band, blur or shadow, and hangs off
  * the steps' edges, so the two read as one surface. A recipe with no name is
@@ -84,6 +90,7 @@ export function RecipeHeader({
   onFlag,
   flagAck,
   flagNote,
+  ask,
 }: RecipeHeaderProps) {
   const shown = dishName(name);
   const row = useRef<HTMLDivElement>(null);
@@ -176,7 +183,7 @@ export function RecipeHeader({
             </>
           )}
         </div>
-        <div ref={moreCell} data-more-cell className="flex shrink-0 items-center">
+        <div ref={moreCell} data-more-cell className="flex shrink-0 items-center gap-[calc(8*var(--cpx))]">
           <HeaderMore
             open={menu === "more"}
             onOpenChange={(open) => onMenu(open ? "more" : null)}
@@ -187,6 +194,7 @@ export function RecipeHeader({
             flagAck={flagAck}
             flagNote={flagNote}
           />
+          {ask}
         </div>
         {/* The ladder's rulers: the name and every rung in the line's own type, never seen. */}
         {place && (

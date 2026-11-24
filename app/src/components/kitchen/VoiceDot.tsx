@@ -136,6 +136,36 @@ export function VoiceDot({ mode, status, echo, onTap, hint }: VoiceDotProps) {
 /** The statuses in which the mic is open. */
 const LIVE: ReadonlySet<VoiceStatus> = new Set(["listening", "hearing"]);
 
+
+/**
+ * The talk control's glyph (DS §5, v1.60; asked 2026-11-22: "any reason for
+ * the voice to not be a mic instead of a dot? seems more obvious"): a mic in
+ * outline at rest, filled and breathing while it listens (filled and still
+ * under reduced motion). Soft ink in every state, never an accent. The dot
+ * stays the indicator where nothing is tapped (the borrowed ledge).
+ */
+export function MicMark({ status }: { status: VoiceStatus }) {
+  const live = LIVE.has(status);
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      data-voice-mic={status}
+      data-live={live ? "" : undefined}
+      className={`size-[calc(26*var(--cpx))] shrink-0 ${live ? "animate-dot-breathe motion-reduce:animate-none" : ""}`}
+    >
+      <rect x="9" y="2.5" width="6" height="11.5" rx="3" fill={live ? "currentColor" : "none"} />
+      <path d="M5 11a7 7 0 0 0 14 0" />
+      <path d="M12 18v3.5" />
+    </svg>
+  );
+}
+
 /** The dot itself: filled and breathing while listening, a ring otherwise. */
 export function DotMark({ status }: { status: VoiceStatus }) {
   return (
@@ -152,8 +182,8 @@ export function DotMark({ status }: { status: VoiceStatus }) {
 }
 
 /**
- * The same voice as the bar's, as the dot alone, at the start of Ask's open
- * field. What it hears shows as the field's hint, or as the question asked.
+ * The voice as a control on its own, on the opening's row: the mic glyph
+ * (v1.60), as on Ask Sous. What it hears is said by the sheet's own line.
  */
 export function VoiceDotButton({
   ref,
@@ -169,9 +199,9 @@ export function VoiceDotButton({
       aria-label={action}
       aria-disabled={inert || undefined}
       data-voice={voice.status}
-      className="flex size-12 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-[320ms] ease-[var(--ease)] active:bg-sand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+      className="flex size-12 shrink-0 cursor-pointer items-center justify-center rounded-full text-ink-soft transition-colors duration-[320ms] ease-[var(--ease)] active:bg-sand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
     >
-      <DotMark status={voice.status} />
+      <MicMark status={voice.status} />
     </button>
   );
 }

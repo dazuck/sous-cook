@@ -877,8 +877,10 @@ function layoutAt(input: LayoutInput, readRung: number): SheetLayout {
 export interface FrameState {
   /** The sheet's edge, px. */
   Y: number;
-  /** The cook's minute by the clock: the line's fill is said from it, nothing laid out (T3). Default: as laid. */
+  /** The cook's minute by the clock: the whole cook's fill is said from it, nothing laid out (T3). Default: as laid. */
   now?: number;
+  /** The minute the line fills to at rest: the end of the step in hand (`Strip.progress`, v1.54). Default: as laid. */
+  progress?: number;
   /** How far this is a glide straight between level 0 and 2 (1: no level-1 parts on the way; 0: the levels' own frames; between: a pass cut short, mixed by it). Default 0 (T3). */
   pass?: number;
 }

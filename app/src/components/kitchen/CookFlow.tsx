@@ -18,6 +18,7 @@ import type { PrepMode } from "@/lib/kitchen/cook-plan";
 import {
   COOK_COPY,
   bindNumbers,
+  prepEyebrow,
   type CookView,
   type PrepAheadGroup,
   type StackLine,
@@ -32,7 +33,8 @@ import { twoLines } from "@/lib/kitchen/two-lines";
 import { useFinishArm } from "@/hooks/useFinishArm";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 import { EDGE_X } from "./cook-edge";
-import { MeasurementPopover } from "./MeasurementPopover";
+import { Pair, PAIRS, STEP_TONE } from "./StepPairs";
+import { PrepRows } from "./PrepRows";
 import { PrepScreen } from "./PrepScreen";
 import { ServingStepper } from "./ServingStepper";
 import { useNow } from "./KitchenTimers";
@@ -43,7 +45,7 @@ import type { TimerOffer } from "@/lib/kitchen/timer-attach";
 import { hasHowToCheck, howToCheckText, type ScreenStep } from "@/lib/kitchen/step-types";
 import type { AnswerChoice } from "@/lib/kitchen/how-much";
 import type { KitchenTimer } from "@/lib/kitchen/timers";
-import { actionOf, DotMark, heardLine, type VoiceProps } from "./VoiceDot";
+import { heardLine, type VoiceProps } from "./VoiceDot";
 import { CookSheet, type CookSheetProps } from "./CookSheet";
 import { ACTION, ACTION_AT_REST, ACTION_IN_FORCE, FOOT_FILL, FOOT_FILL_END, FOOT_FILL_WAITS } from "./control-style";
 import { createPortal } from "react-dom";
@@ -84,8 +86,13 @@ interface CookFlowProps {
    * control itself.
    */
   navEnabled: boolean;
-  /** Ask Sous, in the foot's middle. */
-  ask: AskControl;
+  /**
+   * The voice, for the line that says what it heard, lifted over the foot's
+   * middle (`HeardLift`). Ask Sous itself is in the top line (v1.60).
+   */
+  voice?: VoiceProps;
+  /** Ask's panel is open: its own line says what the voice heard, so the foot's stands down. */
+  askOpen?: boolean;
   /**
    * Moves for a forward or back that comes from outside the flow (voice),
    * so a step that pages turns its parts there too.
@@ -203,21 +210,6 @@ export interface CookFlowNav {
   part: () => { at: number; of: number } | null;
 }
 
-/** Ask Sous in the foot (V5): direct access to voice, text, and photo. */
-export interface AskControl {
-  /** Its words, Ask's own title (`ASK_COPY`). */
-  label: string;
-  onOpen: () => void;
-  /** The ghost, for focus to come back to when the panel closes. */
-  ref?: Ref<HTMLButtonElement>;
-  voice?: VoiceProps;
-  /** Launches photo capture for dish check. */
-  onPhoto?: () => void;
-  /** Ask's panel is open: its own field says what the voice heard, so the foot's line stands down. */
-  open?: boolean;
-}
-
-
 type Role = "now";
 
 // DS §3's one curve, `--ease` in styles/tokens.css. Written out because
@@ -238,8 +230,6 @@ const COLUMN = "max-w-[calc(872*var(--cpx))]";
 // ember-700, the reading weight of ember, until something else claims it
 // (`emberHolder`): then they fade to ink over the step's 320 ms, at once under
 // reduced motion. Its head and the meta stay as they are.
-const STEP_TONE =
-  "transition-colors duration-[var(--dur-step)] ease-[var(--ease)] motion-reduce:transition-none";
 const HOLDS_EMBER: Record<"ember" | "ink" | "soft", string> = {
   // As the sheet rises the step's ember turns ink-soft before it fades
   // (`--look-tone`, set by the sheet only while it rises): never ember through the ground (§1, N4).
@@ -276,94 +266,28 @@ const CHEV_L = "M15 5l-7 7 7 7";
 const CHEV_R = "M9 5l7 7-7 7";
 const CHECK = "M5 12.5l4.5 4.5L19 7.5";
 
-// What goes in reads as words, not chips (V8, DS §5): "½ tsp turmeric · 1 tbsp
-// ghee" at the meta's size, the amount ink 600, the name ink-soft; an amount
-// that opens (its conversions, or a moved count's "Exactly") sits over a
-// dotted rule, which the popover's button draws (AMOUNT_RULE), and every other
-// amount is plain words in the same type (DECISIONS 2026-10-26). A dot sets a pair off from the next one
-// shown, after it, so pairs that wrap end a line on a dot and open the next on
-// words. Each pair is padded up to a 48 px line pitch, its hit box the one
-// stated exception to the 80 cpx target: pairs in running text can't each take
-// 80 without the lines spreading apart, and flipping a unit comes after
-// reading the amount.
-const PAIRS =
-  "flex flex-wrap items-center text-[length:var(--type-meta)] leading-[1.3] font-medium tracking-normal text-ink-soft " +
-  "[&>li:not([hidden]):has(~li:not([hidden]))]:after:px-[var(--space-2)] [&>li:not([hidden]):has(~li:not([hidden]))]:after:content-['·']";
-// The padding centres the words in the pitch; the floor holds it at 48 when
-// layout rounds the half-pitch down.
-const PAIR = "inline-block min-h-[48px] py-[max(0px,calc((48px-1.3em)/2))]";
-// The rule's colour and offset, for when the button draws it.
-const AMOUNT = "font-semibold text-ink decoration-ink-soft underline-offset-[0.15em]";
-
-/**
- * One pair's words (slice B4 step 8): the amount the recipe states, then the
- * name. A measured amount opens its conversions, and a scaled count its exact
- * count where rounding moved it; any other count, the source's own words ("a
- * pinch of", marked as written) and a measure with nothing to convert are
- * plain words; to taste and unstated show the name alone.
- */
-// The pair "how much" just answered (B5d, D13; DS §5 "ember = the one being
-// discussed"): its words in ember-700 for the answer's linger, holding the
-// screen's one ember, then back to ink over the step's 320 ms.
-const DISCUSSED = `${STEP_TONE} font-semibold [color:var(--ember-700)] [&_*]:[color:var(--ember-700)] [&_*]:decoration-[var(--ember-700)]`;
-
-function Pair({ line, discussed = false }: { line: IngredientLine; discussed?: boolean }) {
-  // A name that was only the amount is empty: the amount stands alone (B4 fix round 3).
-  const named = line.name === "" ? null : <> {line.name}</>;
-  const pair = discussed ? `${PAIR} ${DISCUSSED}` : PAIR;
-  const mark = discussed ? { "data-discussed": "" } : {};
-  switch (line.kind) {
-    case "amount":
-      return (
-        <MeasurementPopover
-          stated={line.stated}
-          conversions={line.conversions}
-          servesBase={line.servesBase}
-          className={pair}
-        >
-          <span {...mark} data-amount-words className={AMOUNT}>{line.amount}</span>
-          {named}
-        </MeasurementPopover>
-      );
-    case "count":
-      if (line.exact !== undefined) {
-        return (
-          <MeasurementPopover
-            stated={[]}
-            conversions={[]}
-            exact={line.exact}
-            className={pair}
-          >
-            <span {...mark} data-amount-words className={AMOUNT}>{line.amount}</span>
-            {named}
-          </MeasurementPopover>
-        );
-      }
-      return (
-        <span {...mark} className={pair}>
-          <span data-amount-words className={AMOUNT}>{line.amount}</span>
-          {named}
-        </span>
-      );
-    case "as_written":
-      return (
-        <span {...mark} className={pair}>
-          <span data-amount-words className={AMOUNT}>{line.amount}</span>
-          {named}{" "}
-          <span data-as-written>
-            ({line.servesBase !== undefined ? COOK_COPY.asWrittenFor(line.servesBase) : COOK_COPY.asWritten})
-          </span>
-        </span>
-      );
-    case "to_taste":
-    case "unstated":
-      return <span {...mark} className={pair}>{line.name}</span>;
-  }
-}
-
 /** Whether a meta's pair is shown on the current step, by stored index. */
 function pairShown(ingredientIdx: readonly number[], index: number): boolean {
   return ingredientIdx.includes(index);
+}
+
+// A prep page's eyebrow (DS v1.59): "Prep" in ink 600, then its place, its
+// dish and a tick-row page's minutes in ink-soft 500, at the chip's size, where
+// As I go's mise step says "Prep".
+// It sits close over its words, the space scale's second step apart: the
+// room a wider gap took is room a tick row needs on a full page.
+const PREP_EYEBROW =
+  "mb-[var(--space-2)] text-[length:var(--type-chip)] leading-[1.25] font-medium tracking-normal text-ink-soft";
+
+function PrepEyebrow({ line }: { line: StackLine }) {
+  return (
+    <div data-mise-eyebrow data-prep-eyebrow className={`max-w-[calc(872*var(--cpx))] ${PREP_EYEBROW}`}>
+      <span className="font-semibold text-ink">{COOK_COPY.prepChapter}</span>
+      {prepEyebrow(line).map((part) => (
+        <span key={part}> · {bindNumbers(part)}</span>
+      ))}
+    </div>
+  );
 }
 
 /**
@@ -513,29 +437,61 @@ function CheckpointActs({
  * meta's size; for "which", each line a target. It stands for the answer's
  * linger and never moves the stage (it is out of the fit).
  */
-function AnswerLift({ answer, anchorRef }: { answer: AnswerShown; anchorRef: RefObject<HTMLDivElement | null> }) {
+function AnswerLift({
+  answer,
+  anchorRef,
+  rowRef,
+}: {
+  answer: AnswerShown;
+  /** What it stands over: the band, or the foot where there is none. */
+  anchorRef: RefObject<HTMLDivElement | null>;
+  /** The foot's row, whose middle it stands over: the row is the step's column wide. */
+  rowRef: RefObject<HTMLDivElement | null>;
+}) {
   // Over the band (the foot where there is none), clear of its marks. Drawn in the body, not
   // the foot: the foot fades and goes inert under Whole recipe and the
   // modals, and an answer asked there must still be read and its choices
-  // tapped (B5d verify round 1).
-  const [bottom, setBottom] = useState<number | null>(null);
+  // tapped (B5d verify round 1). Being in the body it takes its place from
+  // what it stands over, sideways too: the foot's row narrows beside Ask's
+  // side panel (v1.60), and the answer stands over the row's middle, not
+  // the screen's, where the panel would cover its end.
+  const [at, setAt] = useState<{ bottom: number; centre: number; width: number } | null>(null);
   useLayoutEffect(() => {
     const place = () => {
-      const foot = anchorRef.current;
-      setBottom(foot ? Math.max(0, window.innerHeight - foot.getBoundingClientRect().top) : 0);
+      const over = anchorRef.current?.getBoundingClientRect();
+      const row = rowRef.current?.getBoundingClientRect();
+      const next = {
+        bottom: over ? Math.max(0, window.innerHeight - over.top) : 0,
+        centre: row ? row.left + row.width / 2 : window.innerWidth / 2,
+        width: row ? row.width : window.innerWidth,
+      };
+      setAt((was) =>
+        was && was.bottom === next.bottom && was.centre === next.centre && was.width === next.width ? was : next,
+      );
     };
     place();
     window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
-  }, [anchorRef]);
-  if (bottom === null) return null;
+    // The panel opening or closing under a standing answer moves the anchor with no resize of the window.
+    const row = rowRef.current;
+    const watch = row && typeof ResizeObserver !== "undefined" ? new ResizeObserver(place) : null;
+    if (row) watch?.observe(row);
+    return () => {
+      window.removeEventListener("resize", place);
+      watch?.disconnect();
+    };
+  }, [anchorRef, rowRef]);
+  if (at === null) return null;
   return createPortal(
     <div
       key={answer.key}
       data-answer
       data-no-tap
-      style={{ bottom: `calc(${String(bottom)}px + var(--space-2))` }}
-      className="fixed left-1/2 z-[70] w-max max-w-[min(calc(100%-2*var(--space-4)),calc(720*var(--cpx)))] -translate-x-1/2 animate-dot-in rounded-[var(--radius-2)] border border-ink/[.11] bg-paper px-[calc(24*var(--cpx))] py-[calc(14*var(--cpx))] text-[length:var(--type-meta)] leading-[1.3] font-medium tracking-normal text-ink"
+      style={{
+        bottom: `calc(${String(at.bottom)}px + var(--space-2))`,
+        left: `${String(at.centre)}px`,
+        maxWidth: `min(calc(${String(at.width)}px - 2 * var(--space-4)), calc(720 * var(--cpx)))`,
+      }}
+      className="fixed z-[70] w-max -translate-x-1/2 animate-dot-in rounded-[var(--radius-2)] border border-ink/[.11] bg-paper px-[calc(24*var(--cpx))] py-[calc(14*var(--cpx))] text-[length:var(--type-meta)] leading-[1.3] font-medium tracking-normal text-ink"
     >
       <p className="text-[length:var(--type-meta)] leading-[var(--leading-normal)] font-semibold text-ink">
         {answer.shown}
@@ -829,6 +785,8 @@ function nowProbe(stack: HTMLElement, now: HTMLElement) {
     width: `${now.offsetWidth}px`,
     margin: "0",
   });
+  // As it rests: under the lifted sheet a prep page's rows give their amounts' lines back (`PrepRows`).
+  probe.style.setProperty("--look-meta", "1");
   stack.appendChild(probe);
   const text = probe.querySelector<HTMLElement>("[data-face]");
   const meta = probe.querySelector<HTMLElement>("[data-meta]");
@@ -999,10 +957,11 @@ const BAND_SLOT = "calc(80 * var(--cpx))";
 /**
  * The foot (V4): one row in the frame's bottom band, in every layout and on
  * every recipe, under the stage and never over it. Back at the start, forward
- * at the end, so forward stands in the same place on every recipe; Ask Sous
- * centred on the row between them (slice N took the whole cook out of it); a
- * timer whose step isn't on screen sits beside Back, the ledge (B5a, A8). What
- * the voice heard floats over Ask, out of the row (`HeardLift`, P63 (a)). The
+ * at the end, so forward stands in the same place on every recipe; nothing
+ * between them (slice N took the whole cook out of it, and v1.60 took Ask
+ * Sous to the top line); a timer whose step isn't on screen sits beside Back,
+ * the ledge (B5a, A8). What the voice heard floats over the row's middle, out
+ * of the row (`HeardLift`, P63 (a)). The
  * band is 96 cpx, the row's 80 cpx targets 10 cpx off the screen's foot,
  * inside DS §6's bottom 100. Beside the pane it spans the steps' column, as
  * CookFlow does.
@@ -1015,9 +974,7 @@ const FOOT = `group/foot grid shrink-0 grid-cols-[minmax(max-content,1fr)_auto_m
 
 /**
  * What the foot gives up to stay one row, in order, marked on the row for
- * the controls' styles: a checkpoint's "Looks right" first; then the middle
- * ghosts' spare side room, which a ghost shows only while pressed
- * (`data-ghosts-tight`; the voice dot keeps its full target, DS §0.3); then
+ * the controls' styles: a checkpoint's "Looks right" first; then
  * the ledge clock's label, which stays its name (`data-ledge-short`, B5a);
  * then Finish's caption goes to two lines (`data-caption-wraps`, broken by
  * `twoLines`); and last the well's second clock and its digits' size. Nothing
@@ -1028,7 +985,6 @@ const FOOT_GIVES = [
   // A checkpoint's "Looks right" goes first (B5d, D8): the step's own words
   // say what to check, and the chevron's name still says it.
   "data-forward-bare",
-  "data-ghosts-tight",
   "data-ledge-short",
   "data-caption-wraps",
   // The well gives last (B5a, after main's foot voice, 6f5102e): its second
@@ -1107,25 +1063,16 @@ function FootWords({ text, breaks }: { text: string; breaks: string }) {
 }
 
 /**
- * Whether the voice dot leads Ask Sous in the foot, which Ask's width follows.
- * The foot refits when it changes (`useFootFit`'s content): voice comes up
- * after the first paint. Ask's words are always its label: what the voice
- * heard floats over the row (`HeardLift`), so the row never refits for it.
- */
-function askSpeaks({ voice }: AskControl): boolean {
-  return voice !== undefined && voice.status !== "unsupported";
-}
-
-/**
- * What the voice is hearing or just heard, lifted over Ask Sous (P63 (a);
- * DS §1's lifted surface, §5's foot): where the answer to
+ * What the voice is hearing or just heard, lifted over the foot's middle,
+ * where Ask Sous stood until v1.60 (P63 (a); DS §1's
+ * lifted surface, §5's foot): where the answer to
  * "how much" lifts, over the band (over the foot where there is no band),
  * centred on the row, in Paper with its hairline and no shadow. Ink-soft at
  * the meta's size, as the foot's words and the dot's line are. A long phrase
  * wraps upward rather than being cut (words wrap before they go; a word too
  * long for the line breaks inside it). It is out of the row's tracks, so the
  * row never refits for it. It is not drawn while something else says what was
- * heard or the foot steps aside: Ask open (its field), Whole recipe (the
+ * heard or the foot steps aside: Ask open (its own line), Whole recipe (the
  * borrowed ledge), the opening. It takes no taps and is said once, by the
  * voice's own live region (`VoiceSaid`).
  */
@@ -1140,98 +1087,6 @@ function HeardLift({ text, overBand }: { text: string; overBand: boolean }) {
     >
       {text}
     </p>
-  );
-}
-
-function TextGlyph() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="size-[calc(16*var(--cpx))] shrink-0 group-data-[ghosts-tight]/foot:hidden"
-    >
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
-
-function CameraGlyph() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="size-[calc(18*var(--cpx))] shrink-0"
-    >
-      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-      <circle cx="12" cy="13" r="4" />
-    </svg>
-  );
-}
-
-/**
- * Ask Sous, in the foot's middle: direct-press controls for voice (when speech is supported), text, and photo.
- * Voice queues up voice prompting; text opens the panel with helper text; photo launches dish capture.
- */
-function AskGhost(ask: AskControl) {
-  const { label, onOpen, ref, voice, onPhoto } = ask;
-  const speaks = askSpeaks(ask);
-
-  return (
-    <div
-      data-ask-bar
-      className="inline-flex h-[var(--target)] min-w-0 shrink-0 items-center justify-center rounded-full text-center text-[length:var(--type-meta)] leading-tight font-medium text-ink-soft"
-    >
-      {/* 1. Voice: queues up voice prompting (hidden when speech is unsupported).
-          A full target across at every foot width (DS §0.3; P63's pick): the
-          tight row gives up the words' and the camera's side room, never the
-          dot's. */}
-      {speaks && voice && (
-        <button
-          type="button"
-          onClick={voice.onTap}
-          aria-label={actionOf(voice.mode, voice.status)}
-          aria-disabled={(voice.mode === "tap" && voice.status === "paused") || undefined}
-          data-voice={voice.status}
-          className={`flex h-full min-h-[var(--target)] min-w-[var(--target)] shrink-0 items-center justify-center px-[calc(16*var(--cpx))] rounded-l-full cursor-pointer ${PRESS} ${FOCUS}`}
-        >
-          <DotMark status={voice.status} />
-        </button>
-      )}
-
-      {/* 2. Text: helper text as now, opens panel */}
-      <button
-        ref={ref}
-        type="button"
-        onClick={onOpen}
-        aria-label={label}
-        className={`flex h-full min-h-[var(--target)] min-w-[var(--target)] items-center justify-center px-[calc(16*var(--cpx))] gap-[calc(6*var(--cpx))] group-data-[ghosts-tight]/foot:min-w-0 group-data-[ghosts-tight]/foot:px-[calc(4*var(--cpx))] group-data-[ghosts-tight]/foot:gap-0 cursor-pointer ${PRESS} ${FOCUS}`}
-      >
-        <TextGlyph />
-        <span>{label}</span>
-      </button>
-
-      {/* 3. Photo: launches directly into dish capture */}
-      <span className="flex h-full items-center shrink-0">
-        <button
-          type="button"
-          onClick={onPhoto ?? onOpen}
-          aria-label="Take dish photo"
-          className={`flex h-full min-h-[var(--target)] min-w-[var(--target)] items-center justify-center px-[calc(16*var(--cpx))] group-data-[ghosts-tight]/foot:min-w-0 group-data-[ghosts-tight]/foot:pl-[calc(2*var(--cpx))] group-data-[ghosts-tight]/foot:pr-[calc(6*var(--cpx))] rounded-r-full cursor-pointer ${PRESS} ${FOCUS}`}
-        >
-          <CameraGlyph />
-        </button>
-      </span>
-    </div>
   );
 }
 
@@ -1356,8 +1211,8 @@ function ForwardButton({
         )}
         <Icon d={isLast ? CHECK : CHEV_R} />
         {isLast && (
-          // A row too short for it once the ghosts are tight: the caption
-          // takes two lines (`useFootFit`).
+          // A row too short for it: the caption takes two lines
+          // (`useFootFit`).
           <span>
             <FootWords
               text={failed ? COOK_COPY.finishFailed : COOK_COPY.finish}
@@ -1398,7 +1253,8 @@ export function CookFlow({
   onAskAhead,
   finish,
   navEnabled,
-  ask,
+  voice,
+  askOpen = false,
   navRef,
   timers,
   notices = [],
@@ -1625,13 +1481,12 @@ export function CookFlow({
   const nowText = view.stack[0]?.text ?? COOK_COPY.noSteps;
   const finishing = view.isLast;
   const ledgeLead = ledge.length === 0 ? "" : `${ledge[0]!.id}:${ledge.length}`;
-  const heard = heardLine(ask.voice);
+  const heard = heardLine(voice);
   useFootFit(
     footRef,
     [
       finishing,
       finishing && finish === "failed",
-      askSpeaks(ask),
       ledgeLead,
       // A checkpoint's "Looks right" widens the forward (B5d verify round 1).
       typed.kind === "checkpoint" ? "looks-right" : "",
@@ -1646,7 +1501,13 @@ export function CookFlow({
       ref={swipeRef}
       className="relative flex min-h-0 flex-1 flex-col bg-ground"
     >
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      {/* Beside Ask's side panel the stage gives up the panel's width
+          (`--ask-room`, set on the cook's root; DS §5 Ask, v1.60), and the
+          step fits again by its own ladder. The progress line's band does
+          the same (`CookSheet`'s layer), and so does the foot: the panel
+          runs the screen's height, and Back and Forward stand under the
+          step. */}
+      <div className="relative mr-[var(--ask-room,0px)] flex min-h-0 flex-1 flex-col">
         {/* Steps shrink down STEP_FIT_SCALES to 0.5×; auto scrolls if an
             unusually dense step or narrow window still runs past 0.5×. */}
         <div
@@ -1791,15 +1652,24 @@ export function CookFlow({
                     </div>
                   ) : (
                     <>
-                      {line.kind === "mise" && (
-                        <div data-mise-eyebrow className={`${COLUMN} ${ASIDE_TITLE}`}>
-                          {COOK_COPY.prepChapter}
-                        </div>
+                      {line.prep ? (
+                        <PrepEyebrow line={line} />
+                      ) : (
+                        line.kind === "mise" && (
+                          <div data-mise-eyebrow className={`${COLUMN} ${ASIDE_TITLE}`}>
+                            {COOK_COPY.prepChapter}
+                          </div>
+                        )
                       )}
                       {aside && typed.kind === "interlude" && <AsideTitle title={typed.title} />}
-                      <p id={wordsId} data-face="text" data-ember={stepEmber} data-how-to-check={howToCheck ? "" : undefined} className={`${COLUMN} text-pretty ${aside || howToCheck ? ASIDE_WORDS : ""} ${stepTone}`}>
-                        {bindNumbers(stepWordsShown(line.text))}
-                      </p>
+                      {line.rows ? (
+                        // A prep page of several small jobs (DS v1.59): tick rows where a step has its words.
+                        <PrepRows rows={line.rows} ingredients={ingredients} onTick={onTick} discussed={discussedIdx} lifted={level > 0} />
+                      ) : (
+                        <p id={wordsId} data-face="text" data-ember={stepEmber} data-how-to-check={howToCheck ? "" : undefined} className={`${COLUMN} text-pretty ${aside || howToCheck ? ASIDE_WORDS : ""} ${stepTone}`}>
+                          {bindNumbers(stepWordsShown(line.text))}
+                        </p>
+                      )}
                       {line.marginalia && (
                         <p data-marginalia className="mt-2 flex items-center gap-1.5 text-[length:var(--type-meta)] text-ink-soft">
                           <span aria-hidden="true" className="select-none text-ink-soft">✎</span>
@@ -1810,7 +1680,8 @@ export function CookFlow({
                   )}
                   {!prep && (
                     <Meta
-                      line={line}
+                      // Tick rows carry their own minutes and amounts, and the eyebrow the page's time.
+                      line={line.rows ? { minutes: null, implied: false, ingredientIdx: [] } : line}
                       ingredients={ingredients}
                       ringing={alarm}
                       keepTime={stepTimer !== null}
@@ -1897,7 +1768,7 @@ export function CookFlow({
         inert={restInert || opening !== null}
         data-no-swipe={look ? "" : undefined}
         style={look ? { touchAction: "none" } : undefined}
-        className={`${FOOT} relative z-40${opening ? " invisible" : ""}`}
+        className={`${FOOT} relative z-40 mr-[var(--ask-room,0px)]${opening ? " invisible" : ""}`}
       >
         {/* Back, then the well: a running timer whose step isn't on screen
             sits at the counter's edge, a place of its own that the middle's
@@ -1912,20 +1783,17 @@ export function CookFlow({
               timers={ledge}
               emberId={emberClock}
               // The sound-off ghost isn't the foot's: it stands at the
-              // stage's top (`soundLine`), where the foot's one row has
-              // no room for it beside the well and Ask's voice.
+              // stage's top (`soundLine`), which it has kept since the
+              // foot's row held Ask Sous too (v1.48 to v1.59).
               soundLocked={false}
               onDismiss={timers.onDismiss}
               onAllowSound={timers.onAllowSound}
             />
           )}
         </div>
-        {/* Never narrower than its words, on one line: a short row runs past
-            its edge, for `useFootFit` to read, rather than this spilling
-            over the ends. */}
-        <div className="flex items-center justify-center gap-[calc(8*var(--cpx))] whitespace-nowrap">
-          <AskGhost {...ask} />
-        </div>
+        {/* The middle is empty (v1.60: Ask Sous is in the top line); the
+            cell keeps the forward in its own track. */}
+        <div data-foot-middle aria-hidden="true" />
         <ForwardButton
           lastScreen={view.isLast}
           finish={finish}
@@ -1937,10 +1805,10 @@ export function CookFlow({
         {/* The answer to "how much" is the voice's echo when it lifts (DS §5,
             quantity chips), so what was heard yields to it; and it stands down
             where something else says it or the foot steps aside. */}
-        {heard !== null && !(answerLifted && answer) && !ask.open && !restInert && opening === null && (
+        {heard !== null && !(answerLifted && answer) && !askOpen && !restInert && opening === null && (
           <HeardLift text={heard} overBand={!!look} />
         )}
-        {answerLifted && answer && <AnswerLift answer={answer} anchorRef={look ? slotRef : footRef} />}
+        {answerLifted && answer && <AnswerLift answer={answer} anchorRef={look ? slotRef : footRef} rowRef={footRef} />}
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cookView,
-  hasPrepScreen,
+  hasPrep,
   initialCookState,
   next,
   type CookState,
@@ -84,6 +84,7 @@ const makeStrip = (opts: {
     marks,
     rows: [],
     now: opts.now ?? 0,
+    progress: opts.now ?? 0,
     totalMinutes: 30,
     timeToTable: "30 min",
     handsOnLeft: "10 min",
@@ -255,7 +256,7 @@ describe("cook-levels", () => {
     });
   });
 
-  /** The roast in Prep first: stretches [1], [2–4], [5–8], [9–17]. */
+  /** The roast in Prep first: four prep pages [0–3], then stretches [4], [5–7], [8–11], [12–20] (DS v1.59). */
   const roastAt = (pos: number) => strip(roast, advance(roast, initialCookState("first"), pos), null);
 
   describe("writtenRows (N2-2, as written)", () => {
@@ -281,7 +282,7 @@ describe("cook-levels", () => {
         .map((f) => ({ raw: loadCookPlanSnapshots().get(f.name)?.raw, f }))
         .filter(({ raw }) => raw)
         .map(({ raw, f }) => ({ name: f.name, parsed: parseCookPlan(raw, f.recipe) }))
-        .flatMap(({ name, parsed }) => (parsed.ok && hasPrepScreen(parsed.plan) ? [{ name, plan: parsed.plan }] : []));
+        .flatMap(({ name, parsed }) => (parsed.ok && hasPrep(parsed.plan) ? [{ name, plan: parsed.plan }] : []));
       expect(plans.length).toBeGreaterThan(5);
       let noBlock = 0;
       for (const { name, plan } of plans) {
@@ -311,9 +312,10 @@ describe("cook-levels", () => {
 
   describe("walkAway (N2-8)", () => {
     it("says the break's free time on the last step of a stretch, and nowhere else", () => {
-      const lines = Array.from({ length: 18 }, (_, pos) => walkAway(roastAt(pos))?.text ?? null);
+      const lines = Array.from({ length: 21 }, (_, pos) => walkAway(roastAt(pos))?.text ?? null);
       expect(lines).toEqual([
-        null,
+        // The four prep pages: no break follows a prep page.
+        null, null, null, null,
         "After this step: about 10 min free. Step away.",
         null,
         null,
@@ -328,7 +330,7 @@ describe("cook-levels", () => {
     });
 
     it("stands over the break's start and names the step in hand", () => {
-      const s = roastAt(8);
+      const s = roastAt(11);
       const w = walkAway(s)!;
       expect(w.kind).toBe("step-away");
       expect(w.target.state).toBe("in-hand");

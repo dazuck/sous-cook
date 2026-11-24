@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildGetOut, getOutName } from "./get-out";
+import { buildGetOut, getOutName, parseSimpleAmount } from "./get-out";
+import { storedIngredientLines, type StoredIngredientLines } from "./ingredient-display";
 import { loadCookPlanFixtures } from "./__tests__/load-cook-plan-fixtures";
+import { legacyToPackRecipe } from "../pack-convert/convert";
 
 describe("getOutName", () => {
   it("strips parentheticals, prep clauses, and leading count units and capitalizes cleanly", () => {
@@ -286,5 +288,256 @@ describe("buildGetOut", () => {
       "Medium bowl",
       "Zip-top bags",
     ]);
+  });
+});
+
+/**
+ * What a Get out amount opens when tapped (asked 2026-11-22): the conversions its line opens
+ * on a step screen, from the same lines the step's pairs read (`storedIngredientLines`).
+ */
+describe("buildGetOut: what an amount opens", () => {
+  function linesOf(
+    lines: { item: string; amount?: string; unit?: string }[],
+    servings?: number,
+    serves = 4,
+  ): StoredIngredientLines {
+    const result = legacyToPackRecipe({ name: "Test", ingredients: lines, steps: ["Cook."], serves }, { id: "test" });
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    return storedIngredientLines(result.recipe, lines.length, servings);
+  }
+  const itemsOf = (lines: StoredIngredientLines) => {
+    const model = buildGetOut({ ingredients: lines });
+    return new Map([...model.fridge, ...model.pantry].map((it) => [it.key, it]));
+  };
+
+  it("a measured line opens what its pair opens on a step: its stated amount and the same conversions", () => {
+    const lines = linesOf([
+      { item: "toor dal", amount: "1", unit: "cup" },
+      { item: "flour", amount: "500", unit: "g" },
+    ]);
+    const items = itemsOf(lines);
+    for (const [key, line] of [["toor dal", lines[0]], ["flour", lines[1]]] as const) {
+      if (line?.kind !== "amount") throw new Error(`${key} is not a measured line`);
+      expect(line.conversions.length, key).toBeGreaterThan(0);
+      expect(items.get(key)!.amount).toBe(line.amount);
+      expect(items.get(key)!.opens).toEqual({ stated: line.stated, conversions: line.conversions });
+    }
+  });
+
+  it("scaled, it opens the scaled line: the scaled conversions under what the recipe says for its own count", () => {
+    const lines = linesOf([{ item: "toor dal", amount: "1", unit: "cup" }], 8);
+    const line = lines[0];
+    if (line?.kind !== "amount") throw new Error("not a measured line");
+    const item = itemsOf(lines).get("toor dal")!;
+    expect(item.amount).toBe("2 cups");
+    expect(item.opens).toEqual({ stated: [{ unit: "cup", value: "1" }], conversions: line.conversions, servesBase: 4 });
+    expect(item.opens!.conversions).toContainEqual({ unit: "tbsp", value: "32" });
+  });
+
+  it("a scaled count that rounding moved opens its exact count, as its pair does; any other count is plain", () => {
+    // 4 eggs for 3, cooked for 4: 5⅓, shown as "about 5".
+    const scaled = linesOf([{ item: "eggs", amount: "4" }], 4, 3);
+    const eggs = scaled[0];
+    if (eggs?.kind !== "count" || eggs.exact === undefined) throw new Error(`eggs did not round: ${JSON.stringify(eggs)}`);
+    expect(eggs.exact).toBe("5⅓");
+    expect(itemsOf(scaled).get("eggs")!.opens).toEqual({ stated: [], conversions: [], exact: "5⅓" });
+    const plain = itemsOf(linesOf([{ item: "eggs", amount: "2" }])).get("eggs")!;
+    expect(plain.amount).toBe("2");
+    expect(plain.opens).toBeUndefined();
+  });
+
+  it("the source's own words, a line with no amount and a line of another shape are plain", () => {
+    const items = itemsOf(linesOf([{ item: "ginger", amount: "1", unit: "inch" }, { item: "flaky salt" }]));
+    expect(items.get("ginger")!.amount).not.toBeNull();
+    expect(items.get("ginger")!.opens).toBeUndefined();
+    expect(items.get("flaky salt")!.amount).toBeNull();
+    expect(items.get("flaky salt")!.opens).toBeUndefined();
+    const legacy = buildGetOut({ ingredients: [{ amount: "2", unit: "tbsp", item: "olive oil" }] });
+    expect(legacy.pantry[0].amount).toBe("2 tbsp");
+    expect(legacy.pantry[0].opens).toBeUndefined();
+  });
+
+  it("a line named twice in one unit opens the conversions of the sum it shows", () => {
+    const lines = linesOf([
+      { item: "butter", amount: "2", unit: "tbsp" },
+      { item: "onion", amount: "1" },
+      { item: "butter, for the pan", amount: "1", unit: "tbsp" },
+    ]);
+    const item = itemsOf(lines).get("butter")!;
+    expect(item.amount).toBe("3 tbsp");
+    // 3 tbsp: 44.4 ml, 9 tsp, and 3/16 cup at the nearest kitchen fraction; no "Recipe says", since the recipe says two amounts.
+    expect(item.opens).toEqual({
+      stated: [],
+      conversions: [
+        { unit: "ml", value: "44.4" },
+        { unit: "tsp", value: "9" },
+        { unit: "cup", value: expect.any(String) },
+      ],
+    });
+    // The same rows a single 3 tbsp line shows.
+    const single = linesOf([{ item: "butter", amount: "3", unit: "tbsp" }])[0];
+    if (single?.kind !== "amount") throw new Error("not a measured line");
+    expect(item.opens!.conversions).toEqual(single.conversions);
+  });
+
+  it("one of the merged lines states the only amount: it opens what that line opens", () => {
+    const lines = linesOf([{ item: "olive oil, for drizzling" }, { item: "olive oil", amount: "2", unit: "tbsp" }]);
+    const line = lines[1];
+    if (line?.kind !== "amount") throw new Error("not a measured line");
+    const item = itemsOf(lines).get("olive oil")!;
+    expect(item.amount).toBe("2 tbsp");
+    expect(item.opens).toEqual({ stated: line.stated, conversions: line.conversions });
+  });
+
+  it("merged amounts that don't add up to one measure stay plain: two units, counts, the source's words", () => {
+    // Two units: both amounts are said, side by side (review round 1: the first alone understated it).
+    const mixed = itemsOf(
+      linesOf([
+        { item: "butter", amount: "1", unit: "cup" },
+        { item: "butter", amount: "2", unit: "tbsp" },
+      ]),
+    ).get("butter")!;
+    expect(mixed.amount).toBe("1 cup + 2 tbsp");
+    expect(mixed.withAmount).toBe("1 cup + 2 tbsp butter");
+    expect(mixed.opens).toBeUndefined();
+    // Counts add up to a count, which has nothing to convert.
+    const counts = itemsOf(linesOf([{ item: "eggs", amount: "2" }, { item: "eggs", amount: "1" }])).get("eggs")!;
+    expect(counts.amount).toBe("3");
+    expect(counts.opens).toBeUndefined();
+    // A measure and the source's own words.
+    const words = itemsOf(
+      linesOf([
+        { item: "ginger", amount: "1", unit: "tbsp" },
+        { item: "ginger", amount: "1", unit: "inch" },
+      ]),
+    ).get("ginger")!;
+    expect(words.opens).toBeUndefined();
+  });
+
+  it("two lines of 1½ tbsp add up to 3 tbsp and open the sum's conversions (review round 1: it read 1 with the unit \"½ tbsp\" and showed \"2 ½ tbsp\")", () => {
+    const lines = linesOf([
+      { item: "butter", amount: "1½", unit: "tbsp" },
+      { item: "butter, for the pan", amount: "1½", unit: "tbsp" },
+    ]);
+    expect(lines[0]).toMatchObject({ kind: "amount", amount: "1½ tbsp" });
+    const item = itemsOf(lines).get("butter")!;
+    expect(item.amount).toBe("3 tbsp");
+    const single = linesOf([{ item: "butter", amount: "3", unit: "tbsp" }])[0];
+    if (single?.kind !== "amount") throw new Error("not a measured line");
+    expect(item.opens).toEqual({ stated: [], conversions: single.conversions });
+  });
+});
+
+describe("parseSimpleAmount: one number and one unit, or nothing", () => {
+  const read = (text: string) => parseSimpleAmount(text);
+
+  it("reads whole numbers, decimals and typed fractions, as before", () => {
+    expect(read("2 tbsp")).toEqual({ value: 2, unit: "tbsp" });
+    expect(read("3")).toEqual({ value: 3, unit: "" });
+    expect(read("1.5 lb")).toEqual({ value: 1.5, unit: "lb" });
+    expect(read("1/2 cup")).toEqual({ value: 0.5, unit: "cup" });
+    expect(read("1 1/2 cups")).toEqual({ value: 1.5, unit: "cups" });
+    expect(read("  2   Cloves ")).toEqual({ value: 2, unit: "cloves" });
+    // A unit that carries its own size is still one unit.
+    expect(read("1 14-oz can")).toEqual({ value: 1, unit: "14-oz can" });
+  });
+
+  it("reads a fraction glyph alone, every one of them", () => {
+    const glyphs: [string, number][] = [
+      ["¼", 1 / 4], ["½", 1 / 2], ["¾", 3 / 4],
+      ["⅐", 1 / 7], ["⅑", 1 / 9], ["⅒", 1 / 10],
+      ["⅓", 1 / 3], ["⅔", 2 / 3],
+      ["⅕", 1 / 5], ["⅖", 2 / 5], ["⅗", 3 / 5], ["⅘", 4 / 5],
+      ["⅙", 1 / 6], ["⅚", 5 / 6],
+      ["⅛", 1 / 8], ["⅜", 3 / 8], ["⅝", 5 / 8], ["⅞", 7 / 8],
+    ];
+    for (const [glyph, value] of glyphs) {
+      const got = read(`${glyph} cup`);
+      expect(got?.unit, glyph).toBe("cup");
+      expect(got?.value, glyph).toBeCloseTo(value, 10);
+    }
+  });
+
+  it("reads a whole number with a fraction glyph as one number, set tight or with a space", () => {
+    expect(read("1½ tbsp")).toEqual({ value: 1.5, unit: "tbsp" });
+    expect(read("1 ½ tbsp")).toEqual({ value: 1.5, unit: "tbsp" });
+    expect(read("2⅞ cups")).toEqual({ value: 2.875, unit: "cups" });
+    expect(read("10¼")).toEqual({ value: 10.25, unit: "" });
+    expect(read("3⅜ lb")).toEqual({ value: 3.375, unit: "lb" });
+  });
+
+  it("reads nothing where the words are more than one number and one unit", () => {
+    for (const text of [
+      "",
+      "a pinch",
+      "about ¼ cup",
+      "¾ cup + 4 tsp",
+      "1 cup + 2 tbsp",
+      "1-2 cups",
+      "1–2 cups",
+      "1 to 2 cups",
+      "1½-2 cups",
+      "1 or 2",
+      "0 cups",
+      "½½ cup",
+      "1/0 cup",
+    ]) {
+      expect(read(text), JSON.stringify(text)).toBeNull();
+    }
+  });
+});
+
+describe("buildGetOut: an ingredient named on several lines", () => {
+  const amountOf = (rows: { item: string; amount?: string; unit?: string }[]) => {
+    const model = buildGetOut({ ingredients: rows });
+    const [item] = [...model.fridge, ...model.pantry];
+    return item;
+  };
+
+  it("adds up amounts in one unit, fraction glyphs and mixed numbers included", () => {
+    expect(amountOf([{ item: "butter", amount: "1½", unit: "tbsp" }, { item: "butter", amount: "1½", unit: "tbsp" }]).amount).toBe("3 tbsp");
+    expect(amountOf([{ item: "milk", amount: "⅜", unit: "cup" }, { item: "milk", amount: "⅝", unit: "cup" }]).amount).toBe("1 cup");
+    expect(amountOf([{ item: "cream", amount: "⅞", unit: "cup" }, { item: "cream", amount: "1⅛", unit: "cups" }]).amount).toBe("2 cup");
+    expect(amountOf([{ item: "eggs", amount: "2" }, { item: "eggs", amount: "1" }]).amount).toBe("3");
+    expect(amountOf([{ item: "garlic", amount: "2", unit: "cloves" }, { item: "garlic", amount: "3", unit: "clove" }]).amount).toBe("5 cloves");
+  });
+
+  it("says amounts that don't add up side by side, each whole, never one for all of them", () => {
+    // Compound amounts (a scaled line's "¾ cup + 4 tsp"): each as written, not "1.5 cup + 4 tsp".
+    const compound = amountOf([
+      { item: "milk", amount: "¾ cup + 4 tsp" },
+      { item: "milk", amount: "¾ cup + 4 tsp" },
+    ]);
+    expect(compound.amount).toBe("¾ cup + 4 tsp + ¾ cup + 4 tsp");
+    expect(compound.withAmount).toBe("¾ cup + 4 tsp + ¾ cup + 4 tsp milk");
+    expect(compound.opens).toBeUndefined();
+    // Two units.
+    expect(amountOf([{ item: "butter", amount: "1", unit: "cup" }, { item: "butter", amount: "2", unit: "tbsp" }]).amount).toBe("1 cup + 2 tbsp");
+    // A range is not a number to add.
+    expect(amountOf([{ item: "stock", amount: "1-2", unit: "cups" }, { item: "stock", amount: "1-2", unit: "cups" }]).amount).toBe("1-2 cups + 1-2 cups");
+    // Words.
+    expect(amountOf([{ item: "ginger", amount: "1", unit: "tbsp" }, { item: "ginger", amount: "a thumb" }]).amount).toBe("1 tbsp + a thumb");
+  });
+
+  it("adds a later line into the amount in its unit, wherever that stands", () => {
+    expect(
+      amountOf([
+        { item: "butter", amount: "1", unit: "cup" },
+        { item: "butter", amount: "2", unit: "tbsp" },
+        { item: "butter", amount: "1", unit: "tbsp" },
+        { item: "butter", amount: "½", unit: "cup" },
+      ]).amount,
+    ).toBe("1.5 cup + 3 tbsp");
+    expect(
+      amountOf([
+        { item: "milk", amount: "about ¼ cup" },
+        { item: "milk", amount: "1", unit: "cup" },
+        { item: "milk", amount: "1", unit: "cup" },
+      ]).amount,
+    ).toBe("about ¼ cup + 2 cup");
+  });
+
+  it("one amount among lines with none is that amount, as written", () => {
+    expect(amountOf([{ item: "olive oil" }, { item: "olive oil", amount: "1½", unit: "tbsp" }, { item: "olive oil" }]).amount).toBe("1½ tbsp");
   });
 });

@@ -17,6 +17,7 @@ import {
   type PrepMise,
 } from "@/lib/kitchen/cook-view";
 import { ServingStepper } from "./ServingStepper";
+import { TickTile } from "./TickTile";
 import { TimeLineWords } from "./TimeLineWords";
 
 interface PrepScreenProps {
@@ -228,33 +229,7 @@ function MiseList({
     <ul data-mise className="grid gap-3">
       {mise.map((m, i) => (
         <li key={m.id} data-row className="flex items-start gap-4">
-          <button
-            type="button"
-            role="checkbox"
-            aria-checked={m.done}
-            aria-labelledby={`${lineId}-${i}`}
-            onClick={() => onTick(m.id)}
-            // A hairline tile (V9) in ink-soft, which holds a control's 3:1
-            // on the ground where ink at 11% would not; ticked, it fills ink.
-            className={`relative grid size-12 shrink-0 cursor-pointer place-items-center rounded-[10px] border transition-colors duration-[320ms] ease-[var(--ease)] before:absolute before:-inset-3 before:content-[''] ${FOCUS} ${
-              m.done ? "border-ink bg-ink text-paper" : "border-ink-soft text-ink active:bg-sand"
-            }`}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="24"
-              height="24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-              className={`transition-opacity duration-[320ms] ease-[var(--ease)] ${m.done ? "opacity-100" : "opacity-0"}`}
-            >
-              <path d="M5 12.5l4.5 4.5L19 7.5" />
-            </svg>
-          </button>
+          <TickTile checked={m.done} labelledBy={`${lineId}-${i}`} onToggle={() => onTick(m.id)} />
           <p
             onClick={(e) => {
               const target = e.target instanceof Element ? e.target : null;

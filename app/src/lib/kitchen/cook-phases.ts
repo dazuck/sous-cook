@@ -1,12 +1,10 @@
 import type { CookPlan, CookTask, PrepMode } from "./cook-plan";
 import { flow, taskMinutes, timeline, type FlowItem } from "./cook-schedule";
 import {
-  cookView,
-  initialCookState,
+  aheadGroups,
   miseBefore,
   screensOf,
   stepKey,
-  type CookState,
   type CookView,
   type PrepAheadGroup,
   type StackLine,
@@ -455,13 +453,9 @@ export function buildCookPhases(
     handsOnTasks.reduce((sum, t) => sum + taskMinutes(t), 0),
   );
 
-  // Extract ahead groups from cookView on Prep
-  const prepViewState: CookState = {
-    ...initialCookState("first"),
-    ticked,
-  };
-  const view0 = cookView(plan, { kind: "derived" }, prepViewState);
-  const aheadGroupsList: AheadGroup[] = view0.prep?.ahead ?? [];
+  // The make-ahead groups, as the Prep screen lists them (the plan's own:
+  // no screen need be in hand to read them).
+  const aheadGroupsList: AheadGroup[] = aheadGroups(plan);
 
   const ahead = aheadGroupsList.map((group) => ({
     lead: group.lead ?? "Ahead",

@@ -41,6 +41,7 @@ import {
   initialCookState,
   jumpTo,
   next,
+  prepPages,
   screensOf,
   setMode,
   toggleTick,
@@ -233,7 +234,11 @@ export function reduceSession(session: CookSession, action: CookAction): CookSes
 // ---------------------------------------------------------------------------
 
 export const SESSION_PREFIX = "sous-cook:";
-export const SESSION_VERSION = 1;
+/**
+ * 2 since Prep became step pages (DS v1.59): "Prep first" numbers its screens
+ * differently. A version-1 session is renumbered on load (`placeFromV1`).
+ */
+export const SESSION_VERSION = 2;
 /** Sessions kept at most; the least recently saved go first. */
 export const MAX_SESSIONS = 10;
 
@@ -541,11 +546,102 @@ export function saveSession(
   );
 }
 
-/** The session stored for `queueId`; null when none, or it was cleared as unreadable (with a notice). */
+/** A version-1 envelope, read only as far as its place needs: the plan, and the state's place and ticks. */
+const v1Schema = z.object({
+  version: z.literal(1),
+  state: z
+    .object({
+      session: z
+        .object({
+          plan: planSchema,
+          state: z
+            .object({
+              mode: z.enum(["first", "go"]),
+              pos: z.number().int().nonnegative(),
+              ticked: z.array(z.string()),
+              passed: z.array(z.string()),
+            })
+            .passthrough(),
+        })
+        .passthrough(),
+    })
+    .passthrough(),
+});
+
+/**
+ * A place saved at version 1, in today's numbering (version 2; DS v1.59,
+ * DECISIONS 2026-11-22). Version 1's "Prep first" was the Prep screen and
+ * then the cooking steps; today's is the prep pages and then the cooking
+ * steps. So for a plan with prep pages: the Prep screen becomes the first
+ * page with a job not done, or the last page with all of it done; a cooking
+ * step keeps its step, moved on by the pages before it less the Prep screen.
+ * "As I go", and a plan with no mise, number as they did.
+ */
+export function placeFromV1(
+  plan: CookPlan,
+  state: { mode: PrepMode; pos: number; ticked: readonly string[]; passed: readonly string[] },
+): number {
+  const pages = prepPages(plan, state.mode);
+  if (pages.length === 0) return state.pos;
+  if (state.pos > 0) return state.pos + pages.length - 1;
+  const done = new Set([...state.ticked, ...state.passed]);
+  const open = pages.findIndex((page) => page.tasks.some((t) => !done.has(t.id)));
+  return open === -1 ? pages.length - 1 : open;
+}
+
+/**
+ * Rewrites a version-1 session in place at today's version, its place
+ * renumbered (`placeFromV1`); the shape is otherwise the same. Anything it
+ * can't read as version 1 it leaves alone, for `readStored` to clear with
+ * the notice, as any stored session that doesn't read.
+ */
+function migrateStoredSession(key: string, backing: StringStore): void {
+  let raw: string | null;
+  try {
+    raw = backing.getItem(key);
+  } catch {
+    return;
+  }
+  if (raw === null) return;
+  let envelope: unknown;
+  try {
+    envelope = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  const v1 = v1Schema.safeParse(envelope);
+  if (!v1.success) return;
+  const { plan, state } = v1.data.state.session;
+  const migrated = {
+    ...v1.data,
+    version: SESSION_VERSION,
+    state: {
+      ...v1.data.state,
+      session: {
+        ...v1.data.state.session,
+        state: { ...state, pos: placeFromV1(plan as CookPlan, state) },
+      },
+    },
+  };
+  try {
+    backing.setItem(key, JSON.stringify(migrated));
+  } catch (err) {
+    // Storage that refuses the rewrite leaves the old envelope, which the
+    // read below clears with the notice: said, never silent.
+    console.warn(`Could not rewrite stored ${key}:`, err);
+  }
+}
+
+/**
+ * The session stored for `queueId`; null when none, or it was cleared as
+ * unreadable (with a notice). One saved at version 1 is renumbered first
+ * (`migrateStoredSession`), so a cook under way resumes at its step.
+ */
 export function loadSession(
   queueId: string,
   backing: StringStore | null = browserStorage(),
 ): StoredSession | null {
+  if (backing !== null) migrateStoredSession(sessionKey(queueId), backing);
   return readStored(sessionKey(queueId), storedSchema, backing, SESSION_VERSION, SESSION_RESET_COPY);
 }
 

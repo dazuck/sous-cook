@@ -102,12 +102,28 @@ const CookingTimerSnapshotSchema = z.object({
   status: z.enum(["running", "expired"]),
 });
 
+// The prep jobs in hand, as the cook's screen says them (`askInHand`). The
+// bounds are well past any plan's page: they stop a runaway request and
+// never turn a real page's question away.
+const CookingPrepSchema = z.object({
+  jobs: z
+    .array(
+      z.object({
+        text: z.string().max(2000),
+        amounts: z.array(z.string().max(500)).max(60),
+        done: z.boolean(),
+      }),
+    )
+    .max(60),
+});
+
 const CookingChatInputSchema = ChatInputSchema.extend({
   currentRecipe: z.string().optional(),
   queueId: z.string().min(1).optional(),
   servings: z.number().positive().optional(),
   servesBase: z.number().positive().optional(),
   currentStepIndex: z.number().int().min(0).optional(),
+  prep: CookingPrepSchema.optional(),
   timers: z.array(CookingTimerSnapshotSchema).optional(),
   includeRecipeContext: z.boolean().optional(),
 });
@@ -344,6 +360,7 @@ export const appRouter = router({
             servings: input.servings,
             servesBase: input.servesBase,
             currentStepIndex: input.currentStepIndex,
+            prep: input.prep,
             timers: input.timers,
             includeRecipeContext: input.includeRecipeContext,
             memberId: ctx.member?.id ?? null,

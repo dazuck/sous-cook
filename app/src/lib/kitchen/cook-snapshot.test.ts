@@ -32,7 +32,16 @@ function inputs(session: CookSession, overrides?: Partial<SnapshotInputs>): Snap
   };
 }
 
-const onPrep = () => startSession(ZUCCHINI_PLAN, { kind: "derived" }, "first");
+/** The Prep screen: As I go's, since Prep first walks prep pages (DS v1.59). */
+const onPrep = () => startSession(ZUCCHINI_PLAN, { kind: "derived" }, "go");
+/** Prep first opens on the first of its two prep pages: the sauté jobs as tick rows, then the greens. */
+const onPage = () => startSession(ZUCCHINI_PLAN, { kind: "derived" }, "first");
+/** Prep first, past both prep pages, on the first cooking step. */
+const onSaute = () => {
+  let session = reduceSession(onPage(), { type: "next" });
+  session = reduceSession(session, { type: "next" });
+  return session;
+};
 
 describe("cookSnapshot", () => {
   it("names Prep, its chapter, and the plan with its version", () => {
@@ -49,9 +58,21 @@ describe("cookSnapshot", () => {
     expect(snap.plan).toBe(ZUCCHINI_PLAN);
   });
 
+  it("names a prep page as a step, in the Prep chapter", () => {
+    expect(cookSnapshot(inputs(onPage()))).toMatchObject({
+      screen: "step",
+      stepKey: "onion+scape+zuc",
+      chapterId: "prep",
+    });
+    expect(cookSnapshot(inputs(reduceSession(onPage(), { type: "next" })))).toMatchObject({
+      screen: "step",
+      stepKey: "greens",
+      chapterId: "prep",
+    });
+  });
+
   it("names the step in hand by its key, and the chapter it is in", () => {
-    let session = reduceSession(onPrep(), { type: "next" });
-    session = reduceSession(session, { type: "next" });
+    const session = reduceSession(onSaute(), { type: "next" });
     const snap = cookSnapshot(inputs(session, { part: { at: 2, of: 3 } }));
     expect(snap).toMatchObject({
       screen: "step",
@@ -61,20 +82,28 @@ describe("cookSnapshot", () => {
     });
   });
 
-  it("gives the panel's row the step in hand, counted without Prep, and none on Prep (C3)", () => {
+  it("gives the panel's row the step in hand, counted without the Prep screen, and none on it (C3)", () => {
     expect(cookSnapshot(inputs(onPrep())).step).toBeNull();
-    let session = reduceSession(onPrep(), { type: "next" });
-    expect(cookSnapshot(inputs(session)).step).toMatchObject({ n: 1, of: 5, name: "Sauté" });
+    // As I go: the Prep screen is not counted; the six steps after it are.
+    expect(cookSnapshot(inputs(reduceSession(onPrep(), { type: "next" }))).step).toMatchObject({ n: 1, of: 6, name: "Sauté" });
+    // Prep first: its prep pages are steps, and are counted (DS v1.59).
+    expect(cookSnapshot(inputs(onPage())).step).toMatchObject({
+      n: 1,
+      of: 7,
+      name: "Slice onion, mince scape, and cut zucchini",
+    });
+    let session = onSaute();
+    expect(cookSnapshot(inputs(session)).step).toMatchObject({ n: 3, of: 7, name: "Sauté" });
     session = reduceSession(session, { type: "next" });
-    expect(cookSnapshot(inputs(session)).step).toMatchObject({ n: 2, of: 5, name: "Fry parathas" });
+    expect(cookSnapshot(inputs(session)).step).toMatchObject({ n: 4, of: 7, name: "Fry parathas" });
     // A borrowed screen keeps the step under it.
     expect(
       cookSnapshot(inputs(session, { layers: { ...CLOSED, ingredients: true } })).step?.n,
-    ).toBe(2);
+    ).toBe(4);
   });
 
   it("keeps the line the step screen drew, lead and all, for the row to quote (panel round 4)", () => {
-    let session = reduceSession(onPrep(), { type: "next" });
+    let session = onSaute();
     expect(cookSnapshot(inputs(session)).step?.line).toBe(
       "Sauté the onion, garlic scape and zucchini with a pinch of cumin until sweet and caramelized, about 15 minutes.",
     );
@@ -95,11 +124,12 @@ describe("cookSnapshot", () => {
   });
 
   it("gives the session's state as plain lists", () => {
-    let session = reduceSession(onPrep(), { type: "tick", id: "onion" });
+    let session = reduceSession(onPage(), { type: "tick", id: "onion" });
     session = reduceSession(session, { type: "next" });
     const { state } = cookSnapshot(inputs(session));
     expect(state.mode).toBe("first");
     expect(state.pos).toBe(1);
+    expect(state.ticked).toEqual(["onion"]);
     expect(state.ticked).toEqual([...session.state.ticked]);
     expect(state.passed).toEqual([...session.state.passed]);
     expect(state.kept).toEqual([...session.state.kept]);
@@ -107,7 +137,7 @@ describe("cookSnapshot", () => {
   });
 
   it("names a borrowed screen over the step, which it still keys", () => {
-    const session = reduceSession(onPrep(), { type: "next" });
+    const session = onSaute();
     for (const [layer, screen] of [
       ["allSteps", "all-steps"],
       ["ingredients", "ingredients"],

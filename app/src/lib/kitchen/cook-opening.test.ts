@@ -81,13 +81,17 @@ describe("opensOnChart (N2-10)", () => {
   });
 
   it("counts step screens under the session's mode, not tasks", () => {
-    // Mise and one cook step: Prep first leaves one step screen; as I go
-    // folds the mise into steps of its own.
+    // Mise and one cook step. Prep first: the three jobs are one prep page of
+    // tick rows, a step like any other (DS v1.59), then the sauté: two step
+    // screens, where the one Prep screen left one. As I go folds the mise
+    // into steps of its own.
     const plan = only(["onion", "scape", "zuc", "saute"]);
-    expect(stepScreens(plan, "first")).toBe(1);
-    expect(opensOnChart(startSession(plan, DERIVED, "first"))).toBe(false);
+    expect(stepScreens(plan, "first")).toBe(2);
+    expect(opensOnChart(startSession(plan, DERIVED, "first"))).toBe(true);
     expect(stepScreens(plan, "go")).toBeGreaterThanOrEqual(OPENING_MIN_STEPS);
     expect(opensOnChart(startSession(plan, DERIVED, "go"))).toBe(true);
+    // One job and one cook step: still two step screens in Prep first.
+    expect(stepScreens(only(["onion", "saute"]), "first")).toBe(2);
   });
 
   it("hasUpfrontPrep distinguishes upfront mise/ahead from all-inline As I go", () => {

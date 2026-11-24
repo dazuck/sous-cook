@@ -1,4 +1,20 @@
-import type { IngredientLine } from "./ingredient-display";
+import { unitFromAlias } from "@sous/pack/quantity";
+import { conversionsOfAmount, opensMore, type IngredientLine, type MeasureRow } from "./ingredient-display";
+
+/**
+ * What a Get out amount opens when tapped: the conversions popover's contents (`MeasurementPopover`),
+ * as the line's pair opens them on a step screen (asked 2026-11-22).
+ */
+export interface GetOutOpens {
+  /** Each amount the recipe states, under "Recipe says"; none for a sum of two lines. */
+  stated: MeasureRow[];
+  /** The other units, computed. */
+  conversions: MeasureRow[];
+  /** Set when the line is scaled, so the stated heading reads "Recipe says, for 4". */
+  servesBase?: number;
+  /** A scaled count that rounding moved: its exact count. */
+  exact?: string;
+}
 
 export interface GetOutItem {
   index: number;
@@ -6,6 +22,16 @@ export interface GetOutItem {
   bare: string;
   withAmount: string;
   amount: string | null;
+  /**
+   * What the amount opens; unset where it is plain words. One line's amount opens what that line's
+   * pair opens on a step (a measure its conversions, a scaled count that rounding moved its exact
+   * count). A sum of lines the recipe names twice opens the conversions of the sum it shows, when
+   * every part is a measure in one unit the table knows. Everything else is plain: a count, the
+   * source's own words, a measure with nothing to convert, parts that don't add up to one measure
+   * (the list says them side by side, "1 cup + 2 tbsp", which no one panel speaks for), and a line
+   * of another shape.
+   */
+  opens?: GetOutOpens;
 }
 
 export interface GetOutModel {
@@ -253,39 +279,58 @@ function isPantryItem(
   return false;
 }
 
+/** Every vulgar-fraction glyph (U+00BC–BE, U+2150–215E). */
 const FRACTION_VALUES: Record<string, number> = {
-  "¼": 0.25,
-  "½": 0.5,
-  "¾": 0.75,
+  "¼": 1 / 4,
+  "½": 1 / 2,
+  "¾": 3 / 4,
+  "⅐": 1 / 7,
+  "⅑": 1 / 9,
+  "⅒": 1 / 10,
   "⅓": 1 / 3,
   "⅔": 2 / 3,
-  "⅛": 0.125,
+  "⅕": 1 / 5,
+  "⅖": 2 / 5,
+  "⅗": 3 / 5,
+  "⅘": 4 / 5,
+  "⅙": 1 / 6,
+  "⅚": 5 / 6,
+  "⅛": 1 / 8,
+  "⅜": 3 / 8,
+  "⅝": 5 / 8,
+  "⅞": 7 / 8,
 };
+const GLYPHS = Object.keys(FRACTION_VALUES).join("");
+/**
+ * An amount's number, longest reading first: a whole number with a fraction glyph ("1½", "1 ½"), a
+ * glyph alone, a whole number with a typed fraction ("1 1/2"), a typed fraction, a decimal or whole
+ * number. Then the rest, its unit.
+ */
+const AMOUNT_NUMBER_RE = new RegExp(
+  `^(?:(\\d+)\\s*([${GLYPHS}])|([${GLYPHS}])|(\\d+)\\s+(\\d+)\\/(\\d+)|(\\d+)\\/(\\d+)|(\\d+(?:\\.\\d+)?))\\s*(.*)$`,
+);
+/**
+ * What follows the number is no unit when it goes on with the amount: a range ("1-2 cups", "1 to 2"),
+ * another fraction, or a second amount ("¾ cup + 4 tsp").
+ */
+const NOT_A_UNIT_RE = new RegExp(`^(?:[-–—/]|[${GLYPHS}]|(?:to|or)\\b)|\\+`);
 
-function parseSimpleAmount(amount: string): { value: number; unit: string } | null {
-  const trimmed = amount.trim();
-  const m = trimmed.match(
-    /^(\d+(?:\.\d+)?(?:\s+\d+\/\d+)?|\d+\/\d+|\d*[¼½¾⅓⅔⅛])\s*(.*)$/,
-  );
+/**
+ * An amount that is one number and one unit ("1½ tbsp", "⅜ cup", "1 1/2 cups", "3"), read as that
+ * number; null for anything more (a range, a compound amount, words), which can't be added up.
+ */
+export function parseSimpleAmount(amount: string): { value: number; unit: string } | null {
+  const m = amount.trim().match(AMOUNT_NUMBER_RE);
   if (!m) return null;
-  const numPart = m[1].trim();
-  const unit = m[2].trim().toLowerCase();
+  const unit = m[10].trim().toLowerCase();
+  if (NOT_A_UNIT_RE.test(unit)) return null;
 
-  let value = 0;
-  const mixedMatch = numPart.match(/^(\d+)\s+(\d+)\/(\d+)$/);
-  const fracMatch = numPart.match(/^(\d+)\/(\d+)$/);
-  const unicodeMatch = numPart.match(/^(\d*)([¼½¾⅓⅔⅛])$/);
-
-  if (mixedMatch) {
-    value = Number(mixedMatch[1]) + Number(mixedMatch[2]) / Number(mixedMatch[3]);
-  } else if (fracMatch) {
-    value = Number(fracMatch[1]) / Number(fracMatch[2]);
-  } else if (unicodeMatch) {
-    const whole = unicodeMatch[1] ? Number(unicodeMatch[1]) : 0;
-    value = whole + (FRACTION_VALUES[unicodeMatch[2]] ?? 0);
-  } else {
-    value = Number(numPart);
-  }
+  let value: number;
+  if (m[1] !== undefined) value = Number(m[1]) + FRACTION_VALUES[m[2]];
+  else if (m[3] !== undefined) value = FRACTION_VALUES[m[3]];
+  else if (m[4] !== undefined) value = Number(m[4]) + Number(m[5]) / Number(m[6]);
+  else if (m[7] !== undefined) value = Number(m[7]) / Number(m[8]);
+  else value = Number(m[9]);
 
   if (!Number.isFinite(value) || value <= 0) return null;
   return { value, unit };
@@ -310,17 +355,85 @@ function formatNumberClean(n: number): string {
   return String(rounded);
 }
 
-function combineAmounts(first: string | null, second: string | null): string | null {
-  if (!first) return second;
-  if (!second) return first;
-  const p1 = parseSimpleAmount(first);
-  const p2 = parseSimpleAmount(second);
-  if (p1 && p2 && normalizeUnitFamily(p1.unit) === normalizeUnitFamily(p2.unit)) {
-    const sum = p1.value + p2.value;
-    const unitText = p1.unit || p2.unit;
-    return unitText ? `${formatNumberClean(sum)} ${unitText}` : formatNumberClean(sum);
+/**
+ * The amounts of one ingredient's lines as one, and whether they added up to a single measure.
+ * Amounts in one unit family add up (in the first one's unit words); an amount in another unit, or
+ * one that is no simple number (a range, a compound "¾ cup + 4 tsp", words), is said beside the
+ * others as written, joined by " + ", so the item never shows less than the recipe asks for
+ * (review round 1: the first amount used to stand for all of them). One amount is itself, as written.
+ */
+function mergeAmounts(amounts: readonly string[]): { amount: string; summed: boolean } {
+  if (amounts.length === 1) return { amount: amounts[0], summed: true };
+  type Term =
+    | { added: true; family: string; unit: string; value: number; lines: number; text: string }
+    | { added: false; text: string };
+  const terms: Term[] = [];
+  for (const text of amounts) {
+    const read = parseSimpleAmount(text);
+    if (!read) {
+      terms.push({ added: false, text });
+      continue;
+    }
+    const family = normalizeUnitFamily(read.unit);
+    const same = terms.find((t) => t.added && t.family === family);
+    if (same?.added) {
+      same.value += read.value;
+      same.lines += 1;
+    } else {
+      terms.push({ added: true, family, unit: read.unit, value: read.value, lines: 1, text });
+    }
   }
-  return first;
+  const said = terms.map((t) => {
+    if (!t.added || t.lines === 1) return t.text;
+    return t.unit ? `${formatNumberClean(t.value)} ${t.unit}` : formatNumberClean(t.value);
+  });
+  return { amount: said.join(" + "), summed: terms.length === 1 && terms[0].added };
+}
+
+/** What one line's amount opens, as its pair does on a step (`CookFlow`'s `Pair`); null where it is plain. */
+function opensOfLine(line: IngredientLine | null): GetOutOpens | null {
+  if (line === null) return null;
+  if (line.kind === "amount") {
+    const opens: GetOutOpens = {
+      stated: line.stated,
+      conversions: line.conversions,
+      ...(line.servesBase !== undefined ? { servesBase: line.servesBase } : {}),
+    };
+    return opensMore(opens) ? opens : null;
+  }
+  if (line.kind === "count" && line.exact !== undefined) return { stated: [], conversions: [], exact: line.exact };
+  return null;
+}
+
+/**
+ * What a sum of several lines' amounts opens: the conversions of the sum as shown, when every part
+ * is a measured line and the sum reads as a number in one unit the table knows. No "Recipe says":
+ * the recipe says each part, not the sum.
+ */
+function opensOfSum(amount: string, parts: readonly (IngredientLine | null)[]): GetOutOpens | null {
+  if (!parts.every((line) => line !== null && line.kind === "amount")) return null;
+  const read = parseSimpleAmount(amount);
+  const unit = read ? unitFromAlias(read.unit) : undefined;
+  if (!read || !unit) return null;
+  const opens: GetOutOpens = { stated: [], conversions: conversionsOfAmount(read.value, unit.id) };
+  return opensMore(opens) ? opens : null;
+}
+
+/** An entry that is a cook's line (`ingredientLine`), not a stored `{ item, amount, unit }` row. */
+function isIngredientLine(ing: NonNullable<WholeIngredient>): ing is IngredientLine {
+  if (!("kind" in ing) || typeof ing.name !== "string") return false;
+  switch (ing.kind) {
+    case "amount":
+      return "stated" in ing && Array.isArray(ing.stated) && "conversions" in ing && Array.isArray(ing.conversions);
+    case "count":
+    case "as_written":
+      return typeof ing.amount === "string";
+    case "to_taste":
+    case "unstated":
+      return true;
+    default:
+      return false;
+  }
 }
 
 function normalizeIngredientEntry(
@@ -333,6 +446,8 @@ function normalizeIngredientEntry(
   amount: string | null;
   kind: IngredientLine["kind"] | undefined;
   rawText: string;
+  /** The entry as the cook's pairs read it, when it is such a line (`StoredIngredientLines`); else null. */
+  line: IngredientLine | null;
 } | null {
   if (!ing) return null;
 
@@ -395,6 +510,7 @@ function normalizeIngredientEntry(
     amount,
     kind,
     rawText: rawName,
+    line: isIngredientLine(ing) ? ing : null,
   };
 }
 
@@ -727,6 +843,12 @@ export function buildGetOut(input: BuildGetOutInput): GetOutModel {
       bare: string;
       amount: string | null;
       pantry: boolean;
+      /** Each line's amount, in order (`mergeAmounts` makes `amount` of them). */
+      amounts: string[];
+      /** The lines whose amounts make `amount`, in order. */
+      parts: (IngredientLine | null)[];
+      /** The amounts add up to one measure, which `amount` is; false when it says several side by side. */
+      whole: boolean;
     }
   >();
 
@@ -736,8 +858,13 @@ export function buildGetOut(input: BuildGetOutInput): GetOutModel {
     const pantry = isPantryItem(entry.key, entry.kind, entry.rawText);
     const existing = deduped.get(entry.key);
     if (existing) {
-      existing.amount = combineAmounts(existing.amount, entry.amount);
       existing.pantry = existing.pantry || pantry;
+      if (entry.amount === null) return;
+      existing.amounts.push(entry.amount);
+      existing.parts.push(entry.line);
+      const merged = mergeAmounts(existing.amounts);
+      existing.amount = merged.amount;
+      existing.whole = merged.summed;
     } else {
       deduped.set(entry.key, {
         index: entry.index,
@@ -745,6 +872,9 @@ export function buildGetOut(input: BuildGetOutInput): GetOutModel {
         bare: entry.bare,
         amount: entry.amount,
         pantry,
+        amounts: entry.amount === null ? [] : [entry.amount],
+        parts: entry.amount === null ? [] : [entry.line],
+        whole: true,
       });
     }
   });
@@ -756,12 +886,19 @@ export function buildGetOut(input: BuildGetOutInput): GetOutModel {
     const withAmount = item.amount
       ? `${item.amount} ${lowerFirst(item.bare)}`
       : item.bare;
+    const opens =
+      item.amount === null || !item.whole
+        ? null
+        : item.parts.length === 1
+          ? opensOfLine(item.parts[0])
+          : opensOfSum(item.amount, item.parts);
     const outItem: GetOutItem = {
       index: item.index,
       key: item.key,
       bare: item.bare,
       withAmount,
       amount: item.amount,
+      ...(opens ? { opens } : {}),
     };
     if (item.pantry) {
       pantry.push(outItem);

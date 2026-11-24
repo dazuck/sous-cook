@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COOK_COPY, initialCookState, next, cookView, type CookState } from "./cook-view";
+import { COOK_COPY, initialCookState, next, cookView, prepPages, type CookState } from "./cook-view";
 import { identityPlan, parseCookPlan, type CookPlan } from "./cook-plan";
 import { strip } from "./cook-strip";
 import { restNudge } from "./cook-levels";
@@ -626,7 +626,8 @@ describe("sheet layout across the corpus", () => {
   });
 
   it("left-aligns the nudge at g.E, the edge's width", () => {
-    const L = layoutFor(dal, advance(dal, initialCookState("first"), 1), 1280, 800);
+    // The dal's first cooking step, after its two prep pages (DS v1.59).
+    const L = layoutFor(dal, advance(dal, initialCookState("first"), prepPages(dal, "first").length), 1280, 800);
     expect(L.nudge).not.toBeNull();
     expect(L.nudge!.x).toBe(L.geo.E);
     expect(L.nudge!.maxW).toBe(L.geo.W - 2 * L.geo.E);

@@ -370,7 +370,8 @@ describe("openCook snapshot scaling and count lock (B5c-5, B5c-13)", () => {
 
   it("offline at 8, tick, reload still offline: keep saves snapshot with scales: true and reload draws at 8", () => {
     const store = memory();
-    let session = reduceSession(startSession(ZUCCHINI_PLAN, { kind: "derived" }, "first"), { type: "next" });
+    // Prep first, on its first prep page (the sauté jobs as tick rows, DS v1.59): one row ticked is progress to keep.
+    let session = reduceSession(startSession(ZUCCHINI_PLAN, { kind: "derived" }, "first"), { type: "tick", id: "scape" });
     session = reduceSession(session, { type: "servings", servings: 8 });
     saveSession(
       "q1",
@@ -411,8 +412,9 @@ describe("openCook snapshot scaling and count lock (B5c-5, B5c-13)", () => {
 
   it("out-of-range servings in stored session drops only the count on both live and snapshot opens (read.paused and latched: 'snapshot')", () => {
     const store = memory();
-    let session = reduceSession(startSession(ZUCCHINI_PLAN, { kind: "derived" }, "first"), { type: "next" });
-    session = reduceSession(session, { type: "tick", id: "onion" });
+    // A row ticked on the first prep page, then on to the next (DS v1.59).
+    let session = reduceSession(startSession(ZUCCHINI_PLAN, { kind: "derived" }, "first"), { type: "tick", id: "onion" });
+    session = reduceSession(session, { type: "next" });
     session = reduceSession(session, { type: "servings", servings: 8 });
     saveSession(
       "q1",

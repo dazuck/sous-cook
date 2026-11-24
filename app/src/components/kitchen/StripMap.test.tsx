@@ -2,7 +2,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { strip } from "@/lib/kitchen/cook-strip";
-import { initialCookState, next } from "@/lib/kitchen/cook-view";
+import { initialCookState, next, prepPages } from "@/lib/kitchen/cook-view";
 import { SIDE } from "@/lib/kitchen/overview-place";
 import { layoutStripMap, stationName, type StripMapDrawing } from "@/lib/kitchen/strip-map";
 import { advanceMeasure as measure } from "@/lib/kitchen/__tests__/advance-measure";
@@ -11,12 +11,17 @@ import { StripMap } from "./StripMap";
 
 afterEach(cleanup);
 
-/** A corpus cook `name` at screen `pos`, `dt` minutes on, mapped at level 1 in portrait (or landscape). */
+/**
+ * A corpus cook `name` at its cooking step `pos` (past its prep pages, which
+ * come before step 1 since DS v1.59), `dt` minutes on, mapped at level 1 in
+ * portrait (or landscape).
+ */
 function mapAt(name: string, pos: number, dt: number, portrait = true): StripMapDrawing {
   const c = timetableCorpus().find((x) => x.name === name)!;
   const byId = new Map(c.plan.tasks.map((t) => [t.id, t]));
   let s = initialCookState("first");
-  for (let i = 0; i < pos; i++) s = next(c.plan, s);
+  const pages = prepPages(c.plan, "first").length;
+  for (let i = 0; i < pages + pos - 1; i++) s = next(c.plan, s);
   const st = strip(c.plan, s, null, 0);
   const side = portrait ? { x0: SIDE, x1: 600 - SIDE, portrait: { ttRight: 600 - SIDE - 72 } } : { x0: SIDE, x1: 960 - SIDE };
   return layoutStripMap({ marks: st.marks, now: st.now + dt, total: st.totalMinutes, name: (m) => stationName(m, byId), toTable: st.timeToTable, measure, ...side });

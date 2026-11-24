@@ -59,6 +59,19 @@ describe("RecipeHeader: the top line (V3, N2-6)", () => {
     expect(place()!.textContent).toBe("4 steps, then about 50 min free");
   });
 
+  it("holds Ask Sous at the line's right end, after More, in the cell the place's ladder measures (v1.60)", () => {
+    render(<Header ask={<button type="button">Ask Sous</button>} />);
+    const cell = screen.getByRole("banner").querySelector("[data-more-cell]")!;
+    const ask = screen.getByRole("button", { name: "Ask Sous" });
+    expect(cell.contains(ask)).toBe(true);
+    expect(cell.lastElementChild).toBe(ask);
+    expect(more().compareDocumentPosition(ask) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    cleanup();
+    // None while Ask's panel is open: the cell is More's alone.
+    render(<Header ask={null} />);
+    expect(screen.queryByRole("button", { name: "Ask Sous" })).toBeNull();
+  });
+
   it("opens the whole cook's chart from the place; there is no chapters menu", () => {
     const onPlace = vi.fn();
     render(<Header onPlace={onPlace} />);

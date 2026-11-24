@@ -610,15 +610,51 @@ export function flow(
 }
 
 /**
+ * A card's tasks as runs of at most `max`, near-equal in length, the longer
+ * runs first; one run, as given, when the card fits or there is no `max`. A
+ * cut card's tasks go by when the prep block starts them (`startOf`), so its
+ * runs follow one another in time.
+ */
+function nearEqualRuns(
+  tasks: CookTask[],
+  max: number | undefined,
+  startOf: (task: CookTask) => number,
+): CookTask[][] {
+  if (max === undefined || tasks.length <= max) return [tasks];
+  const ordered = tasks
+    .map((task, at) => ({ task, at }))
+    .sort((a, b) => startOf(a.task) - startOf(b.task) || a.at - b.at)
+    .map(({ task }) => task);
+  const runs = Math.ceil(ordered.length / max);
+  const base = Math.floor(ordered.length / runs);
+  const longer = ordered.length % runs;
+  const out: CookTask[][] = [];
+  let from = 0;
+  for (let i = 0; i < runs; i++) {
+    const size = base + (i < longer ? 1 : 0);
+    out.push(ordered.slice(from, from + size));
+    from += size;
+  }
+  return out;
+}
+
+/**
  * The upfront mise cards in the prep block (`[0, prep.end]`), grouped using
  * the same card groupings as `flow(plan, "go", new Set())` so each prep card
  * keeps a 1-to-1 matching key and label when switching between "Prep first"
  * and "As I go".
+ *
+ * With `maxTasks`, a card of more tasks than that is cut into runs of
+ * near-equal length, none longer (5 at 4 a run is 3 + 2, never 4 + 1), its
+ * tasks taken in the order the prep block does them: the pages the cook steps
+ * through in "Prep first" (`prepPages`, DS §5), where a card of nine chopping
+ * jobs would not fit one screen.
  */
 export function prepFlow(
   plan: CookPlan,
   mode: PrepMode,
   ticked: ReadonlySet<string>,
+  maxTasks?: number,
 ): FlowItem[] {
   const order = recipeOrder(plan.tasks.filter((t) => t.kind !== "ahead"));
   const upfrontIds =
@@ -644,15 +680,15 @@ export function prepFlow(
     const tasks = goItem.tasks.filter((t) => upfrontIds.has(t.id));
     if (tasks.length === 0) continue;
     for (const t of tasks) placedIds.add(t.id);
-    const start = toMinutes(Math.min(...tasks.map((t) => prep.get(t.id)![0])));
-    const end = toMinutes(Math.max(...tasks.map((t) => prep.get(t.id)![1])));
-    items.push({
-      tasks,
-      start,
-      end,
-      during: null,
-      lead: null,
-    });
+    for (const run of nearEqualRuns(tasks, maxTasks, (t) => prep.get(t.id)![0])) {
+      items.push({
+        tasks: run,
+        start: toMinutes(Math.min(...run.map((t) => prep.get(t.id)![0]))),
+        end: toMinutes(Math.max(...run.map((t) => prep.get(t.id)![1]))),
+        during: null,
+        lead: null,
+      });
+    }
   }
 
   for (const t of upfront) {

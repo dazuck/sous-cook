@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect, useLayoutEffect, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { COOK_COPY } from "@/lib/kitchen/cook-view";
-import type { MeasureRow } from "@/lib/kitchen/ingredient-display";
+import { opensMore, type MeasureRow } from "@/lib/kitchen/ingredient-display";
 
 /**
  * An amount's conversions, opened from its pair (V8). Fed from the pack
@@ -16,6 +17,17 @@ import type { MeasureRow } from "@/lib/kitchen/ingredient-display";
  * it, else beside it, moved up or down inside the box (slice B5d: low on the
  * stage it ran under the band, hiding the second stated amount B5d brings
  * back).
+ *
+ * An amount in a scrolling box too small to hold the panel (the opening's Get
+ * out column; asked 2026-11-22) names a layer to draw it in instead: the
+ * nearest ancestor marked `data-popover-layer`, a positioned box that doesn't
+ * clip. The panel is then drawn in that layer, whole inside it by the same
+ * rule, clear of the column's clip and its foot's fade, and put away when
+ * anything scrolls or the window changes size (it no longer rides its amount).
+ *
+ * Open, it is put away by a press outside it, by Escape (the key taken, the
+ * focus back on its amount) and by the focus moving to anything else, so two
+ * panels never stand at once.
  */
 
 interface MeasurementPopoverProps {
@@ -130,26 +142,55 @@ export function MeasurementPopover({
 }: MeasurementPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [placement, setPlacement] = useState<Placement | null>(null);
+  /** The layer the panel is drawn in, found as it opens; null beside its amount, as everywhere else. */
+  const [layer, setLayer] = useState<HTMLElement | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
 
-  // Close on click outside
+  // Put away by a press outside it, by the focus moving to anything else (Tab to the next amount, so
+  // Enter there never opens a second panel beside this one), and by Escape.
   useEffect(() => {
     if (!isOpen) return;
 
+    function outside(target: EventTarget | null): boolean {
+      const node = target instanceof Node ? target : null;
+      return (
+        popoverRef.current !== null &&
+        !popoverRef.current.contains(node) &&
+        triggerRef.current !== null &&
+        !triggerRef.current.contains(node)
+      );
+    }
     function handleClickOutside(event: MouseEvent) {
-      if (
-        popoverRef.current &&
-        !popoverRef.current.contains(event.target as Node) &&
-        triggerRef.current &&
-        !triggerRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false);
-      }
+      if (outside(event.target)) setIsOpen(false);
+    }
+    // The focus leaving: it lands on something that is neither the panel, the amount, nor a box
+    // that holds them. A press on the panel's words (which take no focus) hands the focus to the
+    // nearest box that does, the sheet's own (`[data-cook-sheet]`, tabIndex -1), and that is the
+    // cook still on the panel, not the focus leaving (review round 2).
+    function handleFocusOutside(event: FocusEvent) {
+      const node = event.target instanceof Node ? event.target : null;
+      if (node !== null && (node.contains(popoverRef.current) || node.contains(triggerRef.current))) return;
+      if (outside(node)) setIsOpen(false);
+    }
+    // Escape is the panel's while it is open: taken (so the screen under it doesn't leave or step
+    // back on it), unless a handler ahead already took it; the focus goes back to the amount.
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      setIsOpen(false);
+      triggerRef.current?.querySelector("button")?.focus();
     }
 
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("focusin", handleFocusOutside);
+    // Capture: before the page's own Escape (the back link, a borrowed screen's close).
+    document.addEventListener("keydown", handleEscape, true);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("focusin", handleFocusOutside);
+      document.removeEventListener("keydown", handleEscape, true);
+    };
   }, [isOpen]);
 
   // Placed before paint, from the panel's own size, each time it opens.
@@ -159,53 +200,52 @@ export function MeasurementPopover({
     const trigger = triggerRef.current;
     if (!panel || !trigger) return;
     const t = trigger.getBoundingClientRect();
-    setPlacement(
-      placePanel(
-        { top: t.top, bottom: t.bottom, left: t.left, right: t.right },
-        { width: panel.offsetWidth, height: panel.offsetHeight },
-        clipBox(trigger),
-      ),
-    );
-  }, [isOpen]);
+    const size = { width: panel.offsetWidth, height: panel.offsetHeight };
+    if (layer === null) {
+      setPlacement(placePanel({ top: t.top, bottom: t.bottom, left: t.left, right: t.right }, size, clipBox(trigger)));
+      return;
+    }
+    // In its layer: whole inside the layer's box on the screen, and placed from the layer's corner.
+    const l = layer.getBoundingClientRect();
+    const box = {
+      top: Math.max(l.top, 0),
+      bottom: Math.min(l.bottom, window.innerHeight),
+      left: Math.max(l.left, 0),
+      right: Math.min(l.right, window.innerWidth),
+    };
+    const at = placePanel({ top: t.top, bottom: t.bottom, left: t.left, right: t.right }, size, box);
+    setPlacement({ ...at, top: t.top - l.top + at.top, left: t.left - l.left + at.left });
+  }, [isOpen, layer]);
 
-  const hasMoreThanChip =
-    exact !== undefined ||
-    (servesBase !== undefined && stated.length > 0) ||
-    stated.length >= 2 ||
-    conversions.length > 0;
+  // In a layer the panel doesn't ride its amount: a scroll under it or a new window size puts it away.
+  useEffect(() => {
+    if (!isOpen || layer === null) return;
+    const close = () => setIsOpen(false);
+    document.addEventListener("scroll", close, { capture: true, passive: true });
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("scroll", close, { capture: true });
+      window.removeEventListener("resize", close);
+    };
+  }, [isOpen, layer]);
 
   // Nothing past the chip itself: no popover, and no rule.
-  if (!hasMoreThanChip) {
+  if (!opensMore({ stated, conversions, servesBase, exact })) {
     return <span className={className}>{children}</span>;
   }
 
   const at = placement ?? START;
   const arrow = at.arrow;
-  return (
-    <span className="relative inline-block" ref={triggerRef}>
-      {/* A button, so the amount is reached and named by role (V8). */}
-      <button
-        type="button"
-        aria-expanded={isOpen}
-        onClick={() => {
-          if (!isOpen) setPlacement(null);
-          setIsOpen(!isOpen);
-        }}
-        className={`cursor-pointer text-left ${AMOUNT_RULE} ${className ?? ""}`}
-      >
-        {children}
-      </button>
-
-      {/* Open, it holds the cook view's arrow keys (CookFlow). */}
-      {isOpen && (
+  const panel = isOpen && (
         <div
           ref={popoverRef}
           data-holds-keys
+          data-measure-panel
           data-side={at.side}
           // Measured once at the start, then placed; unseen until placed.
           style={{ top: at.top, left: at.left, visibility: placement === null ? "hidden" : undefined }}
           // Paper lifted over the ground, its edge a hairline, no shadow (DS §1, v1.13).
-          className="absolute z-50 w-max min-w-[calc(180*var(--cpx))] rounded-[var(--radius-2)] border border-ink/[.11] bg-paper p-4 text-[length:var(--type-meta)] leading-tight font-medium tracking-normal text-ink"
+          className="pointer-events-auto absolute z-50 w-max min-w-[calc(180*var(--cpx))] rounded-[var(--radius-2)] border border-ink/[.11] bg-paper p-4 text-[length:var(--type-meta)] leading-tight font-medium tracking-normal text-ink"
         >
           {/* Arrow: the hairline runs along its two edges toward the amount
               and its Paper covers the panel's edge under it; beside the
@@ -243,9 +283,10 @@ export function MeasurementPopover({
 
           {conversions.length > 0 && (
             <>
+              {/* Alone in the panel (Get out's sum of two lines states nothing), it opens it with no gap above. */}
               <div
                 data-heading
-                className="mt-4 mb-3 font-semibold text-ink-soft"
+                className={`${exact !== undefined || stated.length > 0 ? "mt-4 " : ""}mb-3 font-semibold text-ink-soft`}
               >
                 {COOK_COPY.conversionsHeading}
               </div>
@@ -253,7 +294,27 @@ export function MeasurementPopover({
             </>
           )}
         </div>
-      )}
+  );
+  return (
+    <span className="relative inline-block" ref={triggerRef}>
+      {/* A button, so the amount is reached and named by role (V8). */}
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        onClick={() => {
+          if (!isOpen) {
+            setPlacement(null);
+            setLayer(triggerRef.current?.closest<HTMLElement>("[data-popover-layer]") ?? null);
+          }
+          setIsOpen(!isOpen);
+        }}
+        className={`cursor-pointer text-left ${AMOUNT_RULE} ${className ?? ""}`}
+      >
+        {children}
+      </button>
+
+      {/* Open, it holds the cook view's arrow keys (CookFlow). */}
+      {panel && layer ? createPortal(panel, layer) : panel}
     </span>
   );
 }

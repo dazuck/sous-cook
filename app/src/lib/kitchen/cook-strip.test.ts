@@ -3,6 +3,7 @@ import {
   COOK_COPY,
   initialCookState,
   next,
+  prepPages,
   type CookState,
 } from "./cook-view";
 import { identityPlan, parseCookPlan, type CookPlan } from "./cook-plan";
@@ -17,6 +18,7 @@ import {
   loadCookPlanFixtures,
   loadCookPlanSnapshots,
 } from "./__tests__/load-cook-plan-fixtures";
+import { timetableCorpus } from "./__tests__/timetable-corpus";
 import type { KitchenTimer } from "./timers";
 
 function corpusPlan(name: string): CookPlan {
@@ -38,6 +40,13 @@ describe("cook-strip", () => {
   const dal = corpusPlan("indian-dal-tadka");
   const roast = corpusPlan("sunday-roast-dinner");
   const salmon = corpusPlan("simple-weeknight-salmon");
+  const stirFry = corpusPlan("weeknight-stir-fry");
+  /**
+   * The dal's prep pages in Prep first (DS v1.59): the four tempering jobs as
+   * tick rows (0–12), then the cilantro (12–14). Its k-th cooking step is
+   * screen `D + k - 1`, where before that slice (one Prep screen) it was `k`.
+   */
+  const D = prepPages(dal, "first").length;
   const asWritten = identityPlan({
     steps: [
       "Rinse toor dal and boil.",
@@ -53,14 +62,17 @@ describe("cook-strip", () => {
 
   it("a mark per LaneBar, Prep first", () => {
     const s = strip(dal, initialCookState("first"));
-    // Dal has a prep screen, so Prep is marks[0]
+    // Dal has prep, so Prep is marks[0]: in Prep first it stands for the prep pages
+    expect(D).toBe(2);
+    expect(s.prepScreen).toBe(false);
     expect(s.marks[0].key).toBe("prep");
     expect(s.marks[0].strand).toBe(COOK_COPY.prepChapter);
     expect(s.marks[0].screen).toBe(0);
 
-    // Following marks correspond to layout bars
+    // Following marks correspond to layout bars, after the prep pages
     expect(s.marks.length).toBeGreaterThan(1);
-    expect(s.marks.slice(1).every((m) => m.screen >= 1)).toBe(true);
+    expect(s.marks.slice(1).every((m) => m.screen >= D)).toBe(true);
+    expect(s.marks[1].screen).toBe(D);
   });
 
   it("marks hasMise and mode in As I go even when all mise is deferred to cooking steps (yogurt)", () => {
@@ -197,8 +209,8 @@ describe("cook-strip", () => {
   });
 
   it("now with and without a running timer (capped at step's end)", () => {
-    // Dal step 1 (screen 1: cook-dal) runs 14 to 39 (start: 14, end: 39)
-    const onCookDal = advance(dal, initialCookState("first"), 1);
+    // Dal's first cooking step (cook-dal, after the prep pages) runs 14 to 39 (start: 14, end: 39)
+    const onCookDal = advance(dal, initialCookState("first"), D);
 
     // Without timer: now is step start (14)
     const withoutTimer = strip(dal, onCookDal, null);
@@ -232,24 +244,260 @@ describe("cook-strip", () => {
     expect(capped.now).toBe(39);
   });
 
-  it("back on Prep mid-cook: now holds where Next resumes; Prep mark reads in hand and done", () => {
+  // Asked 2026-11-22 (DS v1.54): "on the progress bar at the bottom, it should show where you
+  // are at the end of that step not the beginning, as it's confusing to be on the last step but
+  // still showing a lot of room on the progress bar."
+  describe("progress: the line's end is the end of the screen the cook is on", () => {
     const first = initialCookState("first");
-    // Start on Prep, advance 2 steps (cook-dal is done, now on heat-ghee)
-    const onHeatGhee = advance(dal, first, 2);
-    const backOnPrep = { ...onHeatGhee, pos: 0 };
+    /** The dal, Prep first: total 46; prep 0–14; cook-dal 14–39 (a pot); heat-ghee 28–30; temper-spices 30–31; add-aromatics 31–33; cook-onions-tomatoes 33–39 (a pot); combine-and-simmer 39–45 (a pot); garnish-and-serve 45–46. */
+    /** The dal on its `step`-th cooking step, past its prep pages. */
+    const dalAt = (step: number) => strip(dal, advance(dal, first, D + step - 1), null);
 
-    const s = strip(dal, backOnPrep);
-    // Now holds where Next resumes (heat-ghee starts at 28)
-    expect(s.now).toBe(28);
+    it("on step N the fill ends at step N's end, where now is its start", () => {
+      const heatGhee = dalAt(2);
+      expect(heatGhee.marks.find((m) => m.state === "in-hand")).toMatchObject({ key: "heat-ghee", start: 28, end: 30 });
+      expect(heatGhee.now).toBe(28);
+      expect(heatGhee.progress).toBe(30);
+      const temper = dalAt(3);
+      expect([temper.now, temper.progress]).toEqual([30, 31]);
+      const aromatics = dalAt(4);
+      expect([aromatics.now, aromatics.progress]).toEqual([31, 33]);
+    });
+
+    it("on the last step the progress line is full, though its minutes aren't spent", () => {
+      const last = dalAt(7);
+      expect(last.marks.find((m) => m.state === "in-hand")).toMatchObject({ key: "garnish-and-serve" });
+      expect(last.totalMinutes).toBe(46);
+      expect(last.now).toBe(45);
+      expect(last.progress).toBe(46);
+    });
+
+    it("a cook with every step done is the whole line, whichever screen is in view", () => {
+      // `next` does nothing on the last screen, so a finished cook is stated: every task passed (the
+      // state the time to the table reads "Ready" from).
+      const everyTask = new Set(dal.tasks.map((t) => t.id));
+      const finishedAt = (pos: number): CookState => ({ ...initialCookState("first"), pos, ticked: everyTask, passed: everyTask });
+      // Looking back at Heat ghee (28–30), where an unfinished cook's line ends at 30.
+      expect(dalAt(2).progress).toBe(30);
+      const lookingBack = strip(dal, finishedAt(D + 1), null);
+      expect(lookingBack.timeToTable).toBe("Ready");
+      expect([lookingBack.now, lookingBack.progress, lookingBack.totalMinutes]).toEqual([46, 46, 46]);
+      // And on the first prep page, on the last step, and past the last screen.
+      for (const pos of [0, D + 6, 10]) {
+        const s = strip(dal, finishedAt(pos), null);
+        expect([s.now, s.progress], `screen ${String(pos)}`).toEqual([46, 46]);
+      }
+    });
+
+    it("a pot still going when the next step starts ends at that start: the line never steps back", () => {
+      // Cook the dal simmers 14–39; the cook leaves its screen for Heat ghee at 28.
+      const cookDal = dalAt(1);
+      expect(cookDal.marks.find((m) => m.state === "in-hand")).toMatchObject({ key: "cook-dal", start: 14, end: 39, pot: true });
+      expect(cookDal.progress).toBe(28);
+      expect(dalAt(2).progress).toBeGreaterThanOrEqual(cookDal.progress);
+      // A pot the next step waits for ends at its own end.
+      expect(dalAt(5).progress).toBe(39);
+      expect(dalAt(6).progress).toBe(45);
+    });
+
+    it("stands still while the step's timer runs, where now walks on", () => {
+      const onCookDal = advance(dal, first, D);
+      const timer = (elapsedMin: number): KitchenTimer => ({
+        id: "timer-1",
+        queueId: "queue-1",
+        recipeName: "Indian dal tadka",
+        stepId: "cook-dal",
+        label: "Cook dal",
+        durationMs: 25 * 60_000,
+        endsAtEpochMs: Date.now() + (25 - elapsedMin) * 60_000,
+      });
+      const at10 = strip(dal, onCookDal, timer(10));
+      expect(at10.now).toBe(24);
+      expect(at10.progress).toBe(28);
+      // Even with the timer run out on this screen (now capped at the pot's end, 39).
+      const over = strip(dal, onCookDal, timer(30));
+      expect(over.now).toBe(39);
+      expect(over.progress).toBe(28);
+    });
+
+    it("a prep page is a step: the fill ends at the page's end, and the last page's is the prep block's", () => {
+      // Prep first (DS v1.59): the dal's two prep pages, 0–12 and 12–14, inside Prep's mark (0–14).
+      const page1 = strip(dal, first, null);
+      expect(page1.onPrep).toBe(false);
+      expect(page1.marks[0]).toMatchObject({ key: "prep", start: 0, end: 14, state: "in-hand", screen: 0 });
+      expect([page1.now, page1.progress]).toEqual([0, 12]);
+      const page2 = strip(dal, advance(dal, first, 1), null);
+      expect(page2.marks[0]).toMatchObject({ key: "prep", state: "in-hand", screen: 1 });
+      expect([page2.now, page2.progress]).toEqual([12, 14]);
+      // Then the first cooking step picks up where the prep block ends.
+      expect(dalAt(1).now).toBe(14);
+      expect(dalAt(1).marks[0]).toMatchObject({ key: "prep", state: "done" });
+    });
+
+    // Review rounds 1 and 2 of prep pages. The tacos' prep pages overlap on the clock: the onion
+    // stands from 0 to 23 while the limes are cut (0–5), the shrimp marinates from 5 to 23, the
+    // avocado is sliced (5–10). A page that starts something that keeps going follows the rule a
+    // cooking step does (the fill stands at the next page's start, the jar still standing), and the
+    // last prep page stands at the block's end, where the step rule left it at 10 of 23. Round 1's
+    // "the page's own end" read 23 on all four pages: a line that stands still tells the cook nothing.
+    it("a prep page that starts something standing fills to the next page's start, and the last page to the prep block's end", () => {
+      const tacos = corpusPlan("lime-shrimp-tacos");
+      const pages = prepPages(tacos, "first");
+      expect(pages.map((page) => [page.start, page.end])).toEqual([
+        [0, 23],
+        [0, 5],
+        [5, 23],
+        [5, 10],
+      ]);
+      const fills = pages.map((_, i) => strip(tacos, advance(tacos, first, i), null).progress);
+      expect(fills).toEqual([0, 5, 5, 23]);
+    });
+
+    it("across the fixture cooks: a prep page fills as a cooking step does, the last to the prep block's end, and the fill never steps back", () => {
+      let seen = 0;
+      let standing = 0;
+      for (const { name, plan } of timetableCorpus()) {
+        const pages = prepPages(plan, "first");
+        let before = 0;
+        pages.forEach((page, i) => {
+          const s = strip(plan, advance(plan, initialCookState("first"), i), null);
+          const where = `${name}, prep page ${String(i + 1)}`;
+          const next = pages[i + 1];
+          const want =
+            next === undefined
+              ? Math.max(...pages.map((p) => p.end))
+              : Math.max(page.start, Math.min(page.end, next.start));
+          expect(s.progress, where).toBe(want);
+          if (next === undefined) expect(s.progress, where).toBe(s.marks[0]!.end);
+          else if (next.start < page.end) standing++;
+          expect(s.progress, where).toBeGreaterThanOrEqual(before);
+          before = s.progress;
+          seen++;
+        });
+        // Nor from the last prep page to the first cooking step.
+        if (pages.length > 0) {
+          const cooking = strip(plan, advance(plan, initialCookState("first"), pages.length), null);
+          expect(cooking.progress, `${name}, the first cooking step`).toBeGreaterThanOrEqual(before);
+        }
+      }
+      expect(seen).toBeGreaterThan(20);
+      // The case is in the corpus: a page whose job outlasts the next page's start.
+      expect(standing).toBeGreaterThan(0);
+    });
+
+    it("on the Prep screen it is the end of the up-front prep block; with no such block the line is empty, as before", () => {
+      // As I go on the stir-fry: all its mise is done before cooking, 0–17.
+      const prep = strip(stirFry, initialCookState("go"), null);
+      expect(prep.onPrep).toBe(true);
+      expect(prep.prepScreen).toBe(true);
+      expect(prep.marks[0]).toMatchObject({ key: "prep", start: 0, end: 17 });
+      expect([prep.now, prep.progress]).toEqual([0, 17]);
+      // As I go on the dal: a Prep screen, and nothing done up front.
+      const go = strip(dal, initialCookState("go"), null);
+      expect(go.onPrep).toBe(true);
+      expect(go.marks.some((m) => m.key === "prep")).toBe(false);
+      expect([go.now, go.progress]).toEqual([0, 0]);
+    });
+
+    it("back on the Prep screen mid-cook it holds where Next resumes, as now does", () => {
+      // The Prep screen is As I go's: the stir-fry, three steps in, back on Prep.
+      const backOnPrep = { ...advance(stirFry, initialCookState("go"), 3), pos: 0 };
+      const s = strip(stirFry, backOnPrep);
+      expect(s.onPrep).toBe(true);
+      expect([s.now, s.progress]).toEqual([26, 26]);
+    });
+
+    it("back on a prep page mid-cook it reads as that page, like any step gone back to", () => {
+      const backOnPage = { ...advance(dal, first, D + 1), pos: 0 };
+      const s = strip(dal, backOnPage);
+      expect([s.now, s.progress]).toEqual([0, 12]);
+      expect(s.marks[0]).toMatchObject({ key: "prep", state: "in-hand", screen: 0 });
+      expect(s.marks[0].revisit).toBeUndefined();
+    });
+
+    it("as written it is the end of the bar in hand", () => {
+      const written = initialCookState("first");
+      expect(strip(asWritten, written).progress).toBe(2);
+      const last = strip(asWritten, advance(asWritten, written, 3));
+      expect([last.now, last.progress, last.totalMinutes]).toEqual([6, 8, 8]);
+    });
+
+    it("across the test corpus's plans, in both modes: never behind the screen's start, never past the total, never back as the cook steps on, full on the last screen", () => {
+      let screensSeen = 0;
+      for (const { name, plan } of timetableCorpus()) {
+        for (const mode of ["first", "go"] as const) {
+          let state = initialCookState(mode);
+          let before = -1;
+          for (let i = 0; i < 80; i++) {
+            const s = strip(plan, state, null);
+            const where = `${name} (${mode}) screen ${String(state.pos)}`;
+            expect(s.progress, where).toBeGreaterThanOrEqual(s.now);
+            expect(s.progress, where).toBeLessThanOrEqual(s.totalMinutes);
+            expect(s.progress, `${where}: back from ${String(before)}`).toBeGreaterThanOrEqual(before);
+            before = s.progress;
+            screensSeen++;
+            const after = next(plan, state);
+            if (after.pos === state.pos) {
+              // The last screen in hand (`next` goes no further): the whole line.
+              expect(s.progress, `${where}, the last screen`).toBe(s.totalMinutes);
+              break;
+            }
+            state = after;
+          }
+        }
+      }
+      expect(screensSeen).toBeGreaterThan(200);
+    });
+  });
+
+  it("back on the Prep screen mid-cook: now holds where Next resumes; Prep mark reads in hand and done", () => {
+    // The Prep screen is As I go's since DS v1.59 (Prep first walks prep
+    // pages): the stir-fry, whose mise is all done before cooking.
+    const go = initialCookState("go");
+    // Start on Prep, advance 3 steps (heat-wok and cook-chicken done, now on cook-veggies)
+    const onVeggies = advance(stirFry, go, 3);
+    expect(strip(stirFry, onVeggies).marks.find((m) => m.state === "in-hand")!.key).toBe("cook-veggies");
+    const backOnPrep = { ...onVeggies, pos: 0 };
+
+    const s = strip(stirFry, backOnPrep);
+    // Now holds where Next resumes (cook-veggies starts at 26)
+    expect(s.now).toBe(26);
     // Prep mark reads in-hand and done/revisit
     const prepMark = s.marks.find((m) => m.key === "prep")!;
     expect(prepMark.state).toBe("in-hand");
     expect(prepMark.revisit).toBe(true);
 
     // On Prep before any step is done: now is 0
-    const startPrep = strip(dal, first);
+    const startPrep = strip(stirFry, go);
     expect(startPrep.now).toBe(0);
     expect(startPrep.marks[0].revisit).toBeUndefined();
+  });
+
+  it("Prep first: a prep card's mark goes to its own page, and a card cut over pages to its first", () => {
+    const first = initialCookState("first");
+    // The roast: four cards, four pages, one each.
+    const r = strip(roast, first);
+    expect(r.prepMarks!.map((m) => [m.key, m.screen, m.state])).toEqual([
+      ["prep-potatoes", 0, "in-hand"],
+      ["prep-aromatics", 1, "ahead"],
+      ["trim-beans", 2, "ahead"],
+      ["chop-shallot", 3, "ahead"],
+    ]);
+    const onBeans = strip(roast, advance(roast, first, 2));
+    expect(onBeans.prepMarks!.map((m) => m.state)).toEqual(["done", "done", "in-hand", "ahead"]);
+    expect(onBeans.modeOpen).toBe(false);
+    expect(r.modeOpen).toBe(true);
+    // The stir-fry: one card of six jobs, cut over two pages; one mark, in hand on either.
+    const sf = strip(stirFry, first);
+    expect(prepPages(stirFry, "first")).toHaveLength(2);
+    expect(sf.prepMarks).toHaveLength(1);
+    expect(sf.prepMarks![0]).toMatchObject({ screen: 0, state: "in-hand", todo: 6 });
+    const sf2 = strip(stirFry, advance(stirFry, first, 1));
+    expect(sf2.prepMarks![0]).toMatchObject({ screen: 0, state: "in-hand", todo: 3 });
+    expect(sf2.marks[0]).toMatchObject({ key: "prep", screen: 1, todo: 3 });
+    // As I go: a prep card's mark goes to the Prep screen, as before.
+    const go = strip(stirFry, initialCookState("go"));
+    expect(go.prepMarks!.every((m) => m.screen === 0)).toBe(true);
   });
 
   it("the time to the table is rounded up to 5, and Ready at 0", () => {
@@ -349,12 +597,13 @@ describe("cook-strip", () => {
 
   describe("stretches (N2-1)", () => {
     it("cuts the roast at its breaks, by screen, with each break's free time", () => {
+      // After the roast's four prep pages (screens 0–3; DS v1.59).
       const s = strip(roast, initialCookState("first"));
       expect(s.stretches.map((x) => x.screens)).toEqual([
-        [1],
-        [2, 3, 4],
-        [5, 6, 7, 8],
-        [9, 10, 11, 12, 13, 14, 15, 16, 17],
+        [4],
+        [5, 6, 7],
+        [8, 9, 10, 11],
+        [12, 13, 14, 15, 16, 17, 18, 19, 20],
       ]);
       expect(s.stretches.map((x) => x.free?.minutes ?? null)).toEqual([10, 10, 50, null]);
     });
@@ -363,7 +612,8 @@ describe("cook-strip", () => {
       for (const mode of ["first", "go"] as const) {
         const s = strip(roast, advance(roast, initialCookState(mode), 3));
         for (const m of s.marks) {
-          if (m.screen === 0 && s.marks[0] === m) {
+          if (m.key === "prep") {
+            expect(s.marks[0]).toBe(m);
             expect(m.stretch).toBeNull();
             continue;
           }

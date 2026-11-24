@@ -182,6 +182,34 @@ function scaledConversionsOf(
 }
 
 /**
+ * Whether an amount has more to show than its own words, so it opens (`MeasurementPopover`) and
+ * wears the dotted rule: a moved count's exact count, what the recipe says for its own serving
+ * count, a second stated amount, or any conversion. Otherwise it is plain words.
+ */
+export function opensMore(amount: {
+  stated: readonly MeasureRow[];
+  conversions: readonly MeasureRow[];
+  servesBase?: number;
+  exact?: string;
+}): boolean {
+  return (
+    amount.exact !== undefined ||
+    (amount.servesBase !== undefined && amount.stated.length > 0) ||
+    amount.stated.length >= 2 ||
+    amount.conversions.length > 0
+  );
+}
+
+/**
+ * The popover's rows for one computed amount in one unit: the other units of its dimension, under
+ * the floors a scaled line's rows keep. Get out's sum of a line the recipe names twice reads its
+ * conversions here (asked 2026-11-22), so they are made as every other row is.
+ */
+export function conversionsOfAmount(amount: number, unit: UnitId): MeasureRow[] {
+  return scaledConversionsOf([{ system: getUnit(unit).system, unit, amount }], new Set([unit]));
+}
+
+/**
  * The name says nothing but the line's own amount (B4 fix round 3): "3" for a
  * count of 3, "a pinch" for as written "a pinch", "2 g" or "1 cup (225 g)" for
  * the measure its hints state. The converter writes such a name for a line

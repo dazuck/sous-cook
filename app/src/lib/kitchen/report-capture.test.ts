@@ -177,6 +177,30 @@ describe("buildReport", () => {
   });
 });
 
+describe("serializeDom: a photo in Ask's conversation (review round 1)", () => {
+  it("leaves the photo's data out and says one was there; the words stay", () => {
+    const root = document.createElement("div");
+    root.innerHTML =
+      '<div data-ask-thread><div data-from="cook"><img alt="Dish photo" data-ask-photo="" src="data:image/jpeg;base64,AAAASECRETBYTES"><p>Check against this step</p></div>' +
+      '<div data-from="sous"><p>Golden at the edges.</p></div></div><img alt="logo" src="/icon-192.png">';
+    const { dom } = serializeDom(root);
+    expect(dom).not.toContain("AAAASECRETBYTES");
+    expect(dom).not.toContain("data:image");
+    const read = document.createElement("div");
+    read.innerHTML = dom;
+    const photo = read.querySelector("[data-ask-photo]")!;
+    expect(photo.hasAttribute("src")).toBe(false);
+    expect(photo.hasAttribute("data-capture-redacted")).toBe(true);
+    expect(photo.getAttribute("alt")).toBe("Dish photo");
+    expect(read.textContent).toContain("Check against this step");
+    expect(read.textContent).toContain("Golden at the edges.");
+    // A picture that is the app's own keeps its address.
+    expect(read.querySelector('img[alt="logo"]')!.getAttribute("src")).toBe("/icon-192.png");
+    // The screen itself is untouched.
+    expect(root.querySelector("[data-ask-photo]")!.getAttribute("src")).toContain("AAAASECRETBYTES");
+  });
+});
+
 describe("serializeDom", () => {
   it("drops what is marked data-capture-omit from the clone, not from the screen", () => {
     const root = mount(

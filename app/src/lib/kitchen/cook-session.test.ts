@@ -3,7 +3,8 @@ import { z } from "zod";
 import { parseCommonsFile, parseRecipe, parseStatesFile } from "@sous/pack";
 import { EMPTY_LIBRARY } from "../pack-convert/recipe-library";
 import { COOK_PLAN_VERSION, identityPlan, type CookPlan } from "./cook-plan";
-import { COOK_COPY, cookView, goToMark, next, screensOf, type CookState, type PlanSource } from "./cook-view";
+import { COOK_COPY, cookView, goToMark, next, prepPages, screensOf, type CookState, type PlanSource } from "./cook-view";
+import { flow } from "./cook-schedule";
 import {
   effectiveServings,
   initialSessionFor,
@@ -467,6 +468,131 @@ describe("a stored session that can't be read", () => {
     saveSession("q1", "a", underWay(), snapshot(), NOW, store);
     const raw = JSON.parse(store.data.get(sessionKey("q1"))!);
     raw.state.session.state.pos = 99;
+    store.data.set(sessionKey("q1"), JSON.stringify(raw));
+    expect(loadSession("q1", store)).toBeNull();
+    expect(consumeCorruptionNotices()).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sessions saved before Prep became step pages (version 1; DECISIONS
+// 2026-11-22). In "Prep first" the old sequence was the Prep screen and then
+// the cooking steps; now it is the prep pages and then the cooking steps. A
+// session saved under the old numbering is renumbered on load, never reset: a
+// reset mid-cook sends the cook back to the start of a meal.
+// ---------------------------------------------------------------------------
+describe("a session saved before Prep became step pages (version 1)", () => {
+  const mise = ZUCCHINI_PLAN.tasks.filter((t) => t.kind === "mise").map((t) => t.id);
+  const pages = prepPages(ZUCCHINI_PLAN, "first");
+  const cooking = flow(ZUCCHINI_PLAN, "first", new Set());
+
+  /** A version-1 envelope for a cook in `mode` at `pos`, as the old release wrote it. */
+  function storeV1(
+    store: ReturnType<typeof memoryStorage>,
+    state: { mode: "first" | "go"; pos: number; ticked: string[]; passed: string[] },
+    plan: CookPlan = ZUCCHINI_PLAN,
+    source: PlanSource = DERIVED,
+  ) {
+    saveSession("q1", "a", underWay(), snapshot(), NOW, store);
+    const raw = JSON.parse(store.data.get(sessionKey("q1"))!);
+    raw.version = 1;
+    raw.state.session.plan = plan;
+    raw.state.session.source = source;
+    raw.state.session.state = { ...state, kept: [] };
+    store.data.set(sessionKey("q1"), JSON.stringify(raw));
+  }
+
+  it("the plan it is tested on has two prep pages before its cooking steps", () => {
+    expect(SESSION_VERSION).toBe(2);
+    expect(pages.map((p) => p.tasks.map((t) => t.id))).toEqual([["onion", "scape", "zuc"], ["greens"]]);
+    expect(cooking.length).toBeGreaterThan(2);
+  });
+
+  it("saved on the Prep screen with some ticked: lands on the first prep page with a job left, ticks kept", () => {
+    const store = memoryStorage();
+    storeV1(store, { mode: "first", pos: 0, ticked: ["onion", "scape", "zuc"], passed: [] });
+    const loaded = loadSession("q1", store)!;
+    expect(loaded).not.toBeNull();
+    expect(loaded.session.state.pos).toBe(1);
+    expect([...loaded.session.state.ticked]).toEqual(["onion", "scape", "zuc"]);
+    expect(cookView(ZUCCHINI_PLAN, DERIVED, loaded.session.state).now!.key).toBe("greens");
+    expect(consumeCorruptionNotices()).toEqual([]);
+    // Rewritten at the new version, so the next load reads it as it stands.
+    expect(JSON.parse(store.data.get(sessionKey("q1"))!).version).toBe(SESSION_VERSION);
+    expect(loadSession("q1", store)!.session.state.pos).toBe(1);
+  });
+
+  it("saved on the Prep screen with one job ticked: stays on the first page, its row ticked", () => {
+    const store = memoryStorage();
+    storeV1(store, { mode: "first", pos: 0, ticked: ["onion"], passed: [] });
+    const { state } = loadSession("q1", store)!.session;
+    expect(state.pos).toBe(0);
+    expect(cookView(ZUCCHINI_PLAN, DERIVED, state).now!.rows!.map((r) => [r.id, r.done])).toEqual([
+      ["onion", true],
+      ["scape", false],
+      ["zuc", false],
+    ]);
+  });
+
+  it("saved on the Prep screen with everything ticked: lands on the last prep page", () => {
+    const store = memoryStorage();
+    storeV1(store, { mode: "first", pos: 0, ticked: mise, passed: [] });
+    expect(loadSession("q1", store)!.session.state.pos).toBe(pages.length - 1);
+  });
+
+  it("saved mid-cook: keeps its step, its ticks and its passed steps", () => {
+    const store = memoryStorage();
+    // The old numbering: Prep at 0, so the third cooking step was position 3.
+    const passed = cooking.slice(0, 2).flatMap((c) => c.tasks.map((t) => t.id));
+    storeV1(store, { mode: "first", pos: 3, ticked: mise, passed });
+    const { state } = loadSession("q1", store)!.session;
+    expect(state.pos).toBe(pages.length + 2);
+    expect(cookView(ZUCCHINI_PLAN, DERIVED, state).now!.key).toBe(cooking[2].tasks.map((t) => t.id).join("+"));
+    expect([...state.ticked]).toEqual(mise);
+    expect([...state.passed]).toEqual(passed);
+    expect(consumeCorruptionNotices()).toEqual([]);
+  });
+
+  it("saved on the last step: lands on the last step", () => {
+    const store = memoryStorage();
+    const passed = cooking.slice(0, -1).flatMap((c) => c.tasks.map((t) => t.id));
+    storeV1(store, { mode: "first", pos: cooking.length, ticked: mise, passed });
+    const { state } = loadSession("q1", store)!.session;
+    expect(state.pos).toBe(screensOf(ZUCCHINI_PLAN, "first", state.ticked).length - 1);
+    expect(cookView(ZUCCHINI_PLAN, DERIVED, state).isLast).toBe(true);
+  });
+
+  it("As I go keeps its numbering: the Prep screen is still first", () => {
+    const store = memoryStorage();
+    storeV1(store, { mode: "go", pos: 2, ticked: ["onion"], passed: [] });
+    const { state } = loadSession("q1", store)!.session;
+    expect(state.pos).toBe(2);
+    expect(state.mode).toBe("go");
+    expect(consumeCorruptionNotices()).toEqual([]);
+  });
+
+  it("a recipe cooked as written has no prep, so its place stands", () => {
+    const store = memoryStorage();
+    const written = asWritten();
+    storeV1(store, { mode: "first", pos: 2, ticked: [], passed: [written.tasks[0].id, written.tasks[1].id] }, written, PENDING);
+    expect(loadSession("q1", store)!.session.state.pos).toBe(2);
+  });
+
+  it("a version-1 session that doesn't read is cleared with the notice, as before", () => {
+    const store = memoryStorage();
+    storeV1(store, { mode: "first", pos: 99, ticked: mise, passed: [] });
+    expect(loadSession("q1", store)).toBeNull();
+    expect(store.data.has(sessionKey("q1"))).toBe(false);
+    store.data.set(sessionKey("q1"), JSON.stringify({ version: 1, state: { session: { state: { pos: "two" } } } }));
+    expect(loadSession("q1", store)).toBeNull();
+    expect(consumeCorruptionNotices().map((n) => n.text)).toEqual([SESSION_RESET_COPY, SESSION_RESET_COPY]);
+  });
+
+  it("a session from a version the app doesn't know is cleared with the notice", () => {
+    const store = memoryStorage();
+    storeV1(store, { mode: "first", pos: 0, ticked: ["onion"], passed: [] });
+    const raw = JSON.parse(store.data.get(sessionKey("q1"))!);
+    raw.version = SESSION_VERSION + 1;
     store.data.set(sessionKey("q1"), JSON.stringify(raw));
     expect(loadSession("q1", store)).toBeNull();
     expect(consumeCorruptionNotices()).toHaveLength(1);

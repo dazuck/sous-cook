@@ -304,7 +304,8 @@ describe("portrait: the strip map's chain (call 6)", () => {
 
   it("first sends later steps into N more, then sets the next step's name on 2 lines at 32 over N more's room (Codex's case)", () => {
     // "Adjust hummus texture with ice water": two lines at 32 fit over N more, so it never takes three.
-    const { d } = at("chicken-pita-wraps", "first", 19);
+    // The pita wraps' three prep pages come first (DS v1.59): this step was 19 nexts in under the one Prep screen.
+    const { d } = at("chicken-pita-wraps", "first", 21);
     expect(d.fits).toBe(true);
     expect(d.rung).toBe(3);
     const { more, lab, into } = overMore(d);
@@ -340,7 +341,8 @@ describe("portrait: the strip map's chain (call 6)", () => {
     // The doughnuts at their eleventh task were this case's real witness for the drop to 26 until
     // their plan was re-derived for the cook-fidelity prompt (2026-10-26): the cook is in no wait
     // there any more. The synthetic chain above still drives the drop to 26.
-    for (const [nm, mode, pos] of [["chicken-pita-wraps", "first", 1]] as const) {
+    // Its first cooking step, after three prep pages (DS v1.59).
+    for (const [nm, mode, pos] of [["chicken-pita-wraps", "first", 3]] as const) {
       const { d } = at(nm, mode, pos);
       expect(d.fits, nm).toBe(true);
       expect(d.rung, nm).toBeLessThanOrEqual(5);

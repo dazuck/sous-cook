@@ -125,14 +125,15 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | Cookpacks shelf: bundled 1896 book only, no household book or saved-for-later | `app/e2e/shelf.spec.ts` (SHELF-1) |
 | Cookpacks pack view: recipe list order and search filtering | `app/e2e/shelf.spec.ts` (SHELF-2) |
 | Cookpacks pack view: queueing Doughnuts I with stored plan and no `ensureCookPlan` request | `app/e2e/shelf.spec.ts` (SHELF-3) |
-| Cook mode: opening timetable, Prep screen, Next/Previous step, reload resume | `app/e2e/cook.spec.ts` (COOK-1) |
+| Cook mode: opening timetable with its Get out list, the prep page before the first cooking step, Next/Previous step, reload resume | `app/e2e/cook.spec.ts` (COOK-1) |
+| Cook mode: two small prep jobs as one page of tick rows, a tick kept across reload, Next leaving prep | `app/e2e/cook.spec.ts` (COOK-4) |
 | Cook mode: starting a step timer and persistence across reload | `app/e2e/cook.spec.ts` (COOK-2) |
 | Cook mode: walking to end, armed Done cooking finish, home and Made recently update | `app/e2e/cook.spec.ts` (COOK-3) |
 | No model key: as-written cook with pending then failed prep plan note | `app/e2e/no-key.spec.ts` (NOKEY-1) |
 | No model key: settled plan error keeps as-written view and error unchanged | `app/e2e/no-key.spec.ts` (NOKEY-2) |
 | No model key: paste import surfaces missing-key error without adding a row | `app/e2e/no-key.spec.ts` (NOKEY-3) |
 | No model key: local JSON-LD URL import extracts and queues recipe | `app/e2e/no-key.spec.ts` (NOKEY-4) |
-| No model key: Ask Sous shows unreachable message when model key is absent | `app/e2e/no-key.spec.ts` (NOKEY-5) |
+| No model key: Ask Sous opens from the top line's capsule (beside the step in landscape, a full sheet upright), sends a prep page's jobs with no step, and shows the unreachable message | `app/e2e/no-key.spec.ts` (NOKEY-5) |
 | Single-kitchen mode: `/` redirect, `/api/auth/get-session` 404, no sign-in/out controls | `app/e2e/single-kitchen.spec.ts` (SINGLE-1) |
 | Version endpoint: `/api/version` answers 200 with only `commit` and matches `SOUS_RELEASE_COMMIT` when set | `app/e2e/version.spec.ts` (VERSION-2) |
 | Deployed copy smoke check: `/api/version`, `/kitchen`, `/kitchen/cookpacks`, and a book page (read-only) | `app/e2e/smoke.spec.ts` (SMOKE-1, SMOKE-2, SMOKE-3) |

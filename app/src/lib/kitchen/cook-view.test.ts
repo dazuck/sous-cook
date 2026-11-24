@@ -4,6 +4,7 @@ import { identityPlan, leadMinutes, parseCookPlan } from "./cook-plan";
 import {
   COOK_COPY,
   aheadFirst,
+  askInHand,
   askStepText,
   back,
   cookView,
@@ -14,11 +15,13 @@ import {
   initialCookState,
   isDone,
   jumpTo,
+  levelSaid,
   bindNumbers,
   missedAheadQuestion,
   minutesLabel,
   miseBefore,
   next,
+  prepPages,
   screenForSourceStep,
   screensOf,
   setMode,
@@ -52,6 +55,16 @@ function steps(state: CookState, n: number, p: CookPlan = plan): CookState {
 const keys = (state: CookState, p: CookPlan = plan) =>
   view(state, p).stack.map((l) => l.key);
 
+/**
+ * How many prep pages "Prep first" steps through before the first cooking
+ * step (DS v1.59; `cook-prep-pages.test.ts` has the pages' own tests). Before
+ * that slice Prep first opened on one Prep screen, so a cooking step that was
+ * `steps(start, k)` is now `steps(start, pagesOf(p) + k - 1)`.
+ */
+const pagesOf = (p: CookPlan) => prepPages(p, "first").length;
+/** The zucchini's two: the three sauté jobs as tick rows, then the greens. */
+const P = pagesOf(plan);
+
 /** Chapter states by id: names can repeat, ids cannot. */
 function chapterStates(state: CookState, p: CookPlan = plan) {
   return Object.fromEntries(
@@ -73,50 +86,59 @@ const longSaute: CookPlan = {
 describe("cookView: prep first", () => {
   const start = initialCookState("first");
 
-  it("opens on the Prep screen with the mode toggle", () => {
+  // Prep first opened on the Prep screen until DS v1.59; it now opens on its
+  // first prep page. The Prep screen's own content (the mise list with its
+  // "when", the notes) is As I go's, and is tested there.
+  it("opens on its first prep page, not a Prep screen", () => {
     const v = view(start);
-    expect(v.onPrep).toBe(true);
-    expect(v.showModeToggle).toBe(true);
-    expect(keys(start)).toEqual(["prep"]);
-    expect(v.prep!.mise.map((m) => [m.id, m.done, m.when])).toEqual([
-      ["onion", false, null],
-      ["scape", false, null],
-      ["zuc", false, null],
-      ["greens", false, "while you sauté"],
+    expect(v.onPrep).toBe(false);
+    expect(v.showModeToggle).toBe(false);
+    expect(v.prep).toBeNull();
+    expect(keys(start)).toEqual(["onion+scape+zuc"]);
+    expect(v.now!.kind).toBe("mise");
+    expect(v.now!.prep).toEqual({ count: { at: 1, of: 2 }, dish: "Filling" });
+    expect(v.now!.rows!.map((r) => [r.id, r.done])).toEqual([
+      ["onion", false],
+      ["scape", false],
+      ["zuc", false],
     ]);
-    expect(v.prep!.aheadNote).toBe(COOK_COPY.nothingAhead);
     expect(v.note).toBeNull();
   });
 
-  it("marks movable mise rows with their in-cook window in prep first, and clears when once ticked", () => {
-    const ticked = toggleTick(plan, start, "greens");
-    expect(view(ticked).prep!.mise.map((m) => [m.id, m.done, m.when])).toEqual([
-      ["onion", false, null],
-      ["scape", false, null],
-      ["zuc", false, null],
-      ["greens", true, null],
+  it("a tick on a prep page marks its row, and a second clears it", () => {
+    const ticked = toggleTick(plan, start, "scape");
+    expect(view(ticked).now!.rows!.map((r) => [r.id, r.done])).toEqual([
+      ["onion", false],
+      ["scape", true],
+      ["zuc", false],
     ]);
+    expect(view(toggleTick(plan, ticked, "scape")).now!.rows!.every((r) => !r.done)).toBe(true);
+    // The greens are a page of their own, a page of one job: nothing to tick.
+    expect(toggleTick(plan, start, "greens")).toBe(start);
+    expect(toggleTick(plan, next(plan, start), "greens")).toEqual(next(plan, start));
   });
 
-  it("says once that the prep is assumed when none of it is in the recipe", () => {
+  it("As I go's Prep says once that the prep is assumed when none of it is in the recipe", () => {
+    const go = initialCookState("go");
     expect(plan.tasks.filter((t) => t.kind === "mise").every((t) => t.implied)).toBe(true);
-    expect(view(start).prep!.assumedNote).toBe(COOK_COPY.allAssumed);
+    expect(view(go).prep!.assumedNote).toBe(COOK_COPY.allAssumed);
     const listed: CookPlan = {
       ...plan,
       tasks: plan.tasks.map((t) =>
         t.id === "onion" ? { ...t, sourceStep: 0, implied: false } : t,
       ),
     };
-    expect(view(start, listed).prep!.assumedNote).toBeNull();
+    expect(view(go, listed).prep!.assumedNote).toBeNull();
   });
 
-  it("hides the toggle once the cook moves off the Prep screen", () => {
-    const s = next(plan, start);
+  it("comes to the first cooking step after its prep pages", () => {
+    const s = steps(start, P);
     const v = view(s);
     expect(v.onPrep).toBe(false);
     expect(v.showModeToggle).toBe(false);
     expect(v.prep).toBeNull();
     expect(keys(s)).toEqual(["saute"]);
+    expect(v.now!.prep).toBeUndefined();
     expect(v.stack[0]).toMatchObject({
       text: plan.tasks[4].text,
       ingredientIdx: [0, 1, 2, 3],
@@ -125,18 +147,19 @@ describe("cookView: prep first", () => {
     });
   });
 
-  it("ticks off all the prep when the cook leaves the Prep screen", () => {
-    const s = next(plan, start);
-    expect([...s.ticked]).toEqual(["onion", "scape", "zuc", "greens"]);
-    expect(s.passed.size).toBe(0);
+  it("counts a prep page's jobs done as the cook steps past it, and ticks nothing", () => {
+    const s = steps(start, P);
+    expect([...s.passed]).toEqual(["onion", "scape", "zuc", "greens"]);
+    expect(s.ticked.size).toBe(0);
   });
 
   it("recedes the stack as the cook advances, down to the last step", () => {
-    expect(keys(steps(start, 2))).toEqual(["fry"]);
-    const last = steps(start, 5);
+    expect(keys(steps(start, 1))).toEqual(["greens"]);
+    expect(keys(steps(start, P + 1))).toEqual(["fry"]);
+    const last = steps(start, P + 4);
     expect(keys(last)).toEqual(["chili"]);
     expect(view(last).isLast).toBe(true);
-    expect(view(steps(start, 4)).isLast).toBe(false);
+    expect(view(steps(start, P + 3)).isLast).toBe(false);
   });
 
   it("has Prep and one chapter of the five steps, named Cook: no wait reaches 10 minutes", () => {
@@ -145,11 +168,13 @@ describe("cookView: prep first", () => {
       ["stretch:saute", "Cook"],
     ]);
     expect(chapterStates(start)).toEqual({ prep: "now", "stretch:saute": "next" });
-    expect(chapterStates(steps(start, 2))).toEqual({ prep: "done", "stretch:saute": "now" });
+    // On the second prep page Prep is still the chapter in hand.
+    expect(chapterStates(steps(start, 1))).toEqual({ prep: "now", "stretch:saute": "next" });
+    expect(chapterStates(steps(start, P))).toEqual({ prep: "done", "stretch:saute": "now" });
   });
 
   it("breaks the chapters where the cook's hands come free, named by their opening move", () => {
-    const s = next(longSaute, start);
+    const s = steps(start, P, longSaute);
     expect(view(s, longSaute).chapters!.map((c) => [c.id, c.name])).toEqual([
       ["prep", "Prep"],
       ["stretch:saute", "Sauté"],
@@ -181,17 +206,21 @@ describe("cookView: place within the chapter", () => {
     Object.fromEntries(view(state, p).chapters!.map((c) => [c.id, c.place]));
 
   it("counts the current chapter's screens, in cook order, and only the current one's", () => {
-    expect(places(steps(start, 1))).toEqual({
+    expect(places(steps(start, P))).toEqual({
       prep: null,
       "stretch:saute": { at: 1, of: 5 },
     });
-    expect(places(steps(start, 3))["stretch:saute"]).toEqual({ at: 3, of: 5 });
-    expect(places(steps(start, 5))["stretch:saute"]).toEqual({ at: 5, of: 5 });
+    expect(places(steps(start, P + 2))["stretch:saute"]).toEqual({ at: 3, of: 5 });
+    expect(places(steps(start, P + 4))["stretch:saute"]).toEqual({ at: 5, of: 5 });
+    // Prep first's Prep chapter is its prep pages, counted the same way.
+    expect(places(start)).toEqual({ prep: { at: 1, of: 2 }, "stretch:saute": null });
+    expect(places(steps(start, 1)).prep).toEqual({ at: 2, of: 2 });
   });
 
   it("gives no place on a chapter of one screen: '1 of 1' says nothing", () => {
-    expect(places(start)).toEqual({ prep: null, "stretch:saute": null });
-    const onSaute = next(longSaute, start);
+    // As I go's Prep is the one Prep screen.
+    expect(places(initialCookState("go"))).toEqual({ prep: null, "stretch:saute": null });
+    const onSaute = steps(start, P, longSaute);
     expect(places(onSaute, longSaute)).toEqual({
       prep: null,
       "stretch:saute": null,
@@ -209,6 +238,21 @@ describe("cookView: as I go", () => {
   // Into the steps by a jump, which ticks nothing, so the mise done before
   // cooking still has its own card.
   const inSteps = jumpTo(plan, start, 1);
+
+  it("opens on the Prep screen with the mode toggle", () => {
+    const v = view(start);
+    expect(v.onPrep).toBe(true);
+    expect(v.showModeToggle).toBe(true);
+    expect(keys(start)).toEqual(["prep"]);
+    expect(v.prep!.mise.map((m) => [m.id, m.done, m.when])).toEqual([
+      ["onion", false, null],
+      ["scape", false, null],
+      ["zuc", false, null],
+      ["greens", false, "while you sauté"],
+    ]);
+    expect(v.prep!.aheadNote).toBe(COOK_COPY.nothingAhead);
+    expect(v.note).toBeNull();
+  });
 
   it("splits the mise at the first cooking step: that before ticks, the rest says when", () => {
     const v = view(start);
@@ -248,8 +292,9 @@ describe("cookView: as I go", () => {
   it("tells prep lines from cook lines, so the stack can mark the prep", () => {
     expect(view(start).stack.map((l) => l.kind)).toEqual(["prep"]);
     expect(view(inSteps).stack.map((l) => l.kind)).toEqual(["mise"]);
+    // Prep first opens on a prep page, which is a step of mise (DS v1.59).
     const first = initialCookState("first");
-    expect(view(first).stack.map((l) => l.kind)).toEqual(["prep"]);
+    expect(view(first).stack.map((l) => l.kind)).toEqual(["mise"]);
   });
 
   it("counts the mise before cooking done on leaving Prep, and leaves the rest to the steps", () => {
@@ -353,13 +398,23 @@ describe("cookView: as I go", () => {
     expect(v.prep!.beforeNote).toBe(COOK_COPY.nothingBefore);
     expect(v.stack[0].minutes).toBeNull();
     expect(askStepText(v)).toBeUndefined();
-    expect(view(initialCookState("first"), stew).prep!.beforeNote).toBeNull();
+    // Prep first has no Prep screen to say it on: the parsley is its one prep page.
+    const first = view(initialCookState("first"), stew);
+    expect(first.prep).toBeNull();
+    expect(first.now!.key).toBe("parsley");
+    expect(first.now!.prep).toEqual({ count: null, dish: null });
   });
 });
 
 describe("cookView: re-entering Prep", () => {
+  // The Prep screen is As I go's since DS v1.59 (Prep first walks its prep
+  // pages like any step), so re-entering it is tested in As I go: the sauté,
+  // the greens, the fry, then the stir.
+  const atStirGo = () => steps(initialCookState("go"), 4);
+
   it("brings the toggle back only on the Prep screen", () => {
-    const atStir = steps(initialCookState("first"), 3);
+    const atStir = atStirGo();
+    expect(keys(atStir)[0]).toBe("stir");
     expect(view(atStir).showModeToggle).toBe(false);
     const prep = jumpTo(plan, atStir, 0);
     expect(prep.pos).toBe(0);
@@ -368,71 +423,74 @@ describe("cookView: re-entering Prep", () => {
   });
 
   it("keeps finished work done and resumes at the first unfinished step", () => {
-    const atStir = steps(initialCookState("first"), 3);
-    const prep = jumpTo(plan, atStir, 0);
+    const prep = jumpTo(plan, atStirGo(), 0);
     expect(view(prep).prep!.mise.every((m) => m.done)).toBe(true);
     const resumed = next(plan, prep);
     expect(keys(resumed)[0]).toBe("stir");
   });
 
   it("previews where Next goes, not the steps already done", () => {
-    const atStir = steps(initialCookState("first"), 3);
-    const prep = jumpTo(plan, atStir, 0);
+    const prep = jumpTo(plan, atStirGo(), 0);
     const resumed = next(plan, prep);
     expect(keys(prep)).toEqual(["prep"]);
     expect(keys(resumed)[0]).toBe("stir");
   });
 
-  it("previews the resumed steps in the mode just picked", () => {
-    const atGreens = steps(initialCookState("go"), 2);
-    const first = setMode(jumpTo(plan, atGreens, 0), "first");
-    expect(keys(first)).toEqual(["prep"]);
-    expect(keys(next(plan, first))[0]).toBe("fry");
-  });
-
-  it("switching to As I go mid-cook does not send the cook back to the prep", () => {
-    const atStir = steps(initialCookState("first"), 3);
-    const go = setMode(jumpTo(plan, atStir, 0), "go");
-    // The prep done up front stays out of the steps.
-    expect(screensOf(plan, "go", go.ticked)).toHaveLength(6);
-    const resumed = next(plan, go);
-    expect(keys(resumed)[0]).toBe("stir");
-    expect(resumed.pos).toBe(3);
-  });
-
-  it("switching to Prep first mid-cook finishes the rest of the prep up front", () => {
+  it("switching to Prep first mid-cook lands on its first prep page, what was done already ticked", () => {
     // As I go: the sauté mise ticked on leaving Prep, past the sauté, now on
     // the greens.
     const atGreens = steps(initialCookState("go"), 2);
     expect(keys(atGreens)[0]).toBe("greens");
     const first = setMode(jumpTo(plan, atGreens, 0), "first");
-    const v = view(first);
-    expect(v.prep!.mise.map((m) => [m.id, m.done])).toEqual([
+    expect(keys(first)).toEqual(["onion+scape+zuc"]);
+    expect(view(first).now!.rows!.map((r) => [r.id, r.done])).toEqual([
       ["onion", true],
       ["scape", true],
       ["zuc", true],
-      ["greens", false],
     ]);
-    expect(keys(next(plan, first))[0]).toBe("fry");
+    // Forward walks the pages like any step: the greens, still to do, are next.
+    const onGreens = next(plan, first);
+    expect(keys(onGreens)).toEqual(["greens"]);
+    expect(isDone(onGreens, "greens")).toBe(false);
   });
 
-  it("only changes mode on the Prep screen", () => {
+  it("switching to As I go mid-cook does not send the cook back to the prep", () => {
+    const atStir = steps(initialCookState("first"), P + 2);
+    expect(keys(atStir)[0]).toBe("stir");
+    const go = setMode(jumpTo(plan, atStir, 0), "go");
+    expect(view(go).onPrep).toBe(true);
+    const resumed = next(plan, go);
+    expect(keys(resumed)[0]).toBe("stir");
+    // The prep done before cooking is out of the steps; the greens, passed on
+    // their prep page, stay a step the cook has done.
+    expect(screensOf(plan, "go", resumed.ticked)).toHaveLength(7);
+    expect(resumed.pos).toBe(4);
+    expect(isDone(resumed, "greens")).toBe(true);
+  });
+
+  it("only changes mode at the first screen", () => {
     const s = steps(initialCookState("first"), 2);
     expect(setMode(s, "go")).toBe(s);
+    // The second prep page is not the first screen either.
+    const onGreens = next(plan, initialCookState("first"));
+    expect(setMode(onGreens, "go")).toBe(onGreens);
   });
 
   it("unticking reopens mise the cook passed in the steps", () => {
-    // As I go, past the greens chopped during the sauté, then back on Prep in
-    // Prep first: the greens were not actually chopped.
-    const past = steps(initialCookState("go"), 3);
+    // As I go, the sauté mise passed as a step (never ticked), then back at
+    // the start and over to Prep first: the onion was not actually sliced.
+    const past = next(plan, jumpTo(plan, initialCookState("go"), 1));
+    expect(past.passed.has("onion")).toBe(true);
+    expect(past.ticked.has("onion")).toBe(false);
     const first = setMode(jumpTo(plan, past, 0), "first");
-    expect(view(first).prep!.mise.find((m) => m.id === "greens")!.done).toBe(true);
-    const prep = toggleTick(plan, first, "greens");
-    expect(prep.passed.has("greens")).toBe(false);
-    expect(view(prep).prep!.mise.find((m) => m.id === "greens")).toMatchObject({
-      done: false,
-      before: true,
-    });
+    expect(view(first).now!.rows!.find((r) => r.id === "onion")!.done).toBe(true);
+    const page = toggleTick(plan, first, "onion");
+    expect(page.passed.has("onion")).toBe(false);
+    expect(view(page).now!.rows!.map((r) => [r.id, r.done])).toEqual([
+      ["onion", false],
+      ["scape", true],
+      ["zuc", true],
+    ]);
   });
 
   it("an untick on Prep survives Next: the mise comes back as a step", () => {
@@ -447,19 +505,22 @@ describe("cookView: re-entering Prep", () => {
     expect(next(plan, toggleTick(plan, prep, "onion")).ticked.has("onion")).toBe(true);
   });
 
-  it("in Prep first, Next counts an unticked row done: it has no step to come back as", () => {
+  it("in Prep first, Forward counts an unticked row done: it has no step to come back as", () => {
     // Also reached by unticking in As I go, then switching.
     const back = jumpTo(plan, next(plan, initialCookState("go")), 0);
     const first = setMode(toggleTick(plan, back, "onion"), "first");
+    expect(view(first).now!.rows!.find((r) => r.id === "onion")!.done).toBe(false);
     const resumed = next(plan, first);
-    expect(resumed.ticked.has("onion")).toBe(true);
+    expect(isDone(resumed, "onion")).toBe(true);
     const onLast = steps(resumed, screensOf(plan, "first", resumed.ticked).length);
     expect(view(onLast).chapters!.find((c) => c.id === "prep")!.state).toBe("done");
   });
 
-  it("only ticks on the Prep screen", () => {
+  it("only ticks on the Prep screen or a prep page's rows", () => {
     const s = steps(initialCookState("go"), 2);
     expect(toggleTick(plan, s, "greens")).toBe(s);
+    const cooking = steps(initialCookState("first"), P);
+    expect(toggleTick(plan, cooking, "onion")).toBe(cooking);
   });
 });
 
@@ -467,52 +528,105 @@ describe("cookView: moving around", () => {
   const start = initialCookState("first");
 
   it("back reopens the step it lands on", () => {
-    const atStir = steps(start, 3);
+    const atStir = steps(start, P + 2);
     const s = back(plan, atStir);
     expect(keys(s)[0]).toBe("fry");
     expect(s.passed.has("fry")).toBe(false);
     expect(s.passed.has("saute")).toBe(true);
   });
 
-  it("back from the first step returns to Prep without undoing the prep", () => {
-    const s = back(plan, next(plan, start));
-    expect(s.pos).toBe(0);
+  it("back from the first cooking step returns to the last prep page, reopening it and keeping the ticks", () => {
+    const ticked = toggleTick(plan, start, "onion");
+    const s = back(plan, steps(ticked, P));
+    expect(s.pos).toBe(P - 1);
+    expect(keys(s)).toEqual(["greens"]);
+    expect(s.passed.has("greens")).toBe(false);
+    // The page before stays passed, and its tick stays.
+    expect(s.passed.has("scape")).toBe(true);
     expect(s.ticked.has("onion")).toBe(true);
-    expect(back(plan, s)).toBe(s);
+    const atStart = back(plan, s);
+    expect(atStart.pos).toBe(0);
+    expect(view(atStart).now!.rows!.map((r) => r.done)).toEqual([true, false, false]);
+    expect(back(plan, atStart)).toBe(atStart);
   });
 
   it("jumping reopens the landing step and nothing else", () => {
-    const atStuff = steps(start, 4);
-    const s = jumpTo(plan, atStuff, 1);
+    const atStuff = steps(start, P + 3);
+    const s = jumpTo(plan, atStuff, P);
     expect(keys(s)[0]).toBe("saute");
     expect(s.passed.has("saute")).toBe(false);
     expect(s.passed.has("fry")).toBe(true);
   });
 
   it("finds the screen for a source step in either mode", () => {
-    expect(screenForSourceStep(plan, start, 0)).toBe(1);
-    expect(screenForSourceStep(plan, start, 4)).toBe(5);
+    expect(screenForSourceStep(plan, start, 0)).toBe(P);
+    expect(screenForSourceStep(plan, start, 4)).toBe(P + 4);
     expect(screenForSourceStep(plan, initialCookState("go"), 0)).toBe(2);
   });
 
+  // Review round 1 of prep pages: a prep page is a step screen too, and comes first, so Whole
+  // recipe's Go on a recipe step that is both prepped and cooked landed on its prep page.
+  it("Go on a recipe step takes its cooking screen, not a prep page that cites the step too", () => {
+    let both = 0;
+    for (const { name, plan: p } of derivedCorpus()) {
+      const state = initialCookState("first");
+      const screens = screensOf(p, "first", state.ticked);
+      const cites = (pos: number, step: number) => {
+        const s = screens[pos]!;
+        return s.kind === "step" && s.item.tasks.some((t) => t.sourceStep === step);
+      };
+      const stepsCited = new Set(p.tasks.flatMap((t) => (t.sourceStep === null ? [] : [t.sourceStep])));
+      for (const step of stepsCited) {
+        const cooking = screens.findIndex((s, pos) => s.kind === "step" && !s.prep && cites(pos, step));
+        const page = screens.findIndex((s, pos) => s.kind === "step" && s.prep === true && cites(pos, step));
+        if (cooking === -1) continue;
+        if (page !== -1) both++;
+        expect(screenForSourceStep(p, state, step), `${name}, recipe step ${String(step + 1)}`).toBe(cooking);
+      }
+    }
+    // The corpus holds such steps (the crispy-skin salmon's among them).
+    expect(both).toBeGreaterThan(0);
+  });
+
+  it("Go on a recipe step that is only prepped takes its first prep page", () => {
+    let only = 0;
+    for (const { name, plan: p } of derivedCorpus()) {
+      const state = initialCookState("first");
+      const screens = screensOf(p, "first", state.ticked);
+      const cites = (pos: number, step: number) => {
+        const s = screens[pos]!;
+        return s.kind === "step" && s.item.tasks.some((t) => t.sourceStep === step);
+      };
+      const stepsCited = new Set(p.tasks.flatMap((t) => (t.sourceStep === null ? [] : [t.sourceStep])));
+      for (const step of stepsCited) {
+        if (screens.some((s, pos) => s.kind === "step" && !s.prep && cites(pos, step))) continue;
+        const page = screens.findIndex((s, pos) => s.kind === "step" && s.prep === true && cites(pos, step));
+        if (page === -1) continue;
+        only++;
+        expect(screenForSourceStep(p, state, step), `${name}, recipe step ${String(step + 1)}`).toBe(page);
+      }
+    }
+    expect(only).toBeGreaterThan(0);
+  });
+
   it("counts ingredients used once a cook step is passed, not when prepped", () => {
-    expect(usedIngredients(plan, next(plan, start))).toEqual(new Set());
-    const s = steps(start, 2);
+    expect(usedIngredients(plan, steps(start, P))).toEqual(new Set());
+    const s = steps(start, P + 1);
     expect(usedIngredients(plan, s)).toEqual(new Set([0, 1, 2, 3]));
   });
 
-  it("leaves Prep undone after a jump past it, until the prep is ticked", () => {
-    const s = jumpTo(plan, start, 3);
+  it("leaves Prep undone after a jump past it, until the prep is done", () => {
+    const s = jumpTo(plan, start, P + 2);
     expect(chapterStates(s).prep).toBe("next");
-    const partly = jumpTo(plan, toggleTick(plan, start, "onion"), 3);
+    const partly = jumpTo(plan, toggleTick(plan, start, "onion"), P + 2);
     expect(chapterStates(partly).prep).toBe("running");
-    // Next ticks it all, so a Next then a jump reads done.
-    expect(chapterStates(jumpTo(plan, next(plan, start), 3)).prep).toBe("done");
+    // Stepping through the pages counts them done, so that then a jump reads done.
+    expect(chapterStates(jumpTo(plan, steps(start, P), P + 2)).prep).toBe("done");
   });
 
   it("reads the stretches a jump skipped as still to come", () => {
     // The long sauté: from the sauté straight to the stir, the sauté never done.
-    const s = jumpTo(longSaute, next(longSaute, start), 3);
+    const s = jumpTo(longSaute, steps(start, P, longSaute), P + 2);
     expect(keys(s, longSaute)[0]).toBe("stir");
     expect(chapterStates(s, longSaute)).toEqual({
       prep: "done",
@@ -524,9 +638,9 @@ describe("cookView: moving around", () => {
   it("keeps a stretch passed before a jump back done", () => {
     // At the chili oil, then back: the sauté and the wraps were done; the
     // chili oil never was.
-    const atChili = steps(start, 5, longSaute);
+    const atChili = steps(start, P + 4, longSaute);
     expect(keys(atChili, longSaute)[0]).toBe("chili");
-    expect(chapterStates(jumpTo(longSaute, atChili, 1), longSaute)).toEqual({
+    expect(chapterStates(jumpTo(longSaute, atChili, P), longSaute)).toEqual({
       prep: "done",
       "stretch:saute": "now",
       "stretch:fry": "running",
@@ -535,12 +649,14 @@ describe("cookView: moving around", () => {
 
   it("ignores a jump outside the sequence", () => {
     const s = steps(start, 2);
-    expect(jumpTo(plan, s, 6)).toBe(s);
+    // Two prep pages and five cooking steps: 7 screens, the last at 6.
+    expect(view(s).screens).toBe(P + 5);
+    expect(jumpTo(plan, s, P + 5)).toBe(s);
     expect(jumpTo(plan, s, -1)).toBe(s);
   });
 
   it("refuses to render a position outside the sequence", () => {
-    expect(() => view({ ...start, pos: 6 })).toThrow(RangeError);
+    expect(() => view({ ...start, pos: P + 5 })).toThrow(RangeError);
   });
 });
 
@@ -1197,9 +1313,22 @@ describe("cookView: other plan shapes", () => {
       view(s, paste).prep!.mise.filter((m) => m.done).map((m) => m.id);
 
     it("ticking a task ticks what it needs", () => {
+      // Prep first (DS v1.59): the peeling and the chopping are one prep page
+      // of tick rows; the pounding is a page of its own, with nothing to tick.
       const first = setMode(start, "first");
-      const s = toggleTick(paste, first, "pound");
-      expect(done(s)).toEqual(["peel", "pound"]);
+      expect(keys(first, paste)).toEqual(["peel+chop"]);
+      expect(toggleTick(paste, first, "pound")).toBe(first);
+      // A row made from another row's work ticks that too.
+      const mash: CookPlan = {
+        ...paste,
+        tasks: paste.tasks.map((t) => (t.id === "chop" ? { ...t, needs: ["peel"] } : t)),
+      };
+      expect(keys(first, mash)).toEqual(["peel+chop"]);
+      const rows = (s: CookState) => view(s, mash).now!.rows!.map((r) => [r.id, r.done]);
+      const s = toggleTick(mash, first, "chop");
+      expect(rows(s)).toEqual([["peel", true], ["chop", true]]);
+      // And unticking the peeling unticks the chopping made from it.
+      expect(rows(toggleTick(mash, s, "peel"))).toEqual([["peel", false], ["chop", false]]);
       // As I go, the pounding is done in the steps, so it has no tick here.
       expect(toggleTick(paste, start, "pound")).toBe(start);
     });
@@ -1255,7 +1384,9 @@ function derivedCorpus(): { name: string; plan: CookPlan }[] {
  */
 function aheadOrderBreaks(p: CookPlan): string[] {
   // A plan with no Prep screen (nothing ahead, no mise) has nothing to order.
-  const groups = cookView(p, DERIVED, initialCookState("first")).prep?.ahead ?? [];
+  // As I go's Prep lists the make-ahead work for every plan that has any
+  // (Prep first shows the Prep screen only where the plan has no mise).
+  const groups = cookView(p, DERIVED, initialCookState("go")).prep?.ahead ?? [];
   const at = new Map<string, [number, number]>();
   groups.forEach((g, gi) => g.items.forEach((a, ai) => at.set(a.id, [gi, ai])));
   const byId = new Map(p.tasks.map((t) => [t.id, t]));
@@ -1663,7 +1794,9 @@ describe("cookView: now alone in the stack", () => {
     expect(glances(next(plan, go))).toEqual(["Sauté"]);
     // "Then" reads only ahead, as the text does.
     expect(glances(steps(go, 3))[0]).toBe("Fry parathas");
-    expect(glances(next(plan, initialCookState("first")))).toEqual(["Sauté"]);
+    expect(glances(steps(initialCookState("first"), P))).toEqual(["Sauté"]);
+    // A prep page glances as As I go's prep step does: its labels as one run.
+    expect(glances(initialCookState("first"))).toEqual(["Slice onion, mince scape, and cut zucchini"]);
   });
 
   it("joins merged mise's labels as one run, with no closing stop", () => {
@@ -1824,7 +1957,10 @@ describe("the chart's read and Go: one numbering, Prep included (N2 verify round
         const landed = goToMark(p, s, m.screen);
         const screen = screensOf(p, landed.mode, landed.ticked)[landed.pos];
         if (m.key === "prep") {
-          expect(screen.kind, `pos ${s.pos}: Prep's Go`).toBe("prep");
+          // Prep's Go: the Prep screen, or in Prep first one of its prep pages.
+          const prepPage = screen.kind === "step" && screen.prep === true;
+          expect(screen.kind === "prep" || prepPage, `pos ${s.pos}: Prep's Go`).toBe(true);
+          expect(prepPage, `pos ${s.pos}: Prep's Go`).toBe(pagesOf(p) > 0 && s.mode === "first");
           continue;
         }
         const at = `pos ${s.pos} ticked [${[...s.ticked]}]: mark ${m.key}`;
@@ -1868,7 +2004,10 @@ describe("cookView: the stretch in hand and the eyebrow's place (N2-6)", () => {
   it("counts down the roast's stretches, Prep first, and turns over after each break", () => {
     const first = initialCookState("first");
     const places: Array<string | undefined> = [];
-    let s = next(roast, first);
+    // From the first cooking step: the roast's prep pages all say "Prep".
+    let s = steps(first, pagesOf(roast), roast);
+    expect(pagesOf(roast)).toBe(4);
+    for (let i = 0; i < pagesOf(roast); i++) expect(view(steps(first, i, roast), roast).place?.long).toBe("Prep");
     for (;;) {
       places.push(view(s, roast).place?.long);
       if (view(s, roast).isLast) break;
@@ -1896,26 +2035,27 @@ describe("cookView: the stretch in hand and the eyebrow's place (N2-6)", () => {
   });
 
   it("steps down its ladder: without 'about', then the count alone", () => {
-    const s = steps(initialCookState("first"), 5, roast);
+    const R = pagesOf(roast);
+    const s = steps(initialCookState("first"), R + 4, roast);
     expect(view(s, roast).stretch).toEqual({ left: 4, free: 50 });
     expect(view(s, roast).place).toEqual({
       long: "4 steps, then about 50 min free",
       short: "4 steps, then 50 min free",
       count: "4 steps",
     });
-    const beforeBreak = steps(initialCookState("first"), 8, roast);
+    const beforeBreak = steps(initialCookState("first"), R + 7, roast);
     expect(view(beforeBreak, roast).place).toEqual({
       long: "this step, then about 50 min free",
       short: "this step, then 50 min free",
       count: "this step",
     });
-    const toTable = steps(initialCookState("first"), 9, roast);
+    const toTable = steps(initialCookState("first"), R + 8, roast);
     expect(view(toTable, roast).place).toEqual({
       long: "9 steps to the table",
       short: "9 steps to the table",
       count: "9 steps",
     });
-    const last = steps(initialCookState("first"), 17, roast);
+    const last = steps(initialCookState("first"), R + 16, roast);
     expect(view(last, roast).place).toEqual({ long: "last step", short: "last step", count: "last step" });
   });
 
@@ -1938,7 +2078,7 @@ describe("cookView: the stretch in hand and the eyebrow's place (N2-6)", () => {
 
   it("with no break, counts the steps to the table: tacos", () => {
     const tacos = byName.get("lime-shrimp-tacos")!;
-    const onFirst = next(tacos, initialCookState("first"));
+    const onFirst = steps(initialCookState("first"), pagesOf(tacos), tacos);
     expect(view(onFirst, tacos).place?.long).toBe("3 steps to the table");
     expect(view(steps(onFirst, 2, tacos), tacos).place?.long).toBe("last step");
   });
@@ -1964,7 +2104,7 @@ describe("minutesLabel", () => {
 describe("sourceStepStates", () => {
   const start = initialCookState("first");
 
-  it("marks nothing on the Prep screen before the cook starts", () => {
+  it("marks nothing before the cook starts: the first prep page cites no step", () => {
     expect(sourceStepStates(plan, start)).toEqual({
       current: new Set(),
       done: new Set(),
@@ -1972,15 +2112,15 @@ describe("sourceStepStates", () => {
   });
 
   it("marks the steps on screen current and the steps passed done", () => {
-    // Prep first: prep, sauté (0), fry (2), stir (1), stuff (3), chili (4).
-    expect(sourceStepStates(plan, steps(start, 3))).toEqual({
+    // Prep first: two prep pages, sauté (0), fry (2), stir (1), stuff (3), chili (4).
+    expect(sourceStepStates(plan, steps(start, P + 2))).toEqual({
       current: new Set([1]),
       done: new Set([0, 2]),
     });
   });
 
   it("reopens a step the cook goes back to", () => {
-    const s = jumpTo(plan, steps(start, 4), 1);
+    const s = jumpTo(plan, steps(start, P + 3), P);
     expect(sourceStepStates(plan, s)).toEqual({
       current: new Set([0]),
       done: new Set([2, 1]),
@@ -1997,7 +2137,7 @@ describe("sourceStepStates", () => {
     };
     const ticked = toggleTick(cited, start, "onion");
     expect(sourceStepStates(cited, ticked).done).toEqual(new Set());
-    const s = steps(initialCookState("first"), 2, cited);
+    const s = steps(initialCookState("first"), P + 1, cited);
     expect(sourceStepStates(cited, s).done).toEqual(new Set([0]));
   });
 
@@ -2121,7 +2261,7 @@ describe("aheadFirst", () => {
 
   it("gives the lead Prep opens with, over every derived plan", () => {
     for (const { name, plan: p } of derivedCorpus()) {
-      const first = cookView(p, DERIVED, initialCookState("first")).prep?.ahead[0];
+      const first = cookView(p, DERIVED, initialCookState("go")).prep?.ahead[0];
       const named = aheadFirst(p);
       if (!first) {
         expect(named, name).toBeNull();
@@ -2141,17 +2281,19 @@ describe("aheadFirst", () => {
 });
 
 describe("askStepText", () => {
-  const start = initialCookState("first");
+  // The Prep screen is As I go's (DS v1.59): there the prep to do before
+  // cooking is the three sauté jobs; the greens come up in the steps.
+  const start = initialCookState("go");
 
   it("gives Claude the prep still to do while the cook is on Prep", () => {
-    const s = toggleTick(plan, toggleTick(plan, start, "onion"), "greens");
+    const s = toggleTick(plan, start, "onion");
     expect(askStepText(view(s))).toBe(
       "Mince the garlic scape; Cut the zucchini into thin matchsticks",
     );
   });
 
   it("gives nothing on Prep once the prep is all done", () => {
-    const s = ["onion", "scape", "zuc", "greens"].reduce(
+    const s = ["onion", "scape", "zuc"].reduce(
       (acc, id) => toggleTick(plan, acc, id),
       start,
     );
@@ -2162,6 +2304,124 @@ describe("askStepText", () => {
     const s = next(plan, start);
     expect(askStepText(view(s))).toBe(view(s).stack[0].text);
     expect(askStepText(view(s))).toMatch(/^Sauté the onion/);
+  });
+
+  it("gives a prep page's jobs as one sentence, tick rows or not", () => {
+    const first = initialCookState("first");
+    expect(askStepText(view(first))).toBe(
+      "Slice the onion bulb, mince the garlic scape, and cut the zucchini into thin matchsticks.",
+    );
+    expect(askStepText(view(next(plan, first)))).toBe("Chop the onion greens");
+  });
+});
+
+describe("askInHand: what Ask is told the cook has in hand (review rounds 2 and 3)", () => {
+  const first = initialCookState("first");
+  // The zucchini's ingredients as the cook reads them, by stored index; the
+  // parathas' line is blank in the stored list.
+  const LINES = [
+    "2 zucchini",
+    "1 onion bulb",
+    "1 garlic scape",
+    "a pinch of cumin or curry powder",
+    "a handful of onion greens",
+    null,
+    "chili oil or Calabrian chile",
+  ];
+
+  it("is the screen's step and its place in the recipe on a cooking step", () => {
+    const v = view(steps(first, P));
+    expect(keys(steps(first, P))).toEqual(["saute"]);
+    expect(askInHand(false, v, 0, LINES)).toEqual({ text: v.stack[0].text, index: 0, prep: undefined });
+    // A screen that cites no step of the recipe still has its words.
+    expect(askInHand(false, v, undefined, LINES)).toEqual({
+      text: v.stack[0].text,
+      index: undefined,
+      prep: undefined,
+    });
+  });
+
+  it("on a prep page is prep, not a step: the page's jobs with their amounts and ticks (review round 3)", () => {
+    // A job may cite the step it gets ready for. The cook has not reached
+    // that step, so no step of the recipe is in hand.
+    const ticked = toggleTick(plan, first, "scape");
+    expect(askInHand(false, view(ticked), 0, LINES)).toEqual({
+      text: "Slice the onion bulb, mince the garlic scape, and cut the zucchini into thin matchsticks.",
+      index: undefined,
+      prep: {
+        jobs: [
+          { text: "Slice the onion bulb", amounts: ["1 onion bulb"], done: false },
+          { text: "Mince the garlic scape", amounts: ["1 garlic scape"], done: true },
+          { text: "Cut the zucchini into thin matchsticks", amounts: ["2 zucchini"], done: false },
+        ],
+      },
+    });
+    // A page of one job has no tick rows; it is one job all the same.
+    expect(askInHand(false, view(next(plan, first)), 1, LINES)).toEqual({
+      text: "Chop the onion greens",
+      index: undefined,
+      prep: { jobs: [{ text: "Chop the onion greens", amounts: ["a handful of onion greens"], done: false }] },
+    });
+  });
+
+  it("a prep job says no amount for a blank stored line or one the list does not hold", () => {
+    const odd: CookPlan = {
+      ...plan,
+      tasks: plan.tasks.map((t) => (t.id === "greens" ? { ...t, ingredientIdx: [5, 4, 40] } : t)),
+    };
+    expect(askInHand(false, view(next(odd, first), odd), undefined, LINES).prep).toEqual({
+      jobs: [{ text: "Chop the onion greens", amounts: ["a handful of onion greens"], done: false }],
+    });
+    // With no list at all the jobs still go, with no amounts.
+    expect(askInHand(false, view(next(plan, first)), undefined).prep).toEqual({
+      jobs: [{ text: "Chop the onion greens", amounts: [], done: false }],
+    });
+  });
+
+  it("on As I go's Prep screen is prep too: the jobs still to do before cooking, as the panel says them", () => {
+    const go = toggleTick(plan, initialCookState("go"), "onion");
+    expect(view(go).onPrep).toBe(true);
+    expect(askInHand(false, view(go), undefined, LINES)).toEqual({
+      text: "Mince the garlic scape; Cut the zucchini into thin matchsticks",
+      index: undefined,
+      prep: {
+        jobs: [
+          { text: "Mince the garlic scape", amounts: ["1 garlic scape"], done: false },
+          { text: "Cut the zucchini into thin matchsticks", amounts: ["2 zucchini"], done: false },
+        ],
+      },
+    });
+    // All done: still prep, with nothing left to name.
+    const done = ["scape", "zuc"].reduce((acc, id) => toggleTick(plan, acc, id), go);
+    expect(askInHand(false, view(done), undefined, LINES)).toEqual({
+      text: undefined,
+      index: undefined,
+      prep: { jobs: [] },
+    });
+  });
+
+  it("As I go's prep that comes up in the steps is a step in hand, not prep: the cook is cooking by then", () => {
+    // The greens come up after the saute is on; the screen is a step like any other.
+    let s = next(plan, initialCookState("go"));
+    while (!keys(s).includes("greens")) s = next(plan, s);
+    expect(view(s).now!.prep).toBeUndefined();
+    expect(askInHand(false, view(s), 1, LINES).prep).toBeUndefined();
+    expect(askInHand(false, view(s), 1, LINES).index).toBe(1);
+  });
+
+  it("is nothing on the opening: the whole cook shows there and no step is begun", () => {
+    // The view under the opening is already the first screen's; Ask must not say it is about that.
+    expect(askStepText(view(first))).toBeDefined();
+    expect(askInHand(true, view(first), 0, LINES)).toEqual({ text: undefined, index: undefined, prep: undefined });
+  });
+});
+
+describe("levelSaid: what a screen reader hears as a look-ahead level settles (review round 2)", () => {
+  it("names the level, and the way back by voice only where voice hears \"Sue\" unasked", () => {
+    expect(levelSaid(COOK_COPY.wholeCook, true)).toBe(`${COOK_COPY.wholeCook}. ${COOK_COPY.saySueBack}`);
+    // Where a tap starts each listen, voice is off, or there is no mic: the level alone.
+    expect(levelSaid(COOK_COPY.wholeCook, false)).toBe(`${COOK_COPY.wholeCook}.`);
+    expect(levelSaid(COOK_COPY.wholeCook, false)).not.toContain("Sue");
   });
 });
 

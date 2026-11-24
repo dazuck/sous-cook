@@ -175,13 +175,17 @@ describe("ServingStepper", () => {
       },
     ];
 
-    // 1. PrepScreen mount (via CookFlow on Prep)
+    // 1. PrepScreen mount (via CookFlow on Prep). The Prep screen is As I
+    // go's since DS v1.59: in Prep first this plan opens on a prep page, which
+    // carries no stepper (it is on Whole recipe, mount 2).
     const prepState = initialCookState("first");
     const prepView = cookView(
       ZUCCHINI_PLAN,
       { kind: "derived" },
-      prepState,
+      initialCookState("go"),
     );
+    expect(prepView.onPrep).toBe(true);
+    expect(cookView(ZUCCHINI_PLAN, { kind: "derived" }, prepState).onPrep).toBe(false);
     const { unmount: unmountPrep } = render(
       <CookFlow
         view={prepView}
@@ -200,7 +204,6 @@ describe("ServingStepper", () => {
         onAskAhead={vi.fn()}
         finish="ready"
         navEnabled
-        ask={{ label: "Ask Sous", onOpen: vi.fn() }}
       />,
     );
     expect(
@@ -270,7 +273,6 @@ describe("ServingStepper", () => {
         onAskAhead={vi.fn()}
         finish="ready"
         navEnabled
-        ask={{ label: "Ask Sous", onOpen: vi.fn() }}
       />,
     );
     expect(

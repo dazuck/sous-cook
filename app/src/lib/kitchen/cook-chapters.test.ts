@@ -17,7 +17,8 @@ import {
 } from "./cook-chapters";
 import {
   cookView,
-  hasPrepScreen,
+  hasPrep,
+  prepScreenCount,
   initialCookState,
   miseBefore,
   next,
@@ -57,7 +58,8 @@ function notation(stretches: Stretch[], prep: boolean): string {
 
 function corpusNotation(name: string, mode: PrepMode): string {
   const plan = corpusPlan(name);
-  return notation(stretchesOf(stepsAfterPrep(plan, mode)), hasPrepScreen(plan));
+  // "P·" is the Prep chapter: the Prep screen, or in Prep first its prep pages (DS v1.59).
+  return notation(stretchesOf(stepsAfterPrep(plan, mode)), hasPrep(plan));
 }
 
 let counter = 0;
@@ -298,7 +300,9 @@ describe("stretchesOf: the fixture corpus (slice C's table, its cap cuts merged)
 describe("chapters on the cook screen: Prep, then the stretches", () => {
   const chapters = (plan: CookPlan, mode: PrepMode) => {
     const start = initialCookState(mode);
-    const state = hasPrepScreen(plan) ? next(plan, start) : start;
+    // Past Prep: the Prep screen, or in Prep first each of its prep pages.
+    let state = start;
+    for (let i = 0; i < prepScreenCount(plan, mode); i++) state = next(plan, state);
     return cookView(plan, { kind: "derived" }, state).chapters!;
   };
 

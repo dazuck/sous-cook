@@ -1,12 +1,18 @@
 /**
  * Cook view: the pure model behind the cook screen.
  *
- * The cook steps through a sequence of screens: a Prep screen when the plan has
- * mise or ahead work, then the flow cards from `cook-schedule.ts`. This module
- * owns the position, what counts as done, and what each screen shows, so the
- * rules the UI depends on are tested without a DOM:
+ * The cook steps through a sequence of screens. In "As I go" that is a Prep
+ * screen when the plan has mise or ahead work, then the flow cards from
+ * `cook-schedule.ts`. In "Prep first" the prep is ordinary step pages
+ * (`prepPages`; 2026-11-22, DS v1.59): one per prep card of the plan,
+ * before the first cooking step, a card of several jobs as one page of tick
+ * rows. The Prep screen then stands only for a plan with make-ahead work and
+ * no mise (`hasPrepScreen`). This module owns the position, what counts as
+ * done, and what each screen shows, so the rules the UI depends on are tested
+ * without a DOM:
  *
- *   - the "Prep first | As I go" toggle shows only on the Prep screen;
+ *   - the mode switches only at the first screen (`setMode`); the "Prep first
+ *     | As I go" toggle shows on the Prep screen (and on the opening);
  *   - the stack is the current screen and the next two, the two ahead read
  *     as one-line glances, with a marker where the next chapter begins;
  *   - chapters (Prep, then batches of work that end where the cook's hands
@@ -17,15 +23,17 @@
  *
  * Done is two sets:
  *
- *   - `ticked`: mise done on the Prep screen. The cook ticks it there, and
- *     leaving the Prep screen ticks all of it in "Prep first", and in "As I
- *     go" the part that comes before the first cooking step. Ticked mise is
- *     scheduled into the prep block, so it drops out of the steps.
- *   - `passed`: tasks on screens the cook has moved past. Landing on a screen
- *     (Back, a jump) reopens its tasks.
+ *   - `ticked`: mise the cook ticked, on the Prep screen or on a prep page's
+ *     tick rows. Leaving the Prep screen ticks, in "As I go", the part that
+ *     comes before the first cooking step. Ticked mise is scheduled into the
+ *     prep block, so in "As I go" it drops out of the steps; a prep page stays
+ *     where it is, ticked or not.
+ *   - `passed`: tasks on screens the cook has moved past, prep pages
+ *     included. Landing on a screen (Back, a jump) reopens its tasks.
  *
- * Mode and ticks change only on the Prep screen; everywhere else the sequence
- * is fixed, which keeps positions stable while the cook moves around.
+ * Mode changes only at the first screen, and ticks only on the Prep screen
+ * or the prep page in hand; everywhere else the sequence is fixed, which
+ * keeps positions stable while the cook moves around.
  */
 
 import {
@@ -36,7 +44,7 @@ import {
   type PrepMode,
 } from "./cook-plan";
 import { freeAfter, stretchesOf, type FreeTime } from "./cook-chapters";
-import { flow, isPot, withMiseNeeds, type FlowItem } from "./cook-schedule";
+import { flow, isPot, prepFlow, withMiseNeeds, type FlowItem } from "./cook-schedule";
 
 /** The eyebrow's count: "last step" at the very end, else the steps left. */
 function stretchCountWords(left: number, free: number | null): string {
@@ -53,6 +61,10 @@ function stretchPlaceWords(left: number, free: number | null): string {
 /** Placeholder copy, awaiting a rewrite. */
 export const COOK_COPY = {
   prepChapter: "Prep",
+  /** A prep page's place among the plan's prep pages, after "Prep" in its eyebrow (DS v1.59). */
+  prepPlace: (at: number, of: number) => `${at} of ${of}`,
+  /** A tick row's own minutes on a prep page. */
+  rowMinutes: (n: number) => `${n} min`,
   cookChapter: "Cook",
   prepTitle: "Get set up",
   whileLead: "Meanwhile,",
@@ -255,7 +267,12 @@ export interface CookState {
   kept: ReadonlySet<string>;
 }
 
-export type Screen = { kind: "prep" } | { kind: "step"; item: FlowItem };
+/**
+ * A screen of the sequence: the Prep screen, or a step. A step with `prep`
+ * set is one of "Prep first"'s prep pages (`prepPages`), which stand before
+ * the first cooking step and make up the Prep chapter.
+ */
+export type Screen = { kind: "prep" } | { kind: "step"; item: FlowItem; prep?: true };
 
 export type ChapterState = "now" | "running" | "done" | "next";
 
@@ -326,6 +343,31 @@ export interface StackLine {
   implied: boolean;
   /** Quiet household marginalia / author note penciled for this step. */
   marginalia?: string | null;
+  /**
+   * Set on a "Prep first" prep page (DS v1.59): its place among the plan's
+   * prep pages, null where the plan has one (as a chapter of one screen says
+   * no "1 of 1"), and its dish, null in a one-dish plan and for the planner's
+   * generic branch. Unset on every other line, As I go's prep steps included.
+   */
+  prep?: { count: { at: number; of: number } | null; dish: string | null };
+  /**
+   * A prep page that merges several jobs: one tick row a job, in the page's
+   * order. Unset on a page of one job, which reads as any step does.
+   */
+  rows?: PrepRow[];
+}
+
+/** One job of a merged prep page: a row the cook ticks. */
+export interface PrepRow {
+  id: string;
+  text: string;
+  ingredientIdx: number[];
+  /** Its own minutes, short ("2 min"); null when the plan gave no estimate. */
+  minutes: string | null;
+  /** Read from the steps, not listed by the recipe. */
+  implied: boolean;
+  /** Done on the cook's record (`isDone`): ticked here, or passed in the steps. */
+  done: boolean;
 }
 
 export interface PrepAhead {
@@ -422,20 +464,55 @@ export function initialCookState(mode: PrepMode): CookState {
   return { mode, pos: 0, ticked: new Set(), passed: new Set(), kept: new Set() };
 }
 
-export function hasPrepScreen(plan: CookPlan): boolean {
+/** Whether the plan has prep at all: mise, or work to do ahead. */
+export function hasPrep(plan: CookPlan): boolean {
   return plan.tasks.some((t) => t.kind === "mise" || t.kind === "ahead");
 }
 
-/** The Prep screen, if the plan has one, then the flow cards. */
+/**
+ * Whether the sequence opens on the Prep screen. In "As I go", whenever the
+ * plan has prep. In "Prep first" the mise is step pages instead
+ * (`prepPages`), so the Prep screen stands only where there are none to
+ * replace it: make-ahead work and no mise (DS v1.59).
+ */
+export function hasPrepScreen(plan: CookPlan, mode: PrepMode): boolean {
+  if (!hasPrep(plan)) return false;
+  return mode === "go" || !plan.tasks.some((t) => t.kind === "mise");
+}
+
+/** Most tick rows one prep page holds; a longer merged card runs on over pages of near-equal length. */
+export const PREP_ROWS_MAX = 4;
+
+const NOTHING_TICKED: ReadonlySet<string> = new Set();
+
+/**
+ * "Prep first"'s prep pages, in the order the prep block does them: one per
+ * prep card of the plan (`prepFlow`, the cards As I go steps through and the
+ * opening lists), a card of more than `PREP_ROWS_MAX` jobs cut into pages of
+ * near-equal length. None in "As I go", where the mise comes up in the steps.
+ * The pages never depend on what is ticked: in "Prep first" every mise task
+ * is up front, so a tick moves nothing.
+ */
+export function prepPages(plan: CookPlan, mode: PrepMode): FlowItem[] {
+  return mode === "first" ? prepFlow(plan, "first", NOTHING_TICKED, PREP_ROWS_MAX) : [];
+}
+
+/** How many screens stand before the first cooking step: the Prep screen, or the prep pages. */
+export function prepScreenCount(plan: CookPlan, mode: PrepMode): number {
+  return (hasPrepScreen(plan, mode) ? 1 : 0) + prepPages(plan, mode).length;
+}
+
+/** The Prep screen, if the sequence has one; "Prep first"'s prep pages; then the flow cards. */
 export function screensOf(
   plan: CookPlan,
   mode: PrepMode,
   ticked: ReadonlySet<string>,
 ): Screen[] {
+  const pages = prepPages(plan, mode).map((item): Screen => ({ kind: "step", item, prep: true }));
   const steps = flow(plan, mode, ticked).map(
     (item): Screen => ({ kind: "step", item }),
   );
-  return hasPrepScreen(plan) ? [{ kind: "prep" }, ...steps] : steps;
+  return hasPrepScreen(plan, mode) ? [{ kind: "prep" }, ...pages, ...steps] : [...pages, ...steps];
 }
 
 function stateScreens(plan: CookPlan, state: CookState): Screen[] {
@@ -580,16 +657,23 @@ function withMiseDependents(plan: CookPlan, id: string): Set<string> {
 }
 
 /**
- * Ticks or unticks a mise task on the Prep screen. Ticking also ticks the
- * mise it is made from; unticking also unticks the mise made from it, and
- * reopens any of those the cook passed in the steps, so "not done yet"
- * always sticks (in "As I go", through Next from Prep too). In "As I go" only the mise done before cooking ticks; the
- * rest is done in the steps.
+ * Ticks or unticks a mise task: on the Prep screen, or a row of the prep page
+ * in hand (a page of one job has no rows, so nothing there ticks). Ticking
+ * also ticks the mise it is made from; unticking also unticks the mise made
+ * from it, and reopens any of those the cook passed in the steps, so "not
+ * done yet" always sticks (in "As I go", through Next from Prep too). On the
+ * Prep screen in "As I go" only the mise done before cooking ticks; the rest
+ * is done in the steps.
  */
 export function toggleTick(plan: CookPlan, state: CookState, id: string): CookState {
   const task = plan.tasks.find((t) => t.id === id);
-  if (state.pos !== 0 || task?.kind !== "mise") return state;
-  if (!miseBefore(plan, state.mode).has(id)) return state;
+  if (task?.kind !== "mise") return state;
+  const here = stateScreens(plan, state)[state.pos];
+  if (here?.kind === "prep") {
+    if (!miseBefore(plan, state.mode).has(id)) return state;
+  } else if (!(here?.prep && here.item.tasks.length > 1 && here.item.tasks.some((t) => t.id === id))) {
+    return state;
+  }
   const ticked = new Set(state.ticked);
   const passed = new Set(state.passed);
   const kept = new Set(state.kept);
@@ -618,12 +702,15 @@ export function screenForSourceStep(
   step: number,
 ): number | null {
   const screens = stateScreens(plan, state);
-  const pos = screens.findIndex(
-    (s) => s.kind === "step" && s.item.tasks.some((t) => t.sourceStep === step),
-  );
+  const cites = (s: Screen) => s.kind === "step" && s.item.tasks.some((t) => t.sourceStep === step);
+  // The cooking screen first: a step chopped on a prep page and cooked later is found where it is
+  // cooked (the recipe's step is the cooking), and one that is only prepped on its prep page.
+  const cooking = screens.findIndex((s) => cites(s) && !(s.kind === "step" && s.prep));
+  if (cooking !== -1) return cooking;
+  const pos = screens.findIndex(cites);
   if (pos !== -1) return pos;
   const cited = plan.tasks.some((t) => t.sourceStep === step);
-  return cited && hasPrepScreen(plan) ? 0 : null;
+  return cited && hasPrepScreen(plan, state.mode) ? 0 : null;
 }
 
 /**
@@ -695,6 +782,83 @@ export function askStepText(view: CookView): string | undefined {
     return open.length > 0 ? open.join("; ") : undefined;
   }
   return view.stack[0]?.text;
+}
+
+/**
+ * What a screen reader hears as a look-ahead level settles: the level, and
+ * the way back by voice only where voice hears "Sue" unasked (listening all
+ * the time). Where a tap starts each listen, voice is off or there is no
+ * mic, saying "Sue, back" to the room does nothing, so it names the level
+ * alone.
+ */
+export function levelSaid(level: string, listening: boolean): string {
+  return listening ? `${level}. ${COOK_COPY.saySueBack}` : `${level}.`;
+}
+
+/** One prep job as Sous is told it: its words, the amounts the cook reads, and whether it is ticked. */
+export interface AskPrepJob {
+  text: string;
+  amounts: string[];
+  done: boolean;
+}
+
+/** The cook is in prep, on these jobs: what Sous is told in place of a step of the recipe. */
+export interface AskPrep {
+  jobs: AskPrepJob[];
+}
+
+/**
+ * The prep in hand, where the screen is prep: the jobs the panel's "About
+ * this step" line names (`askStepText`), each with its ingredients as the
+ * cook reads them. A "Prep first" prep page gives its jobs, ticked or not;
+ * As I go's Prep screen gives the jobs still to do before cooking. Undefined
+ * on every other screen, As I go's prep that comes up in the steps included:
+ * the cook is cooking by then.
+ *
+ * `ingredients` is the recipe's lines by stored index, null for a blank one.
+ */
+function askPrep(view: CookView, ingredients: readonly (string | null)[]): AskPrep | undefined {
+  const amounts = (idx: readonly number[]) =>
+    idx.flatMap((i) => {
+      const line = ingredients[i];
+      return line === null || line === undefined ? [] : [line];
+    });
+  if (view.prep) {
+    return {
+      jobs: view.prep.mise
+        .filter((m) => m.before && !m.done)
+        .map((m) => ({ text: m.text, amounts: amounts(m.ingredientIdx), done: false })),
+    };
+  }
+  const page = view.now;
+  if (!page?.prep) return undefined;
+  return {
+    jobs: page.rows
+      ? page.rows.map((r) => ({ text: r.text, amounts: amounts(r.ingredientIdx), done: r.done }))
+      : [{ text: page.text, amounts: amounts(page.ingredientIdx), done: false }],
+  };
+}
+
+/**
+ * What Ask is told the cook has in hand: the screen's words (`askStepText`)
+ * and either the recipe step it cites or, on prep, the prep jobs. On the
+ * opening that is nothing: the whole cook shows there and no step is begun,
+ * so Ask neither says "About this step" nor tells Sous which step the cook
+ * is on, though the view under the opening is already the first screen's.
+ *
+ * On prep no step is given, whatever the jobs cite (review round 3): a prep
+ * job cites the step it gets ready for, which the cook has not reached, and
+ * Sous reads a step in hand as every step before it done.
+ */
+export function askInHand(
+  opening: boolean,
+  view: CookView,
+  stepIndex: number | undefined,
+  ingredients: readonly (string | null)[] = [],
+): { text: string | undefined; index: number | undefined; prep: AskPrep | undefined } {
+  if (opening) return { text: undefined, index: undefined, prep: undefined };
+  const prep = askPrep(view, ingredients);
+  return { text: askStepText(view), index: prep ? undefined : stepIndex, prep };
 }
 
 /**
@@ -903,12 +1067,15 @@ interface ChapterSpan {
  */
 function chapterSpans(plan: CookPlan, screens: Screen[]): ChapterSpan[] {
   const spans: ChapterSpan[] = [];
-  const offset = screens[0]?.kind === "prep" ? 1 : 0;
-  if (offset === 1) {
+  // Prep is the Prep screen, or "Prep first"'s prep pages: the screens before
+  // the first cooking step.
+  const firstCooking = screens.findIndex((s) => s.kind === "step" && !s.prep);
+  const offset = firstCooking === -1 ? screens.length : firstCooking;
+  if (offset > 0) {
     spans.push({
       id: "prep",
       name: COOK_COPY.prepChapter,
-      at: [0],
+      at: screens.slice(0, offset).map((_, i) => i),
       tasks: plan.tasks.filter((t) => t.kind === "mise").map((t) => t.id),
       free: null,
     });
@@ -1119,7 +1286,7 @@ function needsOrder(tasks: CookTask[]): string[] {
  * group in needs order, since no one lead is true of all of them.
  * Items keep their own lead; within a group they run in needs order.
  */
-function aheadGroups(plan: CookPlan): PrepAheadGroup[] {
+export function aheadGroups(plan: CookPlan): PrepAheadGroup[] {
   const tasks = plan.tasks.filter((t) => t.kind === "ahead");
   const order = needsOrder(tasks);
   const rank = new Map(order.map((id, i) => [id, i]));
@@ -1452,6 +1619,63 @@ function itemOf(screen: Screen): FlowItem {
   return screen.item;
 }
 
+/** The planner's branch for a recipe that builds one thing (`cook-plan-derive`'s prompt): no dish to name. */
+const GENERIC_BRANCH = "Cook";
+
+/**
+ * What a prep page adds to its line (DS v1.59): its place among the plan's
+ * prep pages, its dish, and its tick rows when it merges several jobs.
+ */
+function prepPageLine(plan: CookPlan, state: CookState, item: FlowItem, line: StackLine): StackLine {
+  const pages = prepPages(plan, state.mode);
+  const key = stepKey(item);
+  const at = pages.findIndex((p) => stepKey(p) === key);
+  const dishes = new Set(plan.tasks.filter((t) => t.kind !== "ahead").map((t) => t.branch));
+  const branch = item.tasks[0]?.branch ?? "";
+  const dish = dishes.size > 1 && branch !== "" && branch !== GENERIC_BRANCH ? branch : null;
+  const rows: PrepRow[] | undefined =
+    item.tasks.length > 1
+      ? item.tasks.map((t) => ({
+          id: t.id,
+          text: t.text,
+          ingredientIdx: t.ingredientIdx,
+          minutes: t.minutes ? COOK_COPY.rowMinutes(Math.max(1, Math.round(t.minutes.est))) : null,
+          implied: t.implied,
+          // Ticked, or passed in the steps before a switch to "Prep first":
+          // the check `toggleTick` makes, so a tap always turns what it shows.
+          done: isDone(state, t.id),
+        }))
+      : undefined;
+  return {
+    ...line,
+    prep: { count: pages.length > 1 && at !== -1 ? { at: at + 1, of: pages.length } : null, dish },
+    ...(rows ? { rows } : {}),
+  };
+}
+
+/**
+ * What a prep page's eyebrow says after "Prep" (DS v1.59), in order: its place
+ * among the prep pages ("2 of 4"; left out when it is the only one), its dish,
+ * and, on a page of tick rows, how long the page takes ("about 10 minutes":
+ * a single job says its time under its words, as any step does) and, once for
+ * the page, "assumed" when the recipe lists none of its jobs (a page where
+ * only some are read from the steps marks those rows). Empty for a line that
+ * is not a prep page.
+ */
+export function prepEyebrow(line: Pick<StackLine, "prep" | "rows" | "minutes">): string[] {
+  if (!line.prep) return [];
+  const { count, dish } = line.prep;
+  const minutes = line.rows && line.minutes ? line.minutes.charAt(0).toLowerCase() + line.minutes.slice(1) : null;
+  const assumed = line.rows && rowsAllAssumed(line.rows) ? COOK_COPY.assumed : null;
+  return [count ? COOK_COPY.prepPlace(count.at, count.of) : null, dish, minutes, assumed].filter(
+    (part): part is string => part !== null,
+  );
+}
+
+/** Whether the recipe lists none of a tick-row page's jobs: the page says "assumed" once, in its eyebrow. */
+export function rowsAllAssumed(rows: readonly Pick<PrepRow, "implied">[]): boolean {
+  return rows.length > 0 && rows.every((row) => row.implied);
+}
 
 /**
  * The state the chapter row reads: on Prep, as it will stand once the cook
@@ -1508,10 +1732,12 @@ export function cookView(plan: CookPlan, source: PlanSource, state: CookState): 
   const chapters =
     source.kind === "as-written" ? null : chaptersOf(plan, row, stateScreens(plan, row));
   const stretch = stretchInHand(chapters, state.pos);
+  const here = screens[state.pos];
+  const onPrepPage = here?.kind === "step" && here.prep === true;
   const place: CookView["place"] =
     chapters === null
       ? null
-      : onPrep
+      : onPrep || onPrepPage
         ? { long: COOK_COPY.prepChapter, short: COOK_COPY.prepChapter, count: COOK_COPY.prepChapter }
         : stretch === null
           ? null
@@ -1523,8 +1749,10 @@ export function cookView(plan: CookPlan, source: PlanSource, state: CookState): 
 
   const now = onPrep
     ? prepLine(plan, state)
-    : screens[state.pos]?.kind === "step"
-      ? stepLine(itemOf(screens[state.pos]), true, glanceFrom)
+    : here?.kind === "step"
+      ? here.prep
+        ? prepPageLine(plan, state, here.item, stepLine(here.item, true, glanceFrom))
+        : stepLine(here.item, true, glanceFrom)
       : null;
 
   const view: CookView = {

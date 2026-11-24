@@ -50,7 +50,8 @@ export function cookSnapshot(inputs: SnapshotInputs): CookSnapshot {
   if (here === undefined) {
     throw new Error(`No screen at ${String(state.pos)} of the cook being flagged`);
   }
-  // Steps are counted as the cook moves through them, Prep left out.
+  // Steps are counted as the cook moves through them, the Prep screen left
+  // out; "Prep first"'s prep pages are steps and count (DS v1.59).
   const steps = screens.filter((s) => s.kind !== "prep");
   const view = cookView(plan, source, state);
   // The line the step screen draws for it, lead and all, which the panel's

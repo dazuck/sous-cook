@@ -13,12 +13,18 @@ import { forwardRef, type ReactNode } from "react";
 interface ChatBubbleProps {
   variant: "assistant" | "user";
   children: ReactNode;
+  /**
+   * How much of the thread's width a turn may take (default: 85%, and 70%
+   * on a wide screen). A narrow thread (Ask's side panel) gives its own.
+   */
+  width?: string;
   className?: string;
 }
 
 export function ChatBubble({
   variant,
   children,
+  width = "max-w-[85%] lg:max-w-[70%]",
   className = "",
 }: ChatBubbleProps) {
   const variantClasses =
@@ -28,7 +34,7 @@ export function ChatBubble({
 
   return (
     <div
-      className={`max-w-[85%] text-ink lg:max-w-[70%] ${variantClasses} ${className}`}
+      className={`${width} text-ink ${variantClasses} ${className}`}
     >
       {children}
     </div>
@@ -75,8 +81,14 @@ interface ChatInputProps {
   onSubmit: () => void;
   placeholder?: string;
   disabled?: boolean;
-  /** Drawn inside the field before the text box, and never disabled with it. */
-  leading?: ReactNode;
+  /**
+   * Whether Send is drawn (default: always). Ask's panel on the cook screen
+   * draws it only once there are words to send, when it takes the room the
+   * camera and the mic stood in.
+   */
+  send?: boolean;
+  /** The text box's name for a screen reader, where the hint alone does not say it. */
+  label?: string;
   className?: string;
   onFocus?: React.FocusEventHandler<HTMLInputElement>;
   onBlur?: React.FocusEventHandler<HTMLInputElement>;
@@ -93,7 +105,8 @@ export const ChatInput = forwardRef<HTMLInputElement, ChatInputProps>(
       onSubmit,
       placeholder = "Type your reply...",
       disabled = false,
-      leading,
+      send = true,
+      label,
       className = "",
       onFocus,
       onBlur,
@@ -113,7 +126,6 @@ export const ChatInput = forwardRef<HTMLInputElement, ChatInputProps>(
             those carry their own rings. A text box matches :focus-visible
             however it was focused, since it takes typing. */}
         <div className="flex min-h-[var(--target)] items-center gap-2 rounded-full border border-ink/[.11] bg-paper px-2 py-1 has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ink">
-          {leading}
           <input
             ref={ref}
             type="text"
@@ -123,9 +135,11 @@ export const ChatInput = forwardRef<HTMLInputElement, ChatInputProps>(
             onBlur={onBlur}
             disabled={disabled}
             placeholder={placeholder}
+            aria-label={label}
             className="min-h-[calc(64*var(--cpx))] min-w-0 flex-1 border-none bg-transparent px-4 py-2 text-[length:var(--type-meta)] leading-tight font-medium text-ink outline-none placeholder:text-ink-soft focus:ring-0 disabled:text-ink-soft"
           />
 
+          {send && (
           <button
             type="submit"
             aria-label="Send"
@@ -145,6 +159,7 @@ export const ChatInput = forwardRef<HTMLInputElement, ChatInputProps>(
               />
             </svg>
           </button>
+          )}
         </div>
       </form>
     );
