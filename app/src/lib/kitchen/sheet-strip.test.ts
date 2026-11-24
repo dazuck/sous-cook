@@ -6,7 +6,6 @@ import { buildTimetable } from "./timetable-model";
 import { advanceMeasure } from "./__tests__/advance-measure";
 import { timetableCorpus } from "./__tests__/timetable-corpus";
 import { buildLayout, frameAt, type LayoutInput, type Measure, type SheetGeo, type SheetLayout } from "./sheet-layout";
-import { LINE_FILL_NOW } from "./sheet-derived";
 import { peekOf } from "./cook-peek";
 import { PEEK_IN, PEEK_OUT, keyLevel, sheetArrowTargets, sheetArrows, stripTap } from "./sheet-strip";
 import { SheetMotion, type Level, type MotionHost } from "./sheet-motion";
@@ -138,13 +137,12 @@ describe("a long step at the peek: the peek folds sooner rather than stand over 
 });
 
 describe("the strip's fill and the peek's rows by depth", () => {
-  it("derived: the end of the step at rest and under the peek, gliding to the clock's minute by the whole cook", () => {
+  it("derived: the end of the step in hand at every level, the whole cook included (v1.63: the line never changes as the sheet moves)", () => {
     const state = at(roast, 10);
     const L = buildLayout(inputFor(roast, state, 1280, 800));
     const s = strip(roast, state, null);
     const now = s.now + 3;
-    for (const d of [0, 0.5, 1]) expect(atDepth(L, d, { now }).fillMin).toBe(s.progress);
-    for (const d of [LINE_FILL_NOW, 2]) expect(atDepth(L, d, { now }).fillMin).toBeCloseTo(now, 6);
+    for (const d of [0, 0.5, 1, 1.5, 1.9, 2]) expect(atDepth(L, d, { now }).fillMin).toBe(s.progress);
   });
 
   it("as written: filled by the count of steps at every depth", () => {

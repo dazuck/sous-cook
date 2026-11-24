@@ -34,6 +34,7 @@ import { createPortal } from "react-dom";
 import { COOK_COPY, initialCookState, levelSaid, type PrepAheadGroup } from "@/lib/kitchen/cook-view";
 import { strip as stripOf, type Strip } from "@/lib/kitchen/cook-strip";
 import { hitOutline, readStepDetails, type Nudge } from "@/lib/kitchen/cook-levels";
+import { cardUnder } from "./card-under";
 import { prepWords, timedKey, timedStrip, type PotTimer } from "@/lib/kitchen/cook-overview";
 import { peekOf } from "@/lib/kitchen/cook-peek";
 import { keyLevel, sheetArrowTargets, stripTap } from "@/lib/kitchen/sheet-strip";
@@ -1029,8 +1030,8 @@ export function CookSheet(props: CookSheetProps) {
       shownOverview(overviewRef.current, F.lanes);
     }
     // The strip's line (look-ahead slice 1): each work segment filled to the frame's minute (the end
-    // of the step in hand at rest and under the peek; a derived plan's glides to the clock's minute on
-    // the way to the whole cook); the arrow over it while the sheet rests; the peek's rows; the arrows
+    // of the step in hand at every level, the whole cook included since DS v1.63); the arrow over it
+    // while the sheet rests; the peek's rows; the arrows
     // on the sheet's edge, on the Paper's top.
     const SL = L.stripLine;
     if (SL && F.fillMin !== undefined) {
@@ -1155,6 +1156,14 @@ export function CookSheet(props: CookSheetProps) {
       m.clearClaim();
       // More and its menu are the top line's, hosted here: a touch there is theirs, never a pull.
       if (e.target instanceof Element && e.target.closest("[data-sheet-more]")) return;
+      // The meal's lines, where they scroll in their box (DS v1.63, §6 Lists), are the finger's to
+      // scroll: a touch there is never a pull once the list has moved off its top. At its top the
+      // box lets the browser take only a drag up (touch-action pan-down, Timetable), so a drag down
+      // from there still pulls the sheet, and one up scrolls the list and cancels this press.
+      if (e.target instanceof Element) {
+        const box = e.target.closest<HTMLElement>("[data-lines-scroll]");
+        if (box && box.scrollHeight - box.clientHeight > 1 && box.scrollTop > 0.5) return;
+      }
       // In the foot, the strip's line is the way in (the band, at every level); Back, Forward and the
       // clocks beside them are buttons, and a drag that starts on one is never a pull.
       let at = el;
@@ -1331,16 +1340,7 @@ export function CookSheet(props: CookSheetProps) {
           ?.getAnimations({ subtree: true })
           .some((a) => a.playState === "running" && Number(a.effect?.getComputedTiming().duration ?? 0) <= TIMETABLE_MOVE_MS + 50) ?? false;
       if (performance.now() < glideUntil.current && animRunning) return;
-      let hitKey: string | null = null;
-      if (root) {
-        for (const el of root.querySelectorAll<HTMLElement>("[data-prep-card], [data-card]")) {
-          const r = el.getBoundingClientRect();
-          if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
-            hitKey = el.hasAttribute("data-prep-card") ? "prep" : el.getAttribute("data-card");
-            break;
-          }
-        }
-      }
+      const hitKey = root ? cardUnder(root, e.clientX, e.clientY) : null;
       onReadMark(hitKey && readMark !== hitKey ? hitKey : null);
       return;
     }
@@ -1521,6 +1521,17 @@ export function CookSheet(props: CookSheetProps) {
                     ingredients={whole.ingredients}
                     steps={whole.steps}
                     onAskAhead={onAskAhead}
+                    portrait={L.geo.portrait}
+                    stepper={
+                      whole.recipe && whole.onServingsChange
+                        ? {
+                            recipe: whole.recipe,
+                            servings: whole.servings ?? whole.recipe.serves_base,
+                            scales: whole.scales,
+                            onChange: whole.onServingsChange,
+                          }
+                        : null
+                    }
                   />
                 </div>
               )}

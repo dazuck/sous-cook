@@ -128,6 +128,7 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | Cook mode: opening timetable with its Get out list, the prep page before the first cooking step, Next/Previous step, reload resume | `app/e2e/cook.spec.ts` (COOK-1) |
 | Cook mode: two small prep jobs as one page of tick rows, a tick kept across reload, Next leaving prep | `app/e2e/cook.spec.ts` (COOK-4) |
 | Cook mode: the bottom strip on a cooking step, a tap raising the peek on the step in hand, Put away lowering it | `app/e2e/cook.spec.ts` (COOK-5) |
+| Cook mode: the whole meal drawn as lines on the opening and at the whole cook, the step in hand marked now, Esc back to the step | `app/e2e/cook.spec.ts` (COOK-6) |
 | Cook mode: starting a step timer and persistence across reload | `app/e2e/cook.spec.ts` (COOK-2) |
 | Cook mode: walking to end, armed Done cooking finish, home and Made recently update | `app/e2e/cook.spec.ts` (COOK-3) |
 | No model key: as-written cook with pending then failed prep plan note | `app/e2e/no-key.spec.ts` (NOKEY-1) |
@@ -140,7 +141,7 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | Deployed copy smoke check: `/api/version`, `/kitchen`, `/kitchen/cookpacks`, and a book page (read-only) | `app/e2e/smoke.spec.ts` (SMOKE-1, SMOKE-2, SMOKE-3) |
 | Flagging a screen and the reports panel | not covered yet |
 | Voice commands | not covered yet |
-| The look-ahead sheet past the peek (the whole cook) | not covered yet |
+| The whole cook's reading of a stop, and its scrolling lines | not covered yet |
 | The whole recipe view | not covered yet |
 | Scaling servings | not covered yet |
 | Offline cooking | not covered yet |

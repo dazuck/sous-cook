@@ -54,13 +54,6 @@ export const TT_PLATE = 3;
  * into the step's bottom gap).
  */
 export const BAND0 = 80;
-/**
- * The depth by which the line's fill has gone from the end of the step in hand (levels 0 and 1) to
- * the clock's minute (the whole cook). It eases over nearly the whole way up, so no frame of a
- * glide takes much of it, and stands at the clock's minute just before the sheet lands (the
- * minutes are drawn where they land, T3 fix round).
- */
-export const LINE_FILL_NOW = 1.9;
 /** Its rung at the header (level 2; portrait's level 1): Caprasimo 40, words 26. */
 const TT_HEAD = 1;
 
@@ -267,8 +260,8 @@ export interface DerivedFrame {
   line: LineFrame;
   /**
    * The progress line's fill as painted, px on level 0's track (the line never moves): to the end of
-   * the step in hand at rest and under the peek (levels 0 and 1), gliding to the clock's minute on
-   * the way to the whole cook, where it stands by `LINE_FILL_NOW` (just before the sheet lands).
+   * the step in hand at every level, the whole cook included (v1.63; the v1.54 glide to the clock's
+   * minute retired with the lines and stations).
    */
   fill: number;
   /** The strip map's stations. */
@@ -308,11 +301,11 @@ export function derivedFrame(L: DerivedLayout, s: FrameState): Frame {
   const d = depthOf(L, Y);
   const pw = clamp(s.pass ?? 0, 0, 1);
   const now = s.now ?? L.now;
-  // Level 0's fill ends where the step in hand ends, not at the clock's minute (v1.54): a timer's
-  // minutes don't move it. The whole cook (level 2) keeps the clock's minute.
+  // The fill ends where the step in hand ends, not at the clock's minute (v1.54): a timer's
+  // minutes don't move it. Since v1.63 the whole cook keeps it too: no glide as the sheet moves.
   const progress = s.progress ?? D.progress;
   const fill0 = lineFill(D.total, progress, D.line0.x0, D.line0.x1);
-  const fill = L.opening ? fill0 : lerp(fill0, lineFill(D.total, now, D.line0.x0, D.line0.x1), sstep(1, LINE_FILL_NOW, d));
+  const fill = fill0;
   const P0: LineFrame = { x: D.line0.x0, w: D.line0.x1 - D.line0.x0, fill: fill0, ink: 0 };
   const P1: LineFrame = { x: D.line1.x0, w: D.line1.x1 - D.line1.x0, fill: 0, ink: 1 };
   // Level 2's fill is the clock's too (its end is the now line; T3 follow-up), on the held axis.

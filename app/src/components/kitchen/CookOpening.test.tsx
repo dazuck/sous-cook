@@ -202,13 +202,14 @@ describe("OpeningControls", () => {
 import { strip } from "@/lib/kitchen/cook-strip";
 import { initialCookState, next, prepPages } from "@/lib/kitchen/cook-view";
 import { placeOverview } from "@/lib/kitchen/overview-place";
+import { LINE_FROM_FOOT } from "@/lib/kitchen/strip-map";
 import { buildTimetable } from "@/lib/kitchen/timetable-model";
 import { advanceMeasure as measure } from "@/lib/kitchen/__tests__/advance-measure";
 import { timetableCorpus } from "@/lib/kitchen/__tests__/timetable-corpus";
 import { storedIngredientLines } from "@/lib/kitchen/ingredient-display";
 import { legacyToPackRecipe } from "@/lib/pack-convert/convert";
 import { AMOUNT_RULE } from "./MeasurementPopover";
-import { Timetable } from "./Timetable";
+import { AHEAD_ROW, GET_OUT_LINES, Timetable } from "./Timetable";
 
 describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", () => {
   const geo = {
@@ -235,7 +236,244 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
     { index: 2, amount: "2 tbsp", name: "olive oil" },
   ];
 
-  it("renders R4 Two-Column Opening with categorized Get out (Show amounts toggle, zero 'and N more') and 2..6 phases with movable prep capsule", () => {
+  it("a prep mode chosen redraws the lines in a new scroll box, and the foot's fade listens to that box (review: React 2; the cookies, one height in both modes)", () => {
+    const entry = timetableCorpus().find((x) => x.name === "chewy-oat-cookies")!;
+    const firstStrip = strip(entry.plan, initialCookState("first"), null, 0);
+    const goStrip = strip(entry.plan, initialCookState("go"), null, 0);
+    const tFirst = buildTimetable(entry.plan, firstStrip, goStrip, "first")!;
+    const tGo = buildTimetable(entry.plan, firstStrip, goStrip, "go")!;
+    // A short landscape sheet, so the lines scroll in their box.
+    const short = { ...geo, H: 420, footTop: 340, ledgeTop: 318 };
+    const ovOf = (timetable: typeof tFirst, other: typeof tFirst) =>
+      placeOverview({
+        timetable,
+        other,
+        geo: short,
+        measure,
+        chrome: { more: { w: 48, h: 48 }, controls: { w: 160, h: 56 }, hint: false },
+        toggle: true,
+        title: entry.name,
+        opening: { getOut: sampleGetOut, scaleNote: null, handsOn: "45 min hands-on" },
+        read: null,
+        topLine: false,
+        ttDims,
+      });
+    const props = {
+      rootRef: null,
+      measureText: () => measure,
+      opening: true,
+      live: false,
+      readMark: null,
+      onRead: () => {},
+      onGo: () => {},
+      onWhole: () => {},
+      onClose: () => {},
+      onMode: () => {},
+      getOut: sampleGetOut,
+      scaleNote: null,
+      readText: null,
+      plan: entry.plan,
+      steps: entry.plan.tasks.map((t) => t.text),
+      onAskAhead: () => {},
+    };
+    const listening = new Set<EventTarget>();
+    const add = HTMLElement.prototype.addEventListener;
+    const spy = vi.spyOn(HTMLElement.prototype, "addEventListener").mockImplementation(function (this: HTMLElement, type, ...rest) {
+      if (type === "scroll") listening.add(this);
+      return add.call(this, type, ...rest);
+    });
+    try {
+      const r = render(<Timetable {...props} ov={ovOf(tFirst, tGo)} strip={firstStrip} state={initialCookState("first")} />);
+      const before = r.container.querySelector<HTMLElement>("[data-lines-scroll]")!;
+      expect(before.querySelector("[data-meal-lines]")!.getAttribute("data-scroll")).toBe("true");
+      const h = before.querySelector<HTMLElement>("[data-meal-lines]")!.style.height;
+      r.rerender(<Timetable {...props} ov={ovOf(tGo, tFirst)} strip={goStrip} state={initialCookState("go")} />);
+      const after = r.container.querySelector<HTMLElement>("[data-lines-scroll]")!;
+      // The same height in both modes: only the mode says the box is new.
+      expect(after.querySelector<HTMLElement>("[data-meal-lines]")!.style.height).toBe(h);
+      expect(after).not.toBe(before);
+      expect(listening.has(after)).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("at the whole cook on the wide tablet the lines take the sheet down to the foot, 14 cpx over it: the roast mid-cook drawn whole, nothing kept for the old line", () => {
+    const entry = timetableCorpus().find((x) => x.name === "sunday-roast-dinner")!;
+    // 1280×800 as the cook screen lays it (`sheet-derived.test.ts`'s geometry).
+    const c = 1280 / 960;
+    const g = { W: 1280, H: 800, c, E: 48, top: 92 * c, stepTop: 104 * c, footTop: 800 - 100 * c, ledgeTop: 800 - 96 * c, portrait: false };
+    let state = initialCookState("first");
+    for (let i = 0; i < 6; i++) state = next(entry.plan, state);
+    const s = strip(entry.plan, state, null, 0);
+    const first = strip(entry.plan, initialCookState("first"), null, 0);
+    const go = strip(entry.plan, initialCookState("go"), null, 0);
+    const t = buildTimetable(entry.plan, s, go, "first")!;
+    const other = buildTimetable(entry.plan, first, go, "go", { now: 0 })!;
+    const ov = placeOverview({
+      timetable: t,
+      other,
+      geo: g,
+      measure,
+      chrome: { more: { w: 56 * c, h: 56 * c }, controls: null, hint: false },
+      toggle: false,
+      title: "Sunday roast dinner",
+      opening: null,
+      read: null,
+      topLine: false,
+      ttDims,
+    });
+    // Where the cook screen's line stands (`layoutDerived`), as the sheet hands it over.
+    const growFrom = (g.footTop - LINE_FROM_FOOT * c - ov.Y2) / c;
+    const r = render(
+      <Timetable
+        ov={ov}
+        rootRef={null}
+        measureText={() => measure}
+        strip={s}
+        opening={false}
+        live={false}
+        readMark={null}
+        onRead={() => {}}
+        onGo={() => {}}
+        onWhole={() => {}}
+        onClose={() => {}}
+        getOut={[]}
+        scaleNote={null}
+        readText={null}
+        onSheet={{ growFrom, hide: [] }}
+        plan={entry.plan}
+        state={state}
+        steps={entry.plan.tasks.map((x) => x.text)}
+      />,
+    );
+    const box = r.container.querySelector<HTMLElement>("[data-whole-lines]")!;
+    const bottom = (parseFloat(box.style.top) + parseFloat(box.style.height)) / c;
+    const foot = (g.footTop - ov.Y2) / c;
+    expect(bottom).toBeCloseTo(foot - 14, 3);
+    const drawn = box.querySelector<HTMLElement>("[data-meal-lines]")!;
+    expect(drawn.getAttribute("data-meal-lines")).toBe("columns");
+    expect(drawn.getAttribute("data-scroll")).toBe("false");
+    expect(parseFloat(drawn.style.height)).toBeLessThanOrEqual(parseFloat(box.style.height) + 0.5);
+  });
+
+  it("an opening with no Ahead work draws, Get out beside the lines and no Ahead note (the page threw reading the note it didn't have)", () => {
+    const none = timetableCorpus().filter((x) => {
+      const s1 = strip(x.plan, initialCookState("first"), null, 0);
+      const s2 = strip(x.plan, initialCookState("go"), null, 0);
+      return buildTimetable(x.plan, s1, s2, "first")!.ahead.length === 0;
+    });
+    expect(none.length).toBeGreaterThan(0);
+    for (const entry of none) {
+      const firstStrip = strip(entry.plan, initialCookState("first"), null, 0);
+      const goStrip = strip(entry.plan, initialCookState("go"), null, 0);
+      const tFirst = buildTimetable(entry.plan, firstStrip, goStrip, "first")!;
+      const tGo = buildTimetable(entry.plan, firstStrip, goStrip, "go")!;
+      const ov = placeOverview({
+        timetable: tFirst,
+        other: tGo,
+        geo: { ...geo, W: 1280, H: 800, footTop: 720, ledgeTop: 698 },
+        measure,
+        chrome: { more: { w: 48, h: 48 }, controls: { w: 160, h: 56 }, hint: false },
+        toggle: true,
+        title: entry.name,
+        opening: { getOut: sampleGetOut, scaleNote: null, handsOn: "20 min hands-on" },
+        read: null,
+        topLine: false,
+        ttDims,
+      });
+      expect(ov.opening!.ahead, entry.name).toBeNull();
+      const r = render(
+        <Timetable
+          ov={ov}
+          rootRef={null}
+          measureText={() => measure}
+          strip={firstStrip}
+          opening={true}
+          live={false}
+          readMark={null}
+          onRead={() => {}}
+          onGo={() => {}}
+          onWhole={() => {}}
+          onClose={() => {}}
+          onMode={() => {}}
+          getOut={sampleGetOut}
+          scaleNote={null}
+          readText={null}
+          plan={entry.plan}
+          state={initialCookState("first")}
+          steps={entry.plan.tasks.map((t) => t.text)}
+          onAskAhead={() => {}}
+        />,
+      );
+      expect(r.container.querySelector("[data-get-out]"), entry.name).not.toBeNull();
+      expect(r.container.querySelector("[data-meal-lines]"), entry.name).not.toBeNull();
+      expect(r.container.querySelector("[data-ahead]"), entry.name).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("with Ahead work and no Get out, Ahead stands above the lines and the lines leave it its row: drawn whole or scrolling, never cut (review: bug 3)", () => {
+    const entry = timetableCorpus().find((x) => x.name === "sunday-roast-dinner")!;
+    const firstStrip = strip(entry.plan, initialCookState("first"), null, 0);
+    const goStrip = strip(entry.plan, initialCookState("go"), null, 0);
+    const tFirst = buildTimetable(entry.plan, firstStrip, goStrip, "first")!;
+    const tGo = buildTimetable(entry.plan, firstStrip, goStrip, "go")!;
+    // Tablet-shaped sheets from roomy to tight: wherever the lines are drawn whole, Ahead's row is left to them.
+    let tight = 0;
+    for (let H = 560; H <= 900; H += 20) {
+      const ov = placeOverview({
+        timetable: tFirst,
+        other: tGo,
+        geo: { ...geo, W: 1280, H, footTop: H - 80, ledgeTop: H - 102 },
+        measure,
+        chrome: { more: { w: 48, h: 48 }, controls: { w: 160, h: 56 }, hint: false },
+        toggle: true,
+        title: entry.name,
+        opening: { getOut: [], scaleNote: null, handsOn: "45 min hands-on" },
+        read: null,
+        topLine: false,
+        ttDims,
+      });
+      const r = render(
+        <Timetable
+          ov={ov}
+          rootRef={null}
+          measureText={() => measure}
+          strip={firstStrip}
+          opening={true}
+          live={false}
+          readMark={null}
+          onRead={() => {}}
+          onGo={() => {}}
+          onWhole={() => {}}
+          onClose={() => {}}
+          onMode={() => {}}
+          getOut={[]}
+          scaleNote={null}
+          readText={null}
+          plan={entry.plan}
+          state={initialCookState("first")}
+          steps={entry.plan.tasks.map((t) => t.text)}
+          onAskAhead={() => {}}
+        />,
+      );
+      const flow = r.container.querySelector<HTMLElement>("[data-opening-flow]")!;
+      expect(r.container.querySelector("[data-get-out]")).toBeNull();
+      expect(flow.querySelector("[data-ahead]")).not.toBeNull();
+      const drawn = flow.querySelector<HTMLElement>("[data-meal-lines]")!;
+      const room = parseFloat(flow.style.maxHeight) - AHEAD_ROW * ov.c;
+      if (drawn.getAttribute("data-scroll") === "false") {
+        expect(parseFloat(drawn.style.height), `sheet ${H} px tall`).toBeLessThanOrEqual(room + 0.5);
+        if (parseFloat(drawn.style.height) > room - AHEAD_ROW * ov.c) tight++;
+      }
+      cleanup();
+    }
+    // The sweep reaches sheets where the lines need nearly all the room, so the row is what decides.
+    expect(tight).toBeGreaterThan(0);
+  });
+
+  it("renders the opening: categorized Get out (Show amounts toggle, zero 'and N more'), Ahead at its head, and the meal as lines in the flow (DS v1.63)", () => {
     const entry = timetableCorpus().find((x) => x.name === "sunday-roast-dinner")!;
     const firstStrip = strip(entry.plan, initialCookState("first"), null, 0);
     const goStrip = strip(entry.plan, initialCookState("go"), null, 0);
@@ -262,6 +500,7 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
       <Timetable
         ov={ovFirst}
         rootRef={null}
+        measureText={() => measure}
         strip={firstStrip}
         opening={true}
         live={false}
@@ -301,15 +540,33 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
     fireEvent.click(askBtn);
     expect(onAskAhead).toHaveBeenCalledTimes(1);
 
-    // 2..6 phases in Prep first, with Phase 1 Prep and movable capsule
-    const phasesFirst = [...r.container.querySelectorAll<HTMLElement>("[data-opening-flow] [data-phase-row]")];
-    expect(phasesFirst.length).toBeGreaterThanOrEqual(2);
-    expect(phasesFirst.length).toBeLessThanOrEqual(6);
-    expect(phasesFirst[0].dataset.phaseKind).toBe("prep");
-    expect(phasesFirst[0].querySelector("[data-movable-prep]")).not.toBeNull();
-    expect(r.container.querySelector("[data-passive-window]")).not.toBeNull();
+    // Ahead heads Get out's column, as drawn, so the flow's column opens on the meal's shape.
+    expect(getOutSec.contains(ahead)).toBe(true);
+    // In that narrow column the note wraps and the ask takes a line of its own: one nowrap line there
+    // squeezed the note's words to nothing and clipped "Missed it? Ask Sous" itself.
+    expect(ahead.querySelector("p")!.textContent).toMatch(/Dry-brine chicken/);
+    const clips = /\b(truncate|whitespace-nowrap|overflow-hidden|text-ellipsis)\b/;
+    for (const el of [ahead, ...ahead.querySelectorAll<HTMLElement>("*")]) expect(el.getAttribute("class") ?? "").not.toMatch(clips);
+    expect(ahead.getAttribute("data-ahead-form")).toBe("column");
+    // Its words wrap at spaces, so the label stays whole if its longest word fits inside the note's padding.
+    const inner = GET_OUT_LINES - 2 * 12;
+    for (const label of [COOK_COPY.missedAhead, COOK_COPY.missedAheadMany])
+      expect(Math.max(...label.split(" ").map((w) => measure(w, 22, 600)))).toBeLessThanOrEqual(inner);
 
-    // Switch to As I go: movable capsule moves into passive window ("Meanwhile ·")
+    // The flow: the meal as lines, a column per dish, no phases; nothing in hand and nothing to tap before Start.
+    const flow = r.container.querySelector<HTMLElement>("[data-opening-flow]")!;
+    expect(flow.querySelector("[data-phase-row]")).toBeNull();
+    expect(flow.querySelector("[data-meal-lines]")).not.toBeNull();
+    expect([...flow.querySelectorAll("[data-line-head]")].map((h) => h.textContent)).toEqual(["Chicken", "Potatoes", "Gravy", "Beans"]);
+    expect(flow.querySelector('[data-stop-state="now"]')).toBeNull();
+    expect(flow.querySelector("button[data-card]")).toBeNull();
+    // When the cook can walk away, and for how long: the ruled breaks with their words.
+    expect([...flow.querySelectorAll("[data-line-free]")].map((b) => b.textContent)).toContain("50 min free");
+    const prepFirst = [...flow.querySelectorAll<HTMLElement>("[data-line-stop]")].map((el) => el.textContent);
+    // Prep first's pages are stops on their dishes' lines, marked as up-front prep.
+    expect(flow.querySelectorAll("[data-line-stop][data-stop-prep]").length).toBeGreaterThan(0);
+
+    // Switch to As I go: the lines are drawn again, the prep moved into the breaks
     const ovGo = placeOverview({
       timetable: tGo,
       other: tFirst,
@@ -327,6 +584,7 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
       <Timetable
         ov={ovGo}
         rootRef={null}
+        measureText={() => measure}
         strip={goStrip}
         opening={true}
         live={false}
@@ -345,9 +603,10 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
         onAskAhead={onAskAhead}
       />,
     );
-    const meanwhileCapsule = r.container.querySelector<HTMLElement>("[data-passive-window] [data-movable-prep]")!;
-    expect(meanwhileCapsule).not.toBeNull();
-    expect(meanwhileCapsule.textContent).toContain("Meanwhile ·");
+    const asIGo = [...r.container.querySelectorAll<HTMLElement>("[data-opening-flow] [data-line-stop]")].map((el) => el.textContent);
+    expect(asIGo).not.toEqual(prepFirst);
+    expect(r.container.querySelector("[data-movable-prep]")).toBeNull();
+    expect([...r.container.querySelectorAll("[data-opening-flow] [data-line-free]")].map((b) => b.textContent)).toContain("40 min free");
   });
 
   // Asked 2026-11-22: Get out's list scrolls in its column, and its amounts open their conversions.
@@ -393,6 +652,7 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
       <Timetable
         ov={ov}
         rootRef={null}
+        measureText={() => measure}
         strip={firstStrip}
         opening={true}
         live={false}
@@ -458,7 +718,60 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
     expect(said).toEqual([...fat.stated, ...fat.conversions].map((m) => `${m.unit} ${m.value}`));
   });
 
-  it("renders Level 2 Phase Outline with done, now, and ahead states and triggers onRead when a phase card is tapped", () => {
+  it("a stop read or put away measures the meal's lines again only when their room changed (review: React 1)", () => {
+    const entry = timetableCorpus().find((x) => x.name === "sunday-roast-dinner")!;
+    let state = initialCookState("first");
+    for (let i = 0; i < prepPages(entry.plan, "first").length + 1; i++) state = next(entry.plan, state);
+    const curStrip = strip(entry.plan, state, null, 0);
+    const goStrip = strip(entry.plan, initialCookState("go"), null, 0);
+    const tFirst = buildTimetable(entry.plan, curStrip, goStrip, "first")!;
+    const tGo = buildTimetable(entry.plan, curStrip, goStrip, "go", { now: 0 })!;
+    // The sheet lays its place out again on a read (a new object, the same room).
+    const place = () =>
+      placeOverview({
+        timetable: tFirst,
+        other: tGo,
+        geo,
+        measure,
+        chrome: { more: { w: 48, h: 48 }, controls: null, hint: false },
+        toggle: false,
+        title: entry.name,
+        opening: null,
+        read: null,
+        topLine: false,
+        ttDims,
+      });
+    let calls = 0;
+    const counted = (t: string, size: number, weight: number) => {
+      calls++;
+      return measure(t, size, weight);
+    };
+    const measureText = () => counted;
+    const props = {
+      rootRef: null,
+      measureText,
+      strip: curStrip,
+      opening: false,
+      live: true,
+      onRead: () => {},
+      onGo: () => {},
+      onWhole: () => {},
+      onClose: () => {},
+      getOut: sampleGetOut,
+      scaleNote: null,
+      plan: entry.plan,
+      state,
+    };
+    const r = render(<Timetable {...props} ov={place()} readMark={null} readText={null} />);
+    expect(calls).toBeGreaterThan(0);
+    const laid = calls;
+    const mark = r.container.querySelector<HTMLButtonElement>('button[data-card][data-card-state="ahead"]')!.dataset.card!;
+    r.rerender(<Timetable {...props} ov={place()} readMark={mark} readText="Coat potatoes" />);
+    r.rerender(<Timetable {...props} ov={place()} readMark={null} readText={null} />);
+    expect(calls).toBe(laid);
+  });
+
+  it("draws the whole cook as the meal's lines: work done folded, the step in hand the one ember, and a stop tapped reads it (DS v1.63)", () => {
     const entry = timetableCorpus().find((x) => x.name === "sunday-roast-dinner")!;
     // On the roast's second cooking step: its four prep pages (DS v1.59) and its first step behind it.
     let state = initialCookState("first");
@@ -487,6 +800,7 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
       <Timetable
         ov={ovWhole}
         rootRef={null}
+        measureText={() => measure}
         strip={curStrip}
         opening={false}
         live={true}
@@ -503,24 +817,32 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
       />,
     );
 
-    const outline = r.container.querySelector<HTMLElement>("[data-phase-outline]")!;
-    expect(outline).not.toBeNull();
-    const rows = [...outline.querySelectorAll<HTMLElement>("[data-phase-row]")];
-    expect(rows.length).toBeGreaterThanOrEqual(2);
-    expect(rows.length).toBeLessThanOrEqual(6);
-
-    const doneRow = rows.find((row) => row.dataset.phaseState === "done")!;
-    expect(doneRow).toBeDefined();
-    expect(doneRow.querySelector("[data-phase-num]")?.textContent).toBe("✓");
-    expect(doneRow.querySelector("[data-phase-status]")?.textContent).toBe("done");
-
-    const nowRow = rows.find((row) => row.dataset.phaseState === "now")!;
-    expect(nowRow).toBeDefined();
-    expect(nowRow.querySelector("[data-phase-status]")?.textContent).toMatch(/left$/);
-
-    const cardBtn = nowRow.querySelector<HTMLButtonElement>("[data-card]")!;
-    fireEvent.click(cardBtn);
-    expect(onRead).toHaveBeenCalledWith(cardBtn.dataset.card);
+    expect(r.container.querySelector("[data-phase-outline]")).toBeNull();
+    const whole = r.container.querySelector<HTMLElement>("[data-whole-lines]")!;
+    expect(whole).not.toBeNull();
+    // Work done: one quiet dot per line, no words.
+    expect(whole.querySelector('[data-line-stop][data-stop-state="done"]')).toBeNull();
+    expect(whole.querySelectorAll("[data-line-done]").length).toBeGreaterThan(0);
+    // The step in hand: one stop, ember.
+    const now = [...whole.querySelectorAll<HTMLElement>('[data-line-stop][data-stop-state="now"]')];
+    expect(now).toHaveLength(1);
+    expect(now[0].className).toContain("ember-700");
+    // Every stop still to come is a button, none over another's (48 px tall where the rows leave room,
+    // the layout's tests say); a tap reads its step.
+    const buttons = [...whole.querySelectorAll<HTMLButtonElement>("button[data-card]")];
+    expect(buttons.length).toBeGreaterThan(5);
+    const box = (b: HTMLElement) => ["left", "top", "width", "height"].map((k) => parseFloat(b.style.getPropertyValue(k)));
+    for (const a of buttons)
+      for (const b of buttons) {
+        if (a === b) continue;
+        const [ax, ay, aw, ah] = box(a);
+        const [bx, by, bw, bh] = box(b);
+        const over = Math.min(ax + aw, bx + bw) - Math.max(ax, bx) > 0.5 && Math.min(ay + ah, by + bh) - Math.max(ay, by) > 0.5;
+        expect(over, `${a.getAttribute("aria-label")} over ${b.getAttribute("aria-label")}`).toBe(false);
+      }
+    const nowBtn = buttons.find((b) => b.dataset.cardState === "now")!;
+    fireEvent.click(nowBtn);
+    expect(onRead).toHaveBeenCalledWith(nowBtn.dataset.card);
   });
 });
 
@@ -571,6 +893,7 @@ describe("Timetable: the portrait opening's fit is short, and cannot run React o
       <Timetable
         ov={ov}
         rootRef={null}
+        measureText={() => measure}
         strip={firstStrip}
         opening={true}
         live={false}
@@ -593,8 +916,11 @@ describe("Timetable: the portrait opening's fit is short, and cannot run React o
 
   const body = () => document.querySelector<HTMLElement>("[data-opening-body]")!;
   const stepNow = () => Number(body().dataset.stackStep);
-  /** The roast's fit has 22 steps past step 0: tight, ten lines to give way, the heads run in, ten again. */
-  const LAST = 22;
+  /**
+   * The roast's fit has 2 steps past step 0 since the flow became the meal's lines (DS v1.63), which
+   * have no optional lines to give way: tight, then Get out's heads run in; past that the stack scrolls.
+   */
+  const LAST = 2;
   /**
    * Layout as the fit reads it: the body 100 px tall, the flow's foot past it while `over` says so.
    * `seen` counts the fit's measurements (one a commit).
@@ -675,15 +1001,15 @@ describe("Timetable: the portrait opening's fit is short, and cannot run React o
     );
     expect(stepNow()).toBe(LAST);
     await frame();
-    // Five more fits of a stack that never fits, a frame between them: over sixty steps in all.
-    for (let i = 1; i <= 5; i++) {
+    // Fifteen more fits of a stack that never fits, a frame between them: well past the cap's 32 steps in all.
+    for (let i = 1; i <= 15; i++) {
       act(() => again(`for ${String(i)}`));
       const where = `fit ${String(i + 1)}, ${String(seen.n)} steps in all`;
       expect(stepNow(), where).toBe(LAST);
       expect(body().className.split(/\s+/), where).toContain("overflow-y-auto");
       await frame();
     }
-    expect(seen.n).toBeGreaterThan(60);
+    expect(seen.n).toBeGreaterThan(40);
   });
 
   it("a step that waited for a frame is dropped once the fit has moved on: it never starts the newer fit over", async () => {
@@ -693,8 +1019,8 @@ describe("Timetable: the portrait opening's fit is short, and cannot run React o
     let last = -1;
     layout((step, measured) => {
       steps.push(step);
-      // Three new places mid-fit run the fit past its cap: its 33rd step waits for a frame.
-      if (measured % 10 === 0 && measured <= 30) again(`for ${String(measured)}`);
+      // New places mid-fit, each as the fit reaches its middle step, run it past its cap: its 33rd step waits for a frame.
+      if (step === 1 && measured <= 31) again(`for ${String(measured)}`);
       // And a place laid, and drawn at once, after the frame that starts the count over and before
       // the frame that step waits on (asked for here, between the two).
       if (measured === 2) {

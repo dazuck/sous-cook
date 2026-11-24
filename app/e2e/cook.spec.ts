@@ -158,6 +158,48 @@ test.describe("Cook mode", () => {
     await expect(liveNowLine(page)).toHaveAttribute("data-line", stepKey!);
   });
 
+  test("COOK-6: the opening and the whole cook draw the meal as lines with its stops, and at the whole cook the step in hand is the stop marked now", async ({
+    page,
+  }) => {
+    const p1 = await readQueueRowByName(RECIPE_NAMES.thinWhiteSauce);
+    expect(p1).not.toBeNull();
+
+    await page.goto(`/kitchen/queue/${p1!.id}`);
+
+    // The opening draws the whole meal as lines (Timetable.tsx; MealLines.tsx),
+    // in columns or as a list as the room and the dishes allow, a stop per step.
+    const opening = page.locator("[data-meal-lines]").first();
+    await expect(opening).toBeVisible();
+    expect(await opening.locator("[data-line-stop]").count()).toBeGreaterThan(1);
+
+    // Start, then past the prep page to the first cooking step
+    await page.locator("[data-opening-start]").click();
+    await page.getByRole("button", { name: "Next step" }).click();
+    const nowLine = liveNowLine(page);
+    await expect(nowLine.locator("[data-prep-eyebrow]")).toHaveCount(0);
+    const stepKey = await nowLine.getAttribute("data-line");
+    expect(stepKey).not.toBeNull();
+
+    // The strip raises the peek, and its expand arrow opens the whole cook (level 2)
+    await page.locator("[data-strip]").click();
+    const sheet = page.locator("[data-cook-sheet]");
+    await expect(sheet).toHaveAttribute("data-level", "1");
+    await page.getByRole("button", { name: "Show the whole cook" }).click();
+    await expect(sheet).toHaveAttribute("data-level", "2");
+
+    // The whole cook's lines mark the step in hand as the one stop "now"
+    const lines = page.locator("[data-meal-lines]").first();
+    await expect(lines).toBeVisible();
+    const now = lines.locator('[data-line-stop][data-stop-state="now"]');
+    await expect(now).toHaveCount(1);
+    await expect(now).toHaveAttribute("data-line-stop", stepKey!);
+
+    // Esc leaves the whole cook for the step, which has not moved
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveAttribute("data-level", "0");
+    await expect(liveNowLine(page)).toHaveAttribute("data-line", stepKey!);
+  });
+
   test("COOK-2: starting a timer offer shows a running timer that stays running after reload", async ({
     page,
   }) => {

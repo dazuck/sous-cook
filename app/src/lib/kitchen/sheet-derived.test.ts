@@ -9,7 +9,7 @@ import { advanceMeasure } from "./__tests__/advance-measure";
 import { timetableCorpus } from "./__tests__/timetable-corpus";
 import { buildLayout, frameAt, type Frame, type LayoutInput, type Measure, type SheetGeo, type SheetLayout } from "./sheet-layout";
 import { LINE_FROM_FOOT, SHEET1_ABOVE_LINE, lineFill } from "./strip-map";
-import { BAND0, LINE_FILL_NOW, TT_PLATE } from "./sheet-derived";
+import { BAND0, TT_PLATE } from "./sheet-derived";
 
 /** The browser's metrics, from the faces' own advances (px in, px out). */
 const measure: Measure = (text, px, weight, family) => advanceMeasure(text, px, weight, family);
@@ -133,7 +133,7 @@ describe("a derived plan's sheet: the line that never moves (SPEC §10, T3)", ()
     }
   });
 
-  it("the painted fill: the step's end at rest and under the peek, the clock's minute at the whole cook, one glide between with no jump (v1.54)", () => {
+  it("the painted fill: the end of the step in hand at every level, the whole cook included, whatever the clock says (v1.63: the glide retires)", () => {
     for (const vp of VIEWPORTS) {
       for (const pass of [0, 1]) {
         const state = at(roast, 5);
@@ -143,32 +143,8 @@ describe("a derived plan's sheet: the line that never moves (SPEC §10, T3)", ()
         // A timer's minutes on the clock: now walks on from the step's start, short of or past its end.
         for (const now of [s.now, s.now + 3, s.progress + 9]) {
           const end = lineFill(D.total, s.progress, D.line0.x0, D.line0.x1);
-          const clock = lineFill(D.total, now, D.line0.x0, D.line0.x1);
           const fillAt = (d: number) => atDepth(L, d, { now, pass }).derived!.fill;
-          // Levels 0 and 1, and every depth between: the end of the step in hand.
-          for (const d of [0, 0.01, 0.3, 0.7, 0.99, 1]) expect(fillAt(d), `depth ${d}`).toBe(end);
-          // The whole cook, from just before the sheet lands: the clock's minute.
-          for (const d of [LINE_FILL_NOW, 1.95, 1.999, 2]) expect(fillAt(d), `depth ${d}`).toBeCloseTo(clock, 6);
-          // The move is spread over the way up, not spent at its start (a glide's fastest frames):
-          // a third of the way up, under a third of it is gone; halfway through, about half.
-          expect(Math.abs(fillAt(1.3) - end), "at depth 1.3").toBeLessThanOrEqual(Math.abs(clock - end) / 3 + 1e-6);
-          expect(Math.abs(fillAt(1.45) - (end + clock) / 2), "at depth 1.45").toBeLessThanOrEqual(Math.abs(clock - end) * 0.01 + 1e-6);
-          // Between: from one to the other, never past either, in steps that never jump (the first
-          // frame off level 1 included), whichever way the sheet moves.
-          const lo = Math.min(end, clock);
-          const hi = Math.max(end, clock);
-          const N = 200;
-          let before = fillAt(1);
-          for (let i = 1; i <= N; i++) {
-            const d = 1 + (i / N) * (LINE_FILL_NOW - 1);
-            const f = fillAt(d);
-            expect(f, `depth ${d}`).toBeGreaterThanOrEqual(lo - 1e-6);
-            expect(f, `depth ${d}`).toBeLessThanOrEqual(hi + 1e-6);
-            expect(Math.abs(f - before), `the step to depth ${d}`).toBeLessThanOrEqual((hi - lo) * (2 / N) + 1e-6);
-            if (clock >= end) expect(f).toBeGreaterThanOrEqual(before - 1e-6);
-            else expect(f).toBeLessThanOrEqual(before + 1e-6);
-            before = f;
-          }
+          for (const d of [0, 0.01, 0.3, 0.7, 0.99, 1, 1.3, 1.45, 1.9, 1.999, 2]) expect(fillAt(d), `depth ${d}`).toBe(end);
         }
       }
     }

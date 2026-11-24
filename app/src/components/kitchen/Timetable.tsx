@@ -39,6 +39,11 @@ import { COOK_COPY, type CookState, type PrepAheadGroup } from "@/lib/kitchen/co
 import { buildGetOut, type GetOutItem as CategorizedGetOutItem } from "@/lib/kitchen/get-out";
 import { footMask, useMoreBelow } from "@/hooks/useMoreBelow";
 import { MeasurementPopover } from "./MeasurementPopover";
+import { MealLines, pageMeasure } from "./MealLines";
+import { ServingStepper, type ServingStepperProps } from "./ServingStepper";
+import { mealLines } from "@/lib/kitchen/meal-lines";
+import { layoutMealLines, type LinesDrawing } from "@/lib/kitchen/meal-lines-layout";
+import type { Measure } from "@/lib/kitchen/sheet-layout";
 import type { StoredIngredientLines } from "@/lib/kitchen/ingredient-display";
 import type { OverviewPlace } from "@/lib/kitchen/overview-place";
 import { saysOf } from "@/lib/kitchen/says-of";
@@ -58,6 +63,16 @@ export const TIMETABLE_MOVE_MS = MOVE_MS;
 const IN_MS = 280;
 /** The old serve line's ghost: held 1.9 s, then out over 600 ms. */
 const SOONER_HOLD_MS = 1900;
+/** Get out's column beside the meal's lines on the opening, cpx: the approved drawing's (DS v1.63). */
+export const GET_OUT_LINES = 210;
+/** The Ahead note's one row above the flow, with the flow's gap under it (cpx): the lines and the phases leave it this room. */
+export const AHEAD_ROW = 40;
+/** The Paper the meal's lines leave over the foot, cpx: the opening's 14, at the whole cook too. */
+export const LINES_OVER_FOOT = 14;
+/** Where the whole cook's lines end, in the sheet's cpx from `Y2`: 14 cpx over the foot. */
+export function wholeLinesBottom(ov: OverviewPlace): number {
+  return (ov.sheetBottom - ov.Y2) / ov.c - LINES_OVER_FOOT;
+}
 const SOONER_FADE_MS = 600;
 const FOCUS = "outline-none focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ink";
 /** A scroller that never draws a scrollbar (Whole recipe's rule): its foot's fade is the cue. */
@@ -95,6 +110,12 @@ export interface TimetableProps {
   ingredients?: StoredIngredientLines;
   steps?: readonly string[];
   onAskAhead?: (group: PrepAheadGroup) => void;
+  /** The tablet upright or a phone: the whole meal draws as one list (DS v1.63). */
+  portrait?: boolean;
+  /** The serving stepper at Get out's head on the opening (DS v1.63), as on Prep and Whole recipe. */
+  stepper?: Omit<ServingStepperProps, "className"> | null;
+  /** Text widths for the whole meal's lines, made fresh per layout pass; the page's canvas when not given. */
+  measureText?: () => Measure;
 }
 
 interface Anim {
@@ -173,6 +194,22 @@ function stackRung(step: number, lines: number, hasGetOut: boolean) {
  */
 const FIT_BURST = 32;
 
+/**
+ * How many times the page's fonts have finished loading, for a layout measured on them: the canvas
+ * measures with whatever faces are loaded at the time, so a layout made before they arrive is made
+ * again after. Off (always 0) when the caller measures by other means.
+ */
+function useFontsLoaded(on: boolean): number {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (!on || typeof document === "undefined" || !document.fonts) return;
+    const again = () => setN((k) => k + 1);
+    document.fonts.addEventListener("loadingdone", again);
+    return () => document.fonts.removeEventListener("loadingdone", again);
+  }, [on]);
+  return n;
+}
+
 export function Timetable(props: TimetableProps) {
   const {
     ov,
@@ -195,6 +232,9 @@ export function Timetable(props: TimetableProps) {
     ingredients,
     steps,
     onAskAhead,
+    portrait = false,
+    stepper = null,
+    measureText,
   } = props;
 
   const [showAmounts, setShowAmounts] = useState(false);
@@ -347,8 +387,41 @@ export function Timetable(props: TimetableProps) {
   // that it goes on from the next frame, one unfinished frame drawn in place of a page gone down.
   const phases = phasesModel?.phases ?? [];
   const stacked = ov.opening !== null && ov.sheetBottom > (ov.opening.chart.w + 2 * ov.opening.chart.x) * c;
-  const shedOrder = stacked ? stackShedOrder(phases) : [];
   const hasGetOut = getOutModel.equipment.length > 0 || getOutModel.fridge.length > 0 || getOutModel.pantry.length > 0;
+  const hasAhead = (phasesModel?.ahead?.length ?? 0) > 0 || Boolean(ov.opening?.ahead && ov.opening.ahead.items.length > 0);
+
+  // The whole meal as lines and stations (DS v1.63): the opening's flow and level 2 both draw it.
+  // As written has no minutes to draw lines from: it keeps the phase outline.
+  const lines = useMemo(() => (plan && !strip.asWritten ? mealLines(plan, strip, { opening }) : null), [plan, strip, opening]);
+  // The lines are laid out for their room, not for the place object: the sheet lays a new place on a
+  // read put up or away with the same room, and the fit ladder measures every label again (review
+  // React 1). The fonts arriving change the words' widths, not the room, so they count too.
+  const fontsLoaded = useFontsLoaded(measureText === undefined);
+  // At the whole cook the lines take the sheet down to the foot, as the opening's do: the strip stands
+  // in the foot's row (DS v1.62), so nothing stands over the foot any more (the line the old
+  // timetable's marks grew from, `onSheet.growFrom`, kept 72 cpx of Paper empty there).
+  const room = ov.opening
+    ? { kind: "opening" as const, y: ov.opening.chart.y, w: ov.opening.chart.w, bottom: ov.sheetBottom }
+    : ov.whole
+      ? { kind: "whole" as const, y: ov.whole.chart.y, w: ov.whole.chart.w, bottom: wholeLinesBottom(ov) }
+      : null;
+  const roomKey = room ? `${room.kind}|${room.y}|${room.w}|${room.bottom}` : "";
+  const linesDrawing = useMemo((): LinesDrawing | null => {
+    if (!lines || !room) return null;
+    const measure = (measureText ?? pageMeasure)();
+    if (room.kind === "opening") {
+      const bodyHeight = Math.max(180 * c, room.bottom - room.y * c - LINES_OVER_FOOT * c);
+      const W = stacked ? room.w * c : room.w * c - (hasGetOut ? (GET_OUT_LINES + 18) * c : 0);
+      // With no Get out to head, Ahead stands above the lines in the flow's column: they get the rest.
+      const aheadAbove = !stacked && hasAhead && !hasGetOut;
+      return layoutMealLines(lines, { W, H: bodyHeight - (aheadAbove ? AHEAD_ROW * c : 0), c, narrow: stacked }, measure);
+    }
+    const avail = Math.max(120, room.bottom - room.y);
+    return layoutMealLines(lines, { W: room.w * c, H: avail * c, c, narrow: portrait }, measure);
+    // `room` is read through `roomKey`: the same numbers, the same drawing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, roomKey, c, stacked, hasGetOut, hasAhead, portrait, measureText, fontsLoaded]);
+  const shedOrder = stacked && !linesDrawing ? stackShedOrder(phases) : [];
   /** The last step of the first rung: tight, every optional line given way, Get out's heads over their lists. */
   const rungEnd = 1 + shedOrder.length;
   const lastStep = rungEnd + (hasGetOut ? 1 + shedOrder.length : 0);
@@ -385,6 +458,35 @@ export function Timetable(props: TimetableProps) {
   const getOutMask = footMask(useMoreBelow(getOutScrollRef, scrollKey));
   const stackBelow = useMoreBelow(openingBodyRef, scrollKey);
   const stackMask = stacked && stackScrolls ? footMask(stackBelow) : undefined;
+  // The lines past the fit ladder scroll in their own column (DS v1.63), under the foot's fade.
+  const linesScrollRef = useRef<HTMLDivElement | null>(null);
+  const linesScroll = linesDrawing !== null && linesDrawing.scroll && !stacked;
+  // The lines' box is a new one each time the prep mode is chosen (its `key`, the cross-fade): the mode
+  // is in the fade's key so it listens to the box on screen, whatever the heights.
+  const linesMask = footMask(useMoreBelow(linesScrollRef, `${scrollKey}|${ov.timetable.mode}|${linesDrawing?.height ?? 0}`));
+  const linesNowY = linesDrawing?.nowY ?? null;
+  // The step in hand starts in view when the whole meal scrolls.
+  useEffect(() => {
+    const box = linesScrollRef.current;
+    if (!box || !linesScroll || linesNowY === null) return;
+    box.scrollTop = Math.max(0, linesNowY - box.clientHeight / 3);
+  }, [linesScroll, linesNowY]);
+  // A finger scrolls the lines in their box. At the list's top the browser takes only a drag up
+  // (`pan-down`: the pull-to-refresh pattern, Pointer Events §touch-action), so a drag down from
+  // there is the sheet's pull, back toward the step (CookSheet's `downOn`); off its top, both ways.
+  useEffect(() => {
+    const box = linesScrollRef.current;
+    if (!box || !linesScroll) return;
+    const sync = () => {
+      box.style.touchAction = box.scrollTop <= 0.5 ? "pan-down" : "pan-y";
+    };
+    sync();
+    box.addEventListener("scroll", sync, { passive: true });
+    return () => {
+      box.removeEventListener("scroll", sync);
+      box.style.touchAction = "";
+    };
+  }, [linesScroll, linesDrawing]);
   /** This commit is a step of the fit: the glide waits for the stack it lands in. */
   const refitting = useRef(false);
   /**
@@ -698,15 +800,75 @@ export function Timetable(props: TimetableProps) {
           const availCpx = bodyHeight / c;
           // Landscape: Get out's column beside the flow, its spacing and lines budgeted by arithmetic.
           // Portrait (DS v1.52): stacked, each the body's full width, both fitted (`stackStep`).
-          const leftColWidth = px(380);
+          // Beside the meal's lines Get out narrows to the drawing's column (DS v1.63), so the lines have the room.
+          const leftColWidth = px(linesDrawing ? GET_OUT_LINES : 380);
           const rung = stackRung(stackStep, shedOrder.length, hasGetOut);
           const aheadList = phasesModel?.ahead ?? [];
-          const hasAhead = aheadList.length > 0 || Boolean(op.ahead && op.ahead.items.length > 0);
-          const flowAvailCpx = availCpx - (hasAhead ? 40 : 0);
+          const flowAvailCpx = availCpx - (hasAhead ? AHEAD_ROW : 0);
           const tightFlow = stacked ? rung.tight : flowAvailCpx < phases.length * 66;
           const baseRowCpx = tightFlow ? 31 : 38;
           const maxSubLines = Math.max(0, Math.floor((flowAvailCpx - 14 - phases.length * baseRowCpx) / 27));
 
+          // With the lines, Ahead heads Get out's column, as drawn (DS v1.63), so the meal's shape is the
+          // first thing in the flow's.
+          const aheadInGetOut = linesDrawing !== null && hasGetOut;
+          // In Get out's narrow column (210 cpx) the note wraps, and the ask sits under its words on
+          // a line of its own: beside them it took the column's whole width and was clipped itself.
+          const aheadColumn = !stacked && aheadInGetOut;
+          const aheadWraps = stacked || aheadInGetOut;
+          // Built only when there is a note: an opening with no Ahead has nothing to read it from.
+          const aheadBlock = hasAhead && (
+                    <div
+                      data-ahead
+                      data-sand=""
+                      data-ahead-form={stacked ? "stacked" : aheadColumn ? "column" : "row"}
+                      className={
+                        aheadColumn
+                          ? "flex shrink-0 flex-col items-start gap-[calc(4*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(6*var(--cpx))]"
+                          : stacked
+                          ? "flex items-baseline justify-between gap-[calc(10*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))]"
+                          : "flex flex-nowrap items-baseline justify-between gap-[calc(10*var(--cpx))] overflow-hidden rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))]"
+                      }
+                    >
+                      <p
+                        className={aheadWraps ? "m-0 min-w-0 flex-1" : "m-0 min-w-0 flex-1 truncate"}
+                        style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
+                      >
+                        <span className="font-semibold text-ink" style={{ fontSize: px(24), lineHeight: `${px(26)}px` }}>
+                          {COOK_COPY.ahead}
+                        </span>{" "}
+                        {aheadList.length > 0
+                          ? aheadList.map((a, q) => (
+                              <span key={q} className={aheadWraps ? undefined : "whitespace-nowrap"}>
+                                {q > 0 ? " · " : ""}
+                                <span className="font-bold text-ink">{a.summary}</span>{" "}
+                                <span className="font-medium text-ink-soft">· {a.lead}</span>
+                              </span>
+                            ))
+                          : (op.ahead?.items ?? []).map((a, q) => (
+                              <span key={q} className={aheadWraps ? undefined : "whitespace-nowrap"}>
+                                {q > 0 ? " · " : ""}
+                                <span className="font-bold text-ink">{a.name}</span>{" "}
+                                <span className="font-medium text-ink-soft">{a.lead}</span>
+                              </span>
+                            ))}
+                      </p>
+                      {onAskAhead && aheadList[0]?.group && (
+                        <button
+                          type="button"
+                          data-ask-ahead
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onAskAhead(aheadList[0].group);
+                          }}
+                          className={`pointer-events-auto shrink-0 cursor-pointer text-left font-semibold ${aheadColumn ? "" : "whitespace-nowrap "}text-ink underline decoration-ink/[.35] underline-offset-[4px] ${FOCUS}`}
+                          style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
+                        >
+                          {COOK_COPY.missedAhead}
+                        </button>
+                      )}
+                    </div>
+          );
           const allowedPassiveKeys = new Set<string>();
           const allowedSummaryKeys = new Set<string>();
           /** Portrait: the optional lines the fit has given way so far. */
@@ -811,14 +973,25 @@ export function Timetable(props: TimetableProps) {
                     className="flex shrink-0 flex-col gap-[calc(6*var(--cpx))]"
                     style={stacked ? undefined : { width: leftColWidth, maxHeight: bodyHeight }}
                   >
-                    <div className="flex shrink-0 items-baseline justify-between gap-[calc(10*var(--cpx))]">
+                    {hasAhead && aheadInGetOut && aheadBlock}
+                    {/* With no Ahead note over it this row is the body's first, and the stepper's − and +
+                        stand their 80 cpx touch 24 cpx above it (`STEP_BTN`'s -my), past the body's
+                        clip: the row keeps that room over itself (review touch 3). Under them too: the
+                        stepper keeps 24 cpx under itself, so what follows it (Show amounts, wrapped under
+                        it in Get out's narrow column, or the list) sits clear of their touch and, by
+                        14 cpx, of their rings. */}
+                    <div
+                      data-get-out-head-row
+                      className="flex shrink-0 flex-wrap items-baseline justify-between gap-x-[calc(10*var(--cpx))]"
+                      style={stepper && !(hasAhead && aheadInGetOut) ? { paddingTop: px(24) } : undefined}
+                    >
                       <h2
                         data-get-out-head
                         className="m-0 font-semibold whitespace-nowrap text-ink"
                         style={{ fontSize: px(24), lineHeight: `${px(28)}px` }}
                       >
                         {COOK_COPY.getOut}
-                        {scaleNote && (
+                        {scaleNote && !stepper && (
                           <>
                             {" "}
                             <span data-scale-note className="font-medium text-ink-soft" style={{ fontSize: px(22) }}>
@@ -827,6 +1000,7 @@ export function Timetable(props: TimetableProps) {
                           </>
                         )}
                       </h2>
+                      {stepper && <ServingStepper {...stepper} className="mr-auto mb-[calc(24*var(--cpx))]" />}
                       {(getOutModel.fridge.length > 0 || getOutModel.pantry.length > 0) && (
                         <button
                           type="button"
@@ -945,55 +1119,7 @@ export function Timetable(props: TimetableProps) {
                   }
                   style={stacked ? undefined : { maxHeight: bodyHeight }}
                 >
-                  {hasAhead && (
-                    <div
-                      data-ahead
-                      data-sand=""
-                      className={
-                        stacked
-                          ? "flex items-baseline justify-between gap-[calc(10*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))]"
-                          : "flex flex-nowrap items-baseline justify-between gap-[calc(10*var(--cpx))] overflow-hidden rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))]"
-                      }
-                    >
-                      <p
-                        className={stacked ? "m-0 min-w-0 flex-1" : "m-0 min-w-0 flex-1 truncate"}
-                        style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
-                      >
-                        <span className="font-semibold text-ink" style={{ fontSize: px(24), lineHeight: `${px(26)}px` }}>
-                          {COOK_COPY.ahead}
-                        </span>{" "}
-                        {aheadList.length > 0
-                          ? aheadList.map((a, q) => (
-                              <span key={q} className={stacked ? undefined : "whitespace-nowrap"}>
-                                {q > 0 ? " · " : ""}
-                                <span className="font-bold text-ink">{a.summary}</span>{" "}
-                                <span className="font-medium text-ink-soft">· {a.lead}</span>
-                              </span>
-                            ))
-                          : op.ahead!.items.map((a, q) => (
-                              <span key={q} className={stacked ? undefined : "whitespace-nowrap"}>
-                                {q > 0 ? " · " : ""}
-                                <span className="font-bold text-ink">{a.name}</span>{" "}
-                                <span className="font-medium text-ink-soft">{a.lead}</span>
-                              </span>
-                            ))}
-                      </p>
-                      {onAskAhead && aheadList[0]?.group && (
-                        <button
-                          type="button"
-                          data-ask-ahead
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onAskAhead(aheadList[0].group);
-                          }}
-                          className={`pointer-events-auto shrink-0 cursor-pointer font-semibold whitespace-nowrap text-ink underline decoration-ink/[.35] underline-offset-[4px] ${FOCUS}`}
-                          style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
-                        >
-                          {COOK_COPY.missedAhead}
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  {hasAhead && !aheadInGetOut && aheadBlock}
 
                   {anim?.sooner && (
                     <div
@@ -1005,6 +1131,20 @@ export function Timetable(props: TimetableProps) {
                     </div>
                   )}
 
+                  {linesDrawing ? (
+                    <div
+                      ref={linesScrollRef}
+                      data-lines-scroll
+                      // A prep mode chosen redraws the lines: they cross-fade in (DS v1.63), never glide.
+                      key={ov.timetable.mode}
+                      className={`motion-safe:animate-[dot-in_280ms_var(--ease)] ${
+                        linesScroll ? `min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain [touch-action:pan-y] ${NO_SCROLLBAR}` : ""
+                      }`}
+                      style={linesScroll ? { maskImage: linesMask, WebkitMaskImage: linesMask } : undefined}
+                    >
+                      <MealLines drawing={linesDrawing} c={c} onRead={null} readMark={null} tab={-1} ground />
+                    </div>
+                  ) : (
                   <ol
                     data-phase-list
                     className={`m-0 flex flex-col list-none p-0 ${
@@ -1176,6 +1316,7 @@ export function Timetable(props: TimetableProps) {
                       );
                     })}
                   </ol>
+                  )}
                 </section>
               </div>
             </div>
@@ -1183,7 +1324,37 @@ export function Timetable(props: TimetableProps) {
         })()}
 
         {/* LEVEL 2: Mid-cook Phase Outline (`!opening && wh`). */}
-        {wh && !opening && (() => {
+        {wh && !opening && linesDrawing && (
+          <div
+            ref={linesScrollRef}
+            data-whole-lines
+            data-lines-scroll
+            // Where it scrolls, the box takes its own touches (the layer above it takes none): a finger
+            // on a head, a break or a gap scrolls the list rather than falling through to the sheet.
+            // Whether a press is a pull is the sheet's to say (`downOn`), which listens before React.
+            className={`absolute ${linesScroll ? `pointer-events-auto overflow-x-hidden overflow-y-auto overscroll-contain [touch-action:pan-y] ${NO_SCROLLBAR}` : ""}`}
+            style={{
+              left: px(wh.chart.x),
+              top: px(wh.chart.y),
+              width: px(wh.chart.w),
+              height: px(Math.max(120, wholeLinesBottom(ov) - wh.chart.y)),
+              opacity: wordsOp,
+              maskImage: linesScroll ? linesMask : undefined,
+              WebkitMaskImage: linesScroll ? linesMask : undefined,
+            }}
+          >
+            <MealLines
+              drawing={linesDrawing}
+              c={c}
+              readMark={readMark}
+              tab={tab}
+              onRead={(k) => {
+                onRead(k);
+              }}
+            />
+          </div>
+        )}
+        {wh && !opening && !linesDrawing && (() => {
           const whAvailCpx = Math.max(120, (onSheet?.growFrom ?? wh.chart.y + wh.chart.h) - wh.chart.y - 16);
           const tightWh = whAvailCpx < phases.length * 46;
           const showWhMeanwhile = whAvailCpx >= phases.length * (tightWh ? 32 : 44) + 30;

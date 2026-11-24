@@ -31,7 +31,7 @@ import type { OverviewChrome, OverviewPlace } from "./overview-place";
 import type { GetOutItem } from "./timetable-layout";
 import type { Timetable } from "./timetable-model";
 import type { CookTask } from "./cook-plan";
-import { LINE_FILL_NOW, derivedFrame, layoutDerived, type DerivedFrame, type DerivedSheet } from "./sheet-derived";
+import { derivedFrame, layoutDerived, type DerivedFrame, type DerivedSheet } from "./sheet-derived";
 import { stripFrame, withStrip, type StripLineLayout } from "./sheet-strip";
 import type { PeekDrawing } from "./peek-layout";
 import type { PeekInput } from "./cook-peek";
@@ -960,10 +960,9 @@ export function depthOf(L: SheetLayout, Y: number): number {
 export function frameAt(L: SheetLayout, s: FrameState): Frame {
   const F = frameOwn(L, s);
   if (!L.stripLine) return F;
-  // The strip's fill: the end of the step in hand at rest and under the peek; a derived plan's
-  // glides to the clock's minute on the way to the whole cook (v1.54).
-  const progress = s.progress ?? L.stripLine.progress;
-  const fill = L.asWritten ? progress : lerp(progress, s.now ?? L.now, sstep(1, LINE_FILL_NOW, F.d));
+  // The strip's fill: the end of the step in hand at every level, the whole cook included (v1.63:
+  // the whole meal is drawn as lines with no clock, so the glide to the clock's minute retires).
+  const fill = s.progress ?? L.stripLine.progress;
   return stripFrame(L, F, s, fill);
 }
 
