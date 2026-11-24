@@ -556,6 +556,70 @@ describe("LAYOUT-2: SignInModeProvider reloads on cross-tab storage clear and bf
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps localStorage intact on persisted pageshow when storage was not cleared", async () => {
+    setSignInCookie(true);
+    const {
+      QueryClient,
+      QueryClientProvider,
+      SignInModeProvider: FreshSignInModeProvider,
+      ModeReader: FreshModeReader,
+      reportOutbox: freshReportOutbox,
+      timerStore: freshTimerStore,
+    } = await loadFreshKitchenModules();
+    const reload = vi.fn();
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(["kitchen", "queue"], [{ id: "q2" }]);
+
+    const outbox = freshReportOutbox();
+    await expect(outbox.add(makeReport())).resolves.toBe("flagged");
+    await outbox.flush();
+    expect(outbox.list()).toHaveLength(1);
+    expect(outbox.list()[0]?.status).toBe("waiting");
+
+    freshTimerStore.start(
+      {
+        id: "timer-braise",
+        queueId: "q2",
+        recipeName: "Chili",
+        stepId: "s2",
+        label: "Braise",
+        durationMs: 60_000,
+      },
+      1_700_000_000_000,
+    );
+    expect(freshTimerStore.getSnapshot()).toHaveLength(1);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <FreshSignInModeProvider reload={reload}>
+          <FreshModeReader />
+        </FreshSignInModeProvider>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByTestId("sign-in-mode").textContent).toBe("true");
+
+    const readLocalStorage = (): [string, string | null][] => {
+      const entries: [string, string | null][] = [];
+      for (let i = 0; i < window.localStorage.length; i += 1) {
+        const key = window.localStorage.key(i);
+        if (key !== null) {
+          entries.push([key, window.localStorage.getItem(key)]);
+        }
+      }
+      return entries.sort(([a], [b]) => a.localeCompare(b));
+    };
+
+    const before = readLocalStorage();
+    expect(before.map(([key]) => key)).toEqual(["sous-feedback", "sous-timers"]);
+
+    dispatchPageShow(true);
+
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("sign-in-mode")).toBeNull();
+    expect(readLocalStorage()).toEqual(before);
+    expect(outbox.list()).toEqual([]);
+  });
+
   it("skips clearing sessionStorage on SecurityError and still reloads", async () => {
     setSignInCookie(true);
     const {

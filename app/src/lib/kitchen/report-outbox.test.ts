@@ -1355,4 +1355,19 @@ describe("forget", () => {
       stop();
     }
   });
+
+  it("leaves the stored waiting report untouched in the backing store", async () => {
+    const backing = memoryStore();
+    const outbox = createReportOutbox(backing, silent);
+    await expect(outbox.add(report())).resolves.toBe("flagged");
+    expect(outbox.list()).toHaveLength(1);
+    expect(outbox.list()[0]?.status).toBe("waiting");
+    const before = backing.getItem(OUTBOX_KEY);
+    expect(before).not.toBeNull();
+
+    outbox.forget();
+
+    expect(outbox.list()).toEqual([]);
+    expect(backing.getItem(OUTBOX_KEY)).toBe(before);
+  });
 });
