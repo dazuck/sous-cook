@@ -118,7 +118,7 @@ test.describe("Behaviour without a model key", () => {
 
     await page.goto("/kitchen");
 
-    // Open import modal from the home rail (app/src/components/kitchen/HomeRail.tsx:185-186)
+    // Open import modal from the home rail (app/src/components/kitchen/HomeRail.tsx:180-181)
     await page.getByRole("button", { name: "Import recipe" }).click();
 
     // Import modal dialog (app/src/components/kitchen/RecipeImportModal.tsx:529; BorrowedChrome.tsx:244-246)
@@ -149,7 +149,7 @@ test.describe("Behaviour without a model key", () => {
   }) => {
     await page.goto("/kitchen");
 
-    // Open import modal from the home rail (app/src/components/kitchen/HomeRail.tsx:185-186)
+    // Open import modal from the home rail (app/src/components/kitchen/HomeRail.tsx:180-181)
     await page.getByRole("button", { name: "Import recipe" }).click();
     const dialog = page.getByRole("dialog", { name: "Import recipe" });
     await expect(dialog).toBeVisible();

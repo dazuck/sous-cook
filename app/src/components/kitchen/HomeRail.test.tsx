@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { TRPCClientError } from "@trpc/client";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Window } from "happy-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CookReport } from "@/lib/kitchen/report-capture";
@@ -13,7 +13,8 @@ import { SIGN_IN_MODE_COOKIE } from "@/lib/kitchens/mode";
 import { HomeRail } from "./HomeRail";
 import { CLEAR_ARM_MS } from "./ShoppingListModal";
 import { SignInModeProvider } from "./SignInMode";
-import { SIGN_OUT_COPY, SignOutItem } from "./SignOutItem";
+import * as signOutModule from "./SignOutItem";
+import { SIGN_OUT_COPY } from "./SignOutItem";
 
 let storageWindow: Window | null = null;
 let recordedRequests: Array<{ method: string; url: string }> = [];
@@ -127,12 +128,38 @@ function createControlledOutbox() {
   return { outbox, submits, annotates };
 }
 
+/** Sign out as the rail's panel draws it, from the given module: the row in a menu, the status outside it. */
+function SignOutMenu({
+  from,
+  outbox,
+}: {
+  from: typeof signOutModule;
+  outbox: () => ReportOutbox;
+}) {
+  const { SignOutScope, SignOutRow, SignOutStatus } = from;
+  return (
+    <SignOutScope outbox={outbox}>
+      <div role="menu">
+        <SignOutRow rowClassName="tab-row" />
+      </div>
+      <SignOutStatus className="status-line" />
+    </SignOutScope>
+  );
+}
+
+/** The status line once a reason is in it: its live region stands empty from the menu's opening. */
+async function failureStatus(): Promise<HTMLElement> {
+  return waitFor(() => {
+    const status = screen.getByRole("status");
+    expect(status.textContent).not.toBe("");
+    return status;
+  });
+}
+
 function renderSignOutStandalone(outbox: ReportOutbox) {
   return render(
     <SignInModeProvider>
-      <div role="menu">
-        <SignOutItem rowClassName="tab-row" outbox={() => outbox} />
-      </div>
+      <SignOutMenu from={signOutModule} outbox={() => outbox} />
     </SignInModeProvider>,
   );
 }
@@ -207,6 +234,10 @@ describe("SIGNOUT-1: Sign out in the kitchen home rail menu", () => {
       .getAllByRole("menuitem")
       .map((item) => item.textContent);
     expect(signedInNames.at(-1)).toBe(SIGN_OUT_COPY.item);
+    // Drawn as the panel's other rows are: its words, then its glyph in the rail's column.
+    const signOutRow = screen.getByRole("menuitem", { name: SIGN_OUT_COPY.item });
+    expect(signOutRow.firstElementChild?.textContent).toBe(SIGN_OUT_COPY.item);
+    expect(signOutRow.lastElementChild?.querySelector("svg")).toBeTruthy();
     signedInView.unmount();
 
     setSignInCookie(false);
@@ -247,8 +278,19 @@ describe("SIGNOUT-1: Sign out in the kitchen home rail menu", () => {
     openRailMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: SIGN_OUT_COPY.item }));
 
-    const status = await screen.findByRole("status");
+    const status = await failureStatus();
     expect(status.textContent).toBe(SIGN_OUT_COPY.refused);
+    // The line is the panel's, under the rows: a menu holds only rows you can choose, and the row keeps its name.
+    expect(status.closest('[role="menu"]')).toBeNull();
+    expect(status.closest("[data-rail-tab]")).not.toBeNull();
+    expect(screen.getByRole("menuitem", { name: SIGN_OUT_COPY.item }).textContent).toBe(SIGN_OUT_COPY.item);
+    expect(Array.from(screen.getByRole("menu").children).every((c) => c.getAttribute("role") === "menuitem")).toBe(true);
+    // Closed and opened again, the panel starts over: Sign out, and nothing in the line.
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+    openRailMenu();
+    expect(screen.getByRole("menuitem", { name: SIGN_OUT_COPY.item })).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe("");
     expect(signOutPostCount()).toBe(1);
     expect(screen.getByRole("menu")).toBeTruthy();
     expect(replaceSpy).not.toHaveBeenCalled();
@@ -271,7 +313,7 @@ describe("SIGNOUT-1: Sign out in the kitchen home rail menu", () => {
     openRailMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: SIGN_OUT_COPY.item }));
 
-    const status = await screen.findByRole("status");
+    const status = await failureStatus();
     expect(status.textContent).toBe(SIGN_OUT_COPY.network);
     expect(signOutPostCount()).toBe(1);
     expect(screen.getByRole("menu")).toBeTruthy();
@@ -455,7 +497,7 @@ describe("SIGNOUT-1: Sign out in the kitchen home rail menu", () => {
     expect(firstOpenItem.textContent).toBe(SIGN_OUT_COPY.armed(1));
     expect(signOutPostCount()).toBe(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "Close kitchen tab" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("menu")).toBeNull();
 
     openRailMenu();
@@ -534,7 +576,7 @@ describe("SIGNOUT-1: Sign out in the kitchen home rail menu", () => {
       );
     }
 
-    const status = await screen.findByRole("status");
+    const status = await failureStatus();
     expect(status.textContent).toBe(SIGN_OUT_COPY.refused);
     expect(signOutPostCount()).toBe(1);
     expect(item.getAttribute("aria-disabled")).toBeNull();
@@ -646,24 +688,23 @@ describe("SIGNOUT-1: Sign out in the kitchen home rail menu", () => {
     try {
       const [
         { SignInModeProvider: FreshProvider },
-        { SIGN_OUT_COPY: freshCopy, SignOutItem: FreshSignOutItem },
+        freshSignOut,
       ] = await Promise.all([
         import("./SignInMode"),
         import("./SignOutItem"),
       ]);
+      const freshCopy = freshSignOut.SIGN_OUT_COPY;
 
       render(
         <FreshProvider>
-          <div role="menu">
-            <FreshSignOutItem rowClassName="tab-row" outbox={() => outbox} />
-          </div>
+          <SignOutMenu from={freshSignOut} outbox={() => outbox} />
         </FreshProvider>,
       );
 
       const item = screen.getByRole("menuitem", { name: freshCopy.item });
       fireEvent.click(item);
 
-      const status = await screen.findByRole("status");
+      const status = await failureStatus();
       expect(status.textContent).toBe(freshCopy.network);
       expect(item.getAttribute("aria-disabled")).toBeNull();
       expect(loadAttempts).toBe(1);
@@ -680,7 +721,7 @@ describe("SIGNOUT-1: Sign out in the kitchen home rail menu", () => {
       await vi.waitFor(() => {
         expect(loadAttempts).toBe(2);
       });
-      expect((await screen.findByRole("status")).textContent).toBe(
+      expect((await failureStatus()).textContent).toBe(
         freshCopy.network,
       );
       expect(item.getAttribute("aria-disabled")).toBeNull();

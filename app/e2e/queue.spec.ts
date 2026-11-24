@@ -8,7 +8,7 @@ test.describe("Queue screen", () => {
   }) => {
     await page.goto("/kitchen");
 
-    // Open queue screen from the home rail (app/src/components/kitchen/HomeRail.tsx:158-161)
+    // Open queue screen from the home rail (app/src/components/kitchen/HomeRail.tsx:194-195)
     await page.getByRole("button", { name: "Up next · 4" }).click();
 
     // Queue dialog (app/src/components/kitchen/BorrowedChrome.tsx:244-246; QueueScreen.tsx:13, 55)

@@ -228,7 +228,7 @@ test.describe("Cook mode", () => {
     await page.goto("/kitchen");
 
     // Start P3 through the Queue screen (accessible in both landscape and portrait)
-    // (app/src/components/kitchen/HomeRail.tsx:158-161; QueueScreen.tsx:101-106)
+    // (app/src/components/kitchen/HomeRail.tsx:194-195; QueueScreen.tsx:101-106)
     await page.getByRole("button", { name: "Up next · 4" }).click();
     await page
       .getByRole("dialog", { name: "Up next" })

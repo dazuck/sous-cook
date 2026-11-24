@@ -18,7 +18,7 @@ test.describe("Cookpacks shelf and pack view", () => {
   }) => {
     await page.goto("/kitchen");
 
-    // Cookpacks link on the home rail (app/src/components/kitchen/HomeRail.tsx:145-152; KitchenHome.tsx:30)
+    // Cookpacks link on the home rail (app/src/components/kitchen/HomeRail.tsx:166-174; KitchenHome.tsx:30)
     await page.getByRole("link", { name: "Cookpacks" }).click();
     await expect(page).toHaveURL(/\/kitchen\/cookpacks$/);
 

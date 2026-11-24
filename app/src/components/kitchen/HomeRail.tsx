@@ -8,7 +8,8 @@ import { FOCUS } from "./control-style";
 import { useMenuDismiss } from "./CookMenu";
 import { COOKPACKS_HREF } from "./HomeFoot";
 import { HOME_MORE_COPY } from "./HomeMore";
-import { SignOutItem } from "./SignOutItem";
+import { Glyph, type GlyphName } from "./home-rail-glyphs";
+import { SignOutRow, SignOutScope, SignOutStatus } from "./SignOutItem";
 
 interface HomeRailProps {
   cookpacks: string;
@@ -24,19 +25,36 @@ interface HomeRailProps {
   flagged?: ReactNode;
 }
 
+/** The rail's and the panel's glyph size in cpx (§5, the kitchen home). */
+const GLYPH_CPX = 32;
+
+/** One rail slot: a target tall plus the nav's 2 cpx gap. The panel's rows keep the same pitch so each stands level with its rail icon. */
+const SLOT_CPX = 82;
+
 const LONG_PRESS_MS = 320;
 const DRAG_OPEN_PX = 14;
 
 const RAIL_ICON_BTN = `group/icon relative inline-flex size-[var(--target)] shrink-0 cursor-pointer items-center justify-center rounded-full text-[length:var(--type-meta)] text-ink-soft transition-colors duration-[320ms] ease-[var(--ease)] hover:text-ink active:bg-sand ${FOCUS}`;
 
-const TAB_ROW = `flex w-full min-h-[var(--target)] min-w-[var(--target)] cursor-pointer items-center gap-[calc(14*var(--cpx))] px-[calc(22*var(--cpx))] text-left text-[length:var(--type-meta)] leading-tight font-medium text-ink transition-colors duration-[320ms] ease-[var(--ease)] active:bg-sand focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-ink`;
+/** The panel row's glyph cell: the rail icon's own column, so each glyph stands exactly where the rail draws it. */
+const ICON_CELL = "flex size-[var(--target)] shrink-0 items-center justify-center";
+
+/** The name that fades in beside a rail icon on hover or keyboard focus. Hover-capable pointers only: a touch screen has no hover to show it. */
+const RAIL_TIP = `pointer-events-none absolute right-[calc(100%+4*var(--cpx))] top-1/2 -translate-y-1/2 whitespace-nowrap rounded-[var(--radius-2)] border border-ink/[.14] bg-paper px-[calc(14*var(--cpx))] py-[calc(8*var(--cpx))] text-[length:var(--type-meta)] leading-none font-medium text-ink opacity-0 transition-opacity duration-[200ms] ease-[var(--ease)] group-focus-visible/icon:opacity-100 group-hover/icon:opacity-100`;
+
+/** Why Sign out failed: a line under the rows, outside the menu, its words in line with the rows' names. */
+const SIGN_OUT_LINE =
+  "py-[calc(12*var(--cpx))] pr-[calc(22*var(--cpx))] pl-[calc(92*var(--cpx))] text-[length:var(--type-meta)] leading-tight text-ink-soft";
+
+/** A panel row: the name on the left, its glyph in the rail's own column on the right, so the panel reads as the rail unfolded. */
+const TAB_ROW = `flex w-full min-h-[var(--target)] cursor-pointer items-center pl-[calc(92*var(--cpx))] text-left text-[length:var(--type-meta)] leading-tight font-medium text-ink shadow-[inset_0_-1px_0_color-mix(in_oklab,var(--ink)_8%,transparent)] transition-colors duration-[320ms] ease-[var(--ease)] active:bg-sand focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-ink`;
 
 /**
  * Right-edge appliance icon rail for `/kitchen`:
  * - Direct 1-tap etched line icons for Cookpacks, Up next / queue, Add ingredients, and Import.
  * - Long-pressing (320 ms), dragging left along the bar, or tapping the pull-out handle ("More")
- *   slides out a warm `--paper` tab naming each icon and surfacing secondary options
- *   (Shopping list, Ask Sous, Flagged screens).
+ *   fades in a warm `--paper` panel naming each icon, level with it, and surfacing the destinations the
+ *   rail doesn't have (Ask Sous, Shopping list, and Sign out in sign-in mode). The handle is the way out.
  */
 export function HomeRail({
   cookpacks,
@@ -55,6 +73,9 @@ export function HomeRail({
   const button = useRef<HTMLButtonElement>(null);
   const menuId = useId();
   const { choose, panelFocus } = useMenuDismiss(open, setOpenState, root, button);
+  const draw = (name: GlyphName) => <Glyph name={name} size={GLYPH_CPX} />;
+  // Ask Sous leads the panel, one slot above the rail's first icon, so the rows below it stand level with the rail's icons.
+  const rowsAbove = onOpenAsk ? 1 : 0;
 
   // Long-press or drag-left along the rail pulls out the labeled tab.
   const gesture = useRef<{ id: number; x: number; y: number; timer: ReturnType<typeof setTimeout> | null; triggered: boolean } | null>(null);
@@ -149,10 +170,23 @@ export function HomeRail({
           aria-label={cookpacks}
           className={RAIL_ICON_BTN}
         >
-          <CookpacksGlyph />
+          {draw("cookpacks")}
+          <span aria-hidden="true" className={RAIL_TIP}>{cookpacks}</span>
         </Link>
 
-        {/* 2. Up next / Under way / Made recently */}
+        {/* 2. Direct 1-tap Import */}
+        <button
+          type="button"
+          data-rail-import
+          aria-label="Import recipe"
+          onClick={onOpenImport}
+          className={RAIL_ICON_BTN}
+        >
+          {draw("import")}
+          <span aria-hidden="true" className={RAIL_TIP}>Import recipe</span>
+        </button>
+
+        {/* 3. Up next / Under way / Made recently */}
         {word ? (
           <button
             type="button"
@@ -162,13 +196,14 @@ export function HomeRail({
             onClick={onOpenQueue}
             className={RAIL_ICON_BTN}
           >
-            <QueueGlyph />
+            {draw("queue")}
+            <span aria-hidden="true" className={RAIL_TIP}>{word.label}</span>
           </button>
         ) : !ready ? (
           <span aria-hidden="true" className="size-[var(--target)] shrink-0" />
         ) : null}
 
-        {/* 3. Add ingredients */}
+        {/* 4. Add ingredients */}
         {onOpenAddIngredients && (
           <button
             type="button"
@@ -176,262 +211,106 @@ export function HomeRail({
             onClick={onOpenAddIngredients}
             className={RAIL_ICON_BTN}
           >
-            <IngredientsGlyph />
+            {draw("ingredients")}
+            <span aria-hidden="true" className={RAIL_TIP}>{addIngredientsLabel}</span>
           </button>
         )}
 
-        {/* 4. Direct 1-tap Import */}
-        <button
-          type="button"
-          data-rail-import
-          aria-label="Import recipe"
-          onClick={onOpenImport}
-          className={RAIL_ICON_BTN}
-        >
-          <ImportGlyph />
-        </button>
-
-        {/* 5. Pull-out tab handle ("More") — also opens on long-press or drag-left */}
+        {/* 5. Pull-out tab handle ("More"): also opens on long-press or drag-left, and closes the panel while it is open */}
         <button
           ref={button}
           type="button"
           data-rail-pull
+          aria-label={HOME_MORE_COPY.more}
           aria-haspopup="menu"
           aria-expanded={open}
           aria-controls={open ? menuId : undefined}
           onClick={() => setOpenState(!open)}
-          className={RAIL_ICON_BTN}
+          // Open, the panel and its left-edge strip are the way out. The handle hides rather than standing
+          // as a second chevron under a panel too short to cover it (no Shopping list, no Sign out).
+          className={open ? `${RAIL_ICON_BTN} pointer-events-none opacity-0` : RAIL_ICON_BTN}
         >
-          <PullTabGlyph open={open} />
-          <span className="sr-only">{HOME_MORE_COPY.more}</span>
+          {draw(open ? "pullOpen" : "pull")}
+          <span aria-hidden="true" className={RAIL_TIP}>{HOME_MORE_COPY.more}</span>
         </button>
       </nav>
 
-      {/* Pull-out labeled paper tab */}
+      {/*
+        The pull-out: a paper panel at the rail's left edge that fades in over 320 ms (200 ms under reduced motion;
+        §3 allows only fades). Its rows keep the rail's pitch, so each destination the rail has stands level with
+        its own icon, with its name beside it; Ask Sous sits above the first and the rest below the last. The panel
+        is as tall as its rows and never taller than the screen: six rows (every hook connected) are 490 cpx, and a
+        landscape screen is 600.
+        Sign out is a row only in sign-in mode, which refuses connected hooks, so with it the panel
+        has at most five rows and room under them for why a sign-out failed. The menu is the rows alone: the
+        way out and that line are the panel's, outside it.
+      */}
       {open && (
-        <div
-          id={menuId}
-          role="menu"
-          data-rail-tab
-          data-holds-keys
-          {...panelFocus}
-          className="fixed top-1/2 right-[calc(94*var(--cpx))] z-40 w-[calc(300*var(--cpx))] max-w-[calc(100vw-var(--edge)-94*var(--cpx))] -translate-y-1/2 rounded-[var(--radius-2)] border border-ink/[.14] bg-paper py-[calc(10*var(--cpx))] shadow-none"
-        >
-          <div className="flex items-center justify-between border-b border-ink/[.08] px-[calc(22*var(--cpx))] pb-[calc(6*var(--cpx))]">
-            <span className="text-[length:calc(16*var(--cpx))] font-semibold tracking-[0.06em] uppercase text-ink-soft">
-              Kitchen
-            </span>
+        <SignOutScope>
+          <div
+            data-rail-tab
+            data-holds-keys
+            {...panelFocus}
+            style={{ top: `calc(${6 - SLOT_CPX * rowsAbove} * var(--cpx) - 1px)` }}
+            className="absolute right-0 z-40 w-[calc(440*var(--cpx))] max-w-[calc(100vw-var(--edge)-30*var(--cpx))] overflow-hidden rounded-[var(--radius-2)] border border-ink/[.14] bg-paper opacity-100 shadow-none transition-opacity duration-[320ms] ease-[var(--ease)] starting:opacity-0 motion-reduce:duration-[200ms]"
+          >
+            {/* The way out: a chevron strip down the panel's left edge, pointing back toward the rail. The panel covers the More handle, so this closes it. */}
             <button
               type="button"
-              aria-label="Close kitchen tab"
-              onClick={() => setOpenState(false)}
-              className={`inline-flex size-[var(--target)] -mr-[calc(14*var(--cpx))] cursor-pointer items-center justify-center rounded-full text-ink-soft hover:text-ink active:bg-sand ${FOCUS}`}
+              data-rail-close
+              aria-label="Close"
+              onClick={choose()}
+              className={`absolute inset-y-0 left-0 flex w-[var(--target)] cursor-pointer items-center justify-center text-ink-soft transition-colors duration-[320ms] ease-[var(--ease)] hover:text-ink active:bg-sand ${FOCUS}`}
             >
-              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-[calc(22*var(--cpx))]">
-                <path d="M9 6l6 6-6 6" />
-              </svg>
-            </button>
-          </div>
-
-          <div className="flex flex-col py-[calc(4*var(--cpx))]">
-            <Link
-              href={COOKPACKS_HREF}
-              role="menuitem"
-              onClick={() => setOpenState(false)}
-              className={TAB_ROW}
-            >
-              <CookpacksGlyph />
-              <span>{cookpacks}</span>
-            </Link>
-
-            {word && (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={choose(onOpenQueue)}
-                className={TAB_ROW}
-              >
-                <QueueGlyph />
-                <span>{word.label}</span>
-              </button>
-            )}
-
-            {onOpenAddIngredients && (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={choose(onOpenAddIngredients)}
-                className={TAB_ROW}
-              >
-                <IngredientsGlyph />
-                <span>{addIngredientsLabel}</span>
-              </button>
-            )}
-
-            {onOpenShoppingList && (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={choose(onOpenShoppingList)}
-                className={TAB_ROW}
-              >
-                <ShoppingListGlyph />
-                <span>{HOME_MORE_COPY.shoppingList}</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              role="menuitem"
-              onClick={choose(onOpenImport)}
-              className={TAB_ROW}
-            >
-              <ImportGlyph />
-              <span>{HOME_MORE_COPY.import}</span>
+              {draw("pullOpen")}
             </button>
 
-            {onOpenAsk && (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={choose(onOpenAsk)}
-                className={TAB_ROW}
-              >
-                <AskGlyph />
-                <span>{ASK_COPY.title}</span>
+            <div id={menuId} role="menu" className="flex flex-col gap-y-[calc(2*var(--cpx))]">
+              {onOpenAsk && (
+                <button type="button" role="menuitem" onClick={choose(onOpenAsk)} className={TAB_ROW}>
+                  <span className="flex-1">{ASK_COPY.title}</span>
+                  <span className={ICON_CELL}>{draw("ask")}</span>
+                </button>
+              )}
+
+              <Link href={COOKPACKS_HREF} role="menuitem" onClick={() => setOpenState(false)} className={TAB_ROW}>
+                <span className="flex-1">{cookpacks}</span>
+                <span className={ICON_CELL}>{draw("cookpacks")}</span>
+              </Link>
+
+              <button type="button" role="menuitem" onClick={choose(onOpenImport)} className={TAB_ROW}>
+                <span className="flex-1">{HOME_MORE_COPY.import}</span>
+                <span className={ICON_CELL}>{draw("import")}</span>
               </button>
-            )}
-            <SignOutItem rowClassName={TAB_ROW} />
+
+              {word && (
+                <button type="button" role="menuitem" onClick={choose(onOpenQueue)} className={TAB_ROW}>
+                  <span className="flex-1">{word.label}</span>
+                  <span className={ICON_CELL}>{draw("queue")}</span>
+                </button>
+              )}
+
+              {onOpenAddIngredients && (
+                <button type="button" role="menuitem" onClick={choose(onOpenAddIngredients)} className={TAB_ROW}>
+                  <span className="flex-1">{addIngredientsLabel}</span>
+                  <span className={ICON_CELL}>{draw("ingredients")}</span>
+                </button>
+              )}
+
+              {onOpenShoppingList && (
+                <button type="button" role="menuitem" onClick={choose(onOpenShoppingList)} className={TAB_ROW}>
+                  <span className="flex-1">{HOME_MORE_COPY.shoppingList}</span>
+                  <span className={ICON_CELL}>{draw("shopping")}</span>
+                </button>
+              )}
+
+              <SignOutRow rowClassName={TAB_ROW} icon={<span className={ICON_CELL}>{draw("signOut")}</span>} />
+            </div>
+            <SignOutStatus className={SIGN_OUT_LINE} />
           </div>
-        </div>
+        </SignOutScope>
       )}
       </aside>
     </>
-  );
-}
-
-function CookpacksGlyph() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.65"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-[calc(26*var(--cpx))] shrink-0"
-    >
-      <path d="M12 6.5c-2.2-1.4-5.2-1.7-8-1.2v13c2.8-.5 5.8-.2 8 1.2m0-13c2.2-1.4 5.2-1.7 8-1.2v13c-2.8-.5-5.8-.2-8 1.2m0-13v13" />
-    </svg>
-  );
-}
-
-function QueueGlyph() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.65"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-[calc(26*var(--cpx))] shrink-0"
-    >
-      <path d="M4 13.5h16M6 13.5v2a3.5 3.5 0 0 0 3.5 3.5h5a3.5 3.5 0 0 0 3.5-3.5v-2" />
-      <path d="M9.5 6.5c0 1.2 1 1.8 1 3M14 5.5c0 1.4 1 2 1 3.5" />
-    </svg>
-  );
-}
-
-function IngredientsGlyph() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.65"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-[calc(26*var(--cpx))] shrink-0"
-    >
-      <path d="M6.5 17.5c1.5-5.5 5.5-9.5 11.5-11-.8 6-4.5 10-11.5 11Z" />
-      <path d="M5.5 18.5 12 12" />
-      <path d="M17 15v5M14.5 17.5h5" />
-    </svg>
-  );
-}
-
-function ShoppingListGlyph() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.65"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-[calc(26*var(--cpx))] shrink-0"
-    >
-      <path d="M5 7h2.5M10 7h9M5 12h2.5M10 12h9M5 17h2.5M10 17h9" />
-    </svg>
-  );
-}
-
-function ImportGlyph() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.65"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-[calc(26*var(--cpx))] shrink-0"
-    >
-      <path d="M12 4.5v10m0 0-3.5-3.5M12 14.5l3.5-3.5" />
-      <path d="M5.5 15.5v2A2.5 2.5 0 0 0 8 20h8a2.5 2.5 0 0 0 2.5-2.5v-2" />
-    </svg>
-  );
-}
-
-function AskGlyph() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.65"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-[calc(26*var(--cpx))] shrink-0"
-    >
-      <path d="M12 4.5c4.7 0 8.5 3.1 8.5 7 0 2.1-1.1 4-2.9 5.3l.7 3.2-3.6-1.6c-.9.2-1.8.3-2.7.3-4.7 0-8.5-3.1-8.5-7.2S7.3 4.5 12 4.5Z" />
-    </svg>
-  );
-}
-
-function PullTabGlyph({ open }: { open: boolean }) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.65"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-[calc(26*var(--cpx))] shrink-0"
-    >
-      <path d={open ? "M11 7l5 5-5 5" : "M14 7l-5 5 5 5"} />
-      <circle cx="17.5" cy="8" r="0.9" fill="currentColor" stroke="none" />
-      <circle cx="17.5" cy="12" r="0.9" fill="currentColor" stroke="none" />
-      <circle cx="17.5" cy="16" r="0.9" fill="currentColor" stroke="none" />
-    </svg>
   );
 }

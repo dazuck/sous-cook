@@ -99,13 +99,62 @@ describe("the right-edge appliance icon rail and pull-out tab", () => {
     });
     expect(screen.getByRole("menu")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Close kitchen tab" }));
+    // The finger lifts (the click that ends a long-press is swallowed), then the handle, now the way out, closes it.
+    fireEvent.pointerUp(rail, { pointerId: 1 });
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("menu")).toBeNull();
 
     // Drag left along the rail:
     fireEvent.pointerDown(rail, { pointerId: 2, button: 0, clientX: 1240, clientY: 400, isPrimary: true });
     fireEvent.pointerMove(rail, { pointerId: 2, clientX: 1210, clientY: 402 });
     expect(screen.getByRole("menu")).toBeTruthy();
+  });
+
+  it("opens the names panel with Ask Sous first, a glyph on every row, no header, and the handle as the way out (DS v1.57)", () => {
+    home({ onOpenAddIngredients: vi.fn(), onOpenShoppingList: vi.fn(), onOpenAsk: vi.fn() });
+    const rail = document.querySelector<HTMLElement>("[data-home-rail]")!;
+    const handle = within(rail).getByRole("button", { name: "More" });
+    const closedGlyph = handle.querySelector("svg")!.innerHTML;
+    expect(handle.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(handle);
+    const menu = screen.getByRole("menu");
+    const rows = Array.from(menu.children).filter((r) => r.getAttribute("role") === "menuitem");
+    expect(rows[0]!.textContent).toContain("Ask Sous");
+    expect(rows.map((r) => r.textContent)).toEqual(
+      expect.arrayContaining([expect.stringContaining("Cookpacks"), expect.stringContaining("Shopping list")]),
+    );
+    for (const row of rows) expect(row.querySelector("svg")).toBeTruthy();
+    // No header row: every child of the menu is a row you can choose, and the panel holds only the way out and the menu.
+    expect(Array.from(menu.children).map((r) => r.getAttribute("role"))).toEqual(rows.map(() => "menuitem"));
+    const panel = document.querySelector<HTMLElement>("[data-rail-tab]")!;
+    expect(Array.from(panel.children).map((el) => (el.hasAttribute("data-rail-close") ? "close" : el.getAttribute("role")))).toEqual([
+      "close",
+      "menu",
+    ]);
+
+    // The handle stays "More", says it is open, and draws the closing chevron where the four tiles were.
+    expect(handle.getAttribute("aria-expanded")).toBe("true");
+    expect(handle.querySelector("svg")!.innerHTML).not.toBe(closedGlyph);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("keeps Import second on the rail and in the panel, and names each rail icon on hover", () => {
+    home({ onOpenAddIngredients: vi.fn(), onOpenAsk: vi.fn() });
+    const rail = document.querySelector<HTMLElement>("[data-home-rail]")!;
+    const names = Array.from(rail.querySelectorAll("nav > *")).map((el) => el.getAttribute("aria-label"));
+    expect(names.slice(0, 2)).toEqual([KITCHEN_COPY.cookpacks, "Import recipe"]);
+    for (const el of Array.from(rail.querySelectorAll("nav > *[aria-label]"))) {
+      expect(el.querySelector("span[aria-hidden]")?.textContent).toBe(el.getAttribute("aria-label"));
+    }
+    fireEvent.click(within(rail).getByRole("button", { name: "More" }));
+    const items = screen.getAllByRole("menuitem").map((r) => r.textContent);
+    expect(items[1]).toContain("Cookpacks");
+    expect(items[2]).toContain("Import");
   });
 
   it("has no Edit on the home rail: that lives on the queue screen", () => {

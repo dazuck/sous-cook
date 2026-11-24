@@ -38,7 +38,7 @@ test.describe("Kitchen home", () => {
     }
 
     // Rail queue button carries pending count wording "Up next · 4"
-    // (app/src/components/kitchen/HomeRail.tsx:158-161; app/src/lib/kitchen/home-view.ts:51)
+    // (app/src/components/kitchen/HomeRail.tsx:194-195; app/src/lib/kitchen/home-view.ts:51)
     await expect(
       page.getByRole("button", { name: "Up next · 4" }),
     ).toBeVisible();
@@ -127,5 +127,70 @@ test.describe("Kitchen home", () => {
     await exploreLink.click();
 
     await expect(page).toHaveURL(/\/kitchen\/cookpacks$/);
+  });
+
+  test("HOME-4: the names panel stands wholly on the screen, each row level with its rail icon, and its left strip closes it", async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "landscape", "the viewports are set here");
+    // Landscape, a shorter landscape, and upright (app/src/components/kitchen/HomeRail.tsx: the pull-out)
+    for (const view of [
+      { width: 1280, height: 800 },
+      { width: 1280, height: 680 },
+      { width: 800, height: 1280 },
+    ]) {
+      const at = `${view.width}x${view.height}`;
+      await page.setViewportSize(view);
+      await page.goto("/kitchen");
+      await expect(page.getByRole("button", { name: "Up next · 4" }), at).toBeVisible();
+      await page.locator("[data-rail-pull]").click();
+      const tab = page.locator("[data-rail-tab]");
+      await expect(tab, at).toBeVisible();
+      const { panel, rows, rail, menuRoles } = await page.evaluate(() => {
+        const centre = (el: Element) => {
+          const r = el.getBoundingClientRect();
+          return r.top + r.height / 2;
+        };
+        const box = document.querySelector("[data-rail-tab]")!.getBoundingClientRect();
+        return {
+          panel: { top: box.top, bottom: box.bottom, left: box.left, right: box.right },
+          rows: [...document.querySelectorAll("[data-rail-tab] [role=menuitem]")].map((el) => ({
+            name: (el.textContent ?? "").trim(),
+            y: centre(el),
+          })),
+          rail: [...document.querySelectorAll("[data-home-rail] nav > *")]
+            .filter((el) => !el.hasAttribute("data-rail-pull"))
+            .map((el) => ({ name: el.getAttribute("aria-label") ?? "", y: centre(el) })),
+          menuRoles: [...document.querySelector("[data-rail-tab] [role=menu]")!.children].map((el) =>
+            el.getAttribute("role"),
+          ),
+        };
+      });
+      expect(panel.top, `${at}: the panel starts on the screen`).toBeGreaterThanOrEqual(0);
+      expect(panel.bottom, `${at}: the panel ends on the screen`).toBeLessThanOrEqual(view.height);
+      expect(panel.left, `${at}: the panel starts on the screen`).toBeGreaterThanOrEqual(0);
+      expect(panel.right, `${at}: the panel ends on the screen`).toBeLessThanOrEqual(view.width);
+      expect(rail.map((icon) => icon.name), `${at}: the rail's icons`).toEqual([
+        "Cookpacks",
+        "Import recipe",
+        "Up next · 4",
+      ]);
+      // Each rail icon's own row (its name, or the start of it: "Import" for "Import recipe") stands level with it.
+      for (const icon of rail) {
+        const row = rows.find((r) => r.name !== "" && icon.name.startsWith(r.name));
+        expect(row, `${at}: a panel row names the rail icon ${icon.name}`).toBeDefined();
+        expect(Math.abs(row!.y - icon.y), `${at}: ${icon.name}'s row stands level with its icon`).toBeLessThanOrEqual(1);
+      }
+      expect(rows[0]?.name, `${at}: Ask Sous sits above the first`).toBe("Ask Sous");
+      expect(menuRoles, `${at}: the menu holds only rows`).toEqual(rows.map(() => "menuitem"));
+      // With four rows the panel stops short of the More handle, which hides rather than stand as a second chevron.
+      const handle = page.locator("[data-rail-pull]");
+      await expect(handle, `${at}: the handle hides while the panel is open`).toHaveCSS("opacity", "0");
+      await expect(handle, `${at}: and takes no tap`).toHaveCSS("pointer-events", "none");
+      // The strip down the panel's left edge is the way out.
+      await page.locator("[data-rail-close]").click();
+      await expect(tab, at).toHaveCount(0);
+      await expect(handle, `${at}: the handle is back once it closes`).toHaveCSS("opacity", "1");
+    }
   });
 });

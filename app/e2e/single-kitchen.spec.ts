@@ -27,7 +27,7 @@ test.describe("Single-kitchen mode", () => {
     ).toHaveCount(0);
 
     // Navigate to /kitchen/cookpacks and check the same
-    // (app/src/components/kitchen/HomeRail.tsx:145-152; Shelf.tsx:77)
+    // (app/src/components/kitchen/HomeRail.tsx:166-174; Shelf.tsx:77)
     await page.getByRole("link", { name: "Cookpacks" }).click();
     await expect(page).toHaveURL(/\/kitchen\/cookpacks$/);
     await expect(page.locator("[data-creator-book]")).toHaveCount(1);

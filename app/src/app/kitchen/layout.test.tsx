@@ -114,7 +114,7 @@ async function loadFreshKitchenModules() {
       useLetGo: freshUseLetGo,
       useSignInMode: freshUseSignInMode,
     },
-    { SIGN_OUT_COPY: freshSignOutCopy, SignOutItem: FreshSignOutItem },
+    freshSignOut,
     { reportOutbox: freshReportOutbox },
     { timerStore: freshTimerStore },
   ] = await Promise.all([
@@ -126,6 +126,21 @@ async function loadFreshKitchenModules() {
     import("@/lib/kitchen/timer-store"),
   ]);
 
+  const freshSignOutCopy = freshSignOut.SIGN_OUT_COPY;
+
+  /** Sign out as the rail's panel draws it: the row in a menu, the status outside it. */
+  function FreshSignOutMenu() {
+    const { SignOutScope, SignOutRow, SignOutStatus } = freshSignOut;
+    return (
+      <SignOutScope>
+        <div role="menu">
+          <SignOutRow rowClassName="tab-row" />
+        </div>
+        <SignOutStatus className="status-line" />
+      </SignOutScope>
+    );
+  }
+
   function FreshModeReader() {
     const signInMode = freshUseSignInMode();
     return <div data-testid="sign-in-mode">{String(signInMode)}</div>;
@@ -136,7 +151,7 @@ async function loadFreshKitchenModules() {
     QueryClientProvider,
     KitchenSectionLayout: FreshKitchenSectionLayout,
     SignInModeProvider: FreshSignInModeProvider,
-    SignOutItem: FreshSignOutItem,
+    SignOutMenu: FreshSignOutMenu,
     SIGN_OUT_COPY: freshSignOutCopy,
     useLetGo: freshUseLetGo,
     ModeReader: FreshModeReader,
@@ -710,7 +725,7 @@ describe("LAYOUT-3: signing-out tab lets go before emptying storage", () => {
     setSignInCookie(true);
     const {
       KitchenSectionLayout: FreshKitchenSectionLayout,
-      SignOutItem: FreshSignOutItem,
+      SignOutMenu: FreshSignOutMenu,
       SIGN_OUT_COPY: freshSignOutCopy,
       ModeReader: FreshModeReader,
       reportOutbox: freshReportOutbox,
@@ -779,9 +794,7 @@ describe("LAYOUT-3: signing-out tab lets go before emptying storage", () => {
     const { unmount } = render(
       <FreshKitchenSectionLayout>
         <FreshModeReader />
-        <div role="menu">
-          <FreshSignOutItem rowClassName="tab-row" />
-        </div>
+        <FreshSignOutMenu />
       </FreshKitchenSectionLayout>,
     );
     expect(screen.getByTestId("sign-in-mode").textContent).toBe("true");
@@ -843,7 +856,7 @@ describe("LAYOUT-3: signing-out tab lets go before emptying storage", () => {
     setSignInCookie(true);
     const {
       KitchenSectionLayout: FreshKitchenSectionLayout,
-      SignOutItem: FreshSignOutItem,
+      SignOutMenu: FreshSignOutMenu,
       SIGN_OUT_COPY: freshSignOutCopy,
       ModeReader: FreshModeReader,
       reportOutbox: freshReportOutbox,
@@ -897,9 +910,7 @@ describe("LAYOUT-3: signing-out tab lets go before emptying storage", () => {
       const view = render(
         <FreshKitchenSectionLayout>
           <FreshModeReader />
-          <div role="menu">
-            <FreshSignOutItem rowClassName="tab-row" />
-          </div>
+          <FreshSignOutMenu />
         </FreshKitchenSectionLayout>,
       );
       unmountView = view.unmount;
@@ -945,7 +956,7 @@ describe("LAYOUT-3: signing-out tab lets go before emptying storage", () => {
     setSignInCookie(true);
     const {
       KitchenSectionLayout: FreshKitchenSectionLayout,
-      SignOutItem: FreshSignOutItem,
+      SignOutMenu: FreshSignOutMenu,
       SIGN_OUT_COPY: freshSignOutCopy,
       ModeReader: FreshModeReader,
       reportOutbox: freshReportOutbox,
@@ -994,9 +1005,7 @@ describe("LAYOUT-3: signing-out tab lets go before emptying storage", () => {
       const view = render(
         <FreshKitchenSectionLayout>
           <FreshModeReader />
-          <div role="menu">
-            <FreshSignOutItem rowClassName="tab-row" />
-          </div>
+          <FreshSignOutMenu />
         </FreshKitchenSectionLayout>,
       );
       unmountView = view.unmount;

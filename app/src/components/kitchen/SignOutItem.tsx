@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { reportOutbox, useReportOutbox } from "@/hooks/useReportOutbox";
 import type { ReportOutbox } from "@/lib/kitchen/report-outbox";
 import { CLEAR_ARM_MS } from "./ShoppingListModal";
@@ -16,25 +16,48 @@ export const SIGN_OUT_COPY = {
   refused: "Couldn't sign out. Try again in a moment.",
 } as const;
 
-export function SignOutItem({
-  rowClassName,
-  outbox = reportOutbox,
-}: {
-  rowClassName: string;
-  outbox?: () => ReportOutbox;
-}) {
-  const signInMode = useSignInMode();
-  if (!signInMode) return null;
-  return <SignOutRow rowClassName={rowClassName} outbox={outbox} />;
+interface SignOutState {
+  /** The row's words: Sign out, or while armed what a second tap would remove. */
+  label: string;
+  inFlight: boolean;
+  /** Why the last sign-out failed, until the next tap. */
+  message: string | null;
+  onClick: () => void;
 }
 
-function SignOutRow({
-  rowClassName,
-  outbox,
+const SignOutContext = createContext<SignOutState | null>(null);
+
+/**
+ * Sign out for one open menu: armed, in flight, or saying why it failed. It lives only in sign-in
+ * mode, where it reads the report outbox; elsewhere its row and its status draw nothing and the
+ * outbox is never read. Mounted with the menu, so a menu closed and opened again starts disarmed.
+ */
+export function SignOutScope({
+  outbox = reportOutbox,
+  children,
 }: {
-  rowClassName: string;
-  outbox: () => ReportOutbox;
+  outbox?: () => ReportOutbox;
+  children: ReactNode;
 }) {
+  const signInMode = useSignInMode();
+  if (!signInMode) return <>{children}</>;
+  return <SignOutLive outbox={outbox}>{children}</SignOutLive>;
+}
+
+function SignOutLive({
+  outbox,
+  children,
+}: {
+  outbox: () => ReportOutbox;
+  children: ReactNode;
+}) {
+  const state = useSignOutState(outbox);
+  return (
+    <SignOutContext.Provider value={state}>{children}</SignOutContext.Provider>
+  );
+}
+
+function useSignOutState(outbox: () => ReportOutbox): SignOutState {
   const letGo = useLetGo();
   const entries = useReportOutbox(outbox);
   const unsent = entries.filter(
@@ -77,7 +100,7 @@ function SignOutRow({
     setInFlight(false);
   };
 
-  const handleClick = () => {
+  const onClick = () => {
     if (inFlight) return;
     if (unsent > 0 && !armed) {
       setArmed(true);
@@ -90,48 +113,53 @@ function SignOutRow({
     void runSignOut();
   };
 
+  return {
+    label: armed && unsent > 0 ? SIGN_OUT_COPY.armed(unsent) : SIGN_OUT_COPY.item,
+    inFlight,
+    message,
+    onClick,
+  };
+}
+
+/**
+ * The menu's Sign out row: its words, then `icon` in the menu's glyph cell. While armed, the words
+ * are the reports a second tap would remove, three lines in the panel's row.
+ */
+export function SignOutRow({
+  rowClassName,
+  icon,
+}: {
+  rowClassName: string;
+  icon?: ReactNode;
+}) {
+  const s = useContext(SignOutContext);
+  if (s === null) return null;
   return (
-    <>
-      <button
-        type="button"
-        role="menuitem"
-        aria-disabled={inFlight ? "true" : undefined}
-        onClick={handleClick}
-        className={rowClassName}
-      >
-        <SignOutGlyph />
-        <span>
-          {armed && unsent > 0
-            ? SIGN_OUT_COPY.armed(unsent)
-            : SIGN_OUT_COPY.item}
-        </span>
-      </button>
-      {message !== null && (
-        <p
-          role="status"
-          className="px-[calc(22*var(--cpx))] text-[length:var(--type-meta)] leading-tight text-ink-soft"
-        >
-          {message}
-        </p>
-      )}
-    </>
+    <button
+      type="button"
+      role="menuitem"
+      aria-disabled={s.inFlight ? "true" : undefined}
+      onClick={s.onClick}
+      className={rowClassName}
+    >
+      {/* Room above and below the words once they run past the row's own height. */}
+      <span className="flex-1 py-[calc(4*var(--cpx))]">{s.label}</span>
+      {icon}
+    </button>
   );
 }
 
-function SignOutGlyph() {
+/**
+ * Why the last Sign out failed, as a line outside the menu (a menu holds only rows). The live
+ * region is there from the moment the menu opens, empty until a try fails, so the reason is
+ * announced when it arrives; the line itself is drawn only with a reason in it.
+ */
+export function SignOutStatus({ className }: { className: string }) {
+  const s = useContext(SignOutContext);
+  if (s === null) return null;
   return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.65"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-[calc(26*var(--cpx))] shrink-0"
-    >
-      <path d="M10 4.5H7a2.5 2.5 0 0 0-2.5 2.5v10A2.5 2.5 0 0 0 7 19.5h3" />
-      <path d="M14.5 8.5 18 12l-3.5 3.5M18 12H9.5" />
-    </svg>
+    <div role="status">
+      {s.message !== null && <p className={className}>{s.message}</p>}
+    </div>
   );
 }
