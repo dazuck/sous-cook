@@ -232,6 +232,7 @@ interface TestHarness {
   callLogFile: string;
   hostMetaLogFile: string;
   pgDumpEnvLogFile: string;
+  pgDumpArgsLogFile: string;
   liveVersionFile: string;
   stagedVersionFile: string;
   emptyDumpMarker: string;
@@ -239,6 +240,7 @@ interface TestHarness {
   migrateFailMarker: string;
   smokeFailUrlMarker: string;
   hostNoUrlMarker: string;
+  hostStdoutFile: string;
   keepStagedCommitMarker: string;
   promoteFailMarker: string;
   promoteNoSwitchMarker: string;
@@ -262,6 +264,7 @@ function createHarness(): TestHarness {
   const callLogFile = path.join(rootDir, "calls.log");
   const hostMetaLogFile = path.join(rootDir, "host-meta.log");
   const pgDumpEnvLogFile = path.join(rootDir, "pg-dump-env.log");
+  const pgDumpArgsLogFile = path.join(rootDir, "pg-dump-args.log");
   const liveVersionFile = path.join(rootDir, "live-version.txt");
   const stagedVersionFile = path.join(rootDir, "staged-version.txt");
   const emptyDumpMarker = path.join(rootDir, "empty-dump.marker");
@@ -269,6 +272,7 @@ function createHarness(): TestHarness {
   const migrateFailMarker = path.join(rootDir, "migrate-fail.marker");
   const smokeFailUrlMarker = path.join(rootDir, "smoke-fail-url.marker");
   const hostNoUrlMarker = path.join(rootDir, "host-no-url.marker");
+  const hostStdoutFile = path.join(rootDir, "host-stdout.txt");
   const keepStagedCommitMarker = path.join(rootDir, "keep-staged.marker");
   const promoteFailMarker = path.join(rootDir, "promote-fail.marker");
   const promoteNoSwitchMarker = path.join(rootDir, "promote-no-switch.marker");
@@ -325,6 +329,8 @@ function createHarness(): TestHarness {
       "  fi",
       `  if [ -e "${hostNoUrlMarker}" ]; then`,
       '    printf "Build finished with no deployment URL\\n"',
+      `  elif [ -f "${hostStdoutFile}" ]; then`,
+      `    cat "${hostStdoutFile}"`,
       "  else",
       '    printf "%s\\n" "https://staged.example.com"',
       "  fi",
@@ -358,8 +364,9 @@ function createHarness(): TestHarness {
       'my @env_names = sort grep { $_ ne "PATH" && $_ ne "HOME" } keys %ENV;',
       'my $smoke_url = defined $ENV{SMOKE_BASE_URL} ? $ENV{SMOKE_BASE_URL} : "";',
       'my $smoke_commit = defined $ENV{SMOKE_EXPECT_COMMIT} ? $ENV{SMOKE_EXPECT_COMMIT} : "";',
+      'my $smoke_sign_in = defined $ENV{SMOKE_EXPECT_SIGN_IN} ? $ENV{SMOKE_EXPECT_SIGN_IN} : "";',
       'open(my $fh, ">>", $log_file) or die "cannot open call log: $!";',
-      'print $fh "pnpm " . join(" ", @ARGV) . " | env=" . join(",", @env_names) . " | SMOKE_BASE_URL=" . $smoke_url . " | SMOKE_EXPECT_COMMIT=" . $smoke_commit . "\\n";',
+      'print $fh "pnpm " . join(" ", @ARGV) . " | env=" . join(",", @env_names) . " | SMOKE_BASE_URL=" . $smoke_url . " | SMOKE_EXPECT_COMMIT=" . $smoke_commit . " | SMOKE_EXPECT_SIGN_IN=" . $smoke_sign_in . "\\n";',
       "close($fh);",
       'my $cmd = "";',
       "for (my $i = 0; $i < scalar(@ARGV); $i++) {",
@@ -408,6 +415,12 @@ function createHarness(): TestHarness {
       `printf 'pg_dump %s\\n' "$*" >> "${callLogFile}"`,
       'pg_vars="$(env | awk -F= \'/^PG/ { print $1 }\' | sort | paste -sd, -)"',
       `printf '%s\\n' "\${pg_vars}" >> "${pgDumpEnvLogFile}"`,
+      'arg_sep=""',
+      'for arg in "$@"; do',
+      `  printf '%s%s' "\${arg_sep}" "\${arg}" >> "${pgDumpArgsLogFile}"`,
+      "  arg_sep=$'\\t'",
+      "done",
+      `printf '\\n' >> "${pgDumpArgsLogFile}"`,
       'out_file=""',
       'while [ "$#" -gt 0 ]; do',
       '  if [ "$1" = "-f" ] && [ "$#" -ge 2 ]; then',
@@ -506,6 +519,7 @@ function createHarness(): TestHarness {
     callLogFile,
     hostMetaLogFile,
     pgDumpEnvLogFile,
+    pgDumpArgsLogFile,
     liveVersionFile,
     stagedVersionFile,
     emptyDumpMarker,
@@ -513,6 +527,7 @@ function createHarness(): TestHarness {
     migrateFailMarker,
     smokeFailUrlMarker,
     hostNoUrlMarker,
+    hostStdoutFile,
     keepStagedCommitMarker,
     promoteFailMarker,
     promoteNoSwitchMarker,
@@ -556,6 +571,16 @@ function readPgDumpEnvLog(harness: TestHarness): string[][] {
     .split("\n")
     .filter((line) => line.length > 0)
     .map((line) => line.split(",").filter((name) => name.length > 0));
+}
+
+function readPgDumpArgsLog(harness: TestHarness): string[][] {
+  if (!existsSync(harness.pgDumpArgsLogFile)) {
+    return [];
+  }
+  return readFileSync(harness.pgDumpArgsLogFile, "utf8")
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => line.split("\t"));
 }
 
 function hostCalls(harness: TestHarness): string[] {
@@ -647,6 +672,7 @@ function runDeploy(
     SOUS_RELEASE_STATE_DIR: harness.stateDir,
     SOUS_HOST_CLI: "fake-host",
     SOUS_HOST_LINK_FILE: harness.hostLinkFile,
+    SOUS_EXPECT_SIGN_IN: "on",
   };
   for (const [k, v] of Object.entries(envOverrides)) {
     if (v === undefined) {
@@ -1395,10 +1421,12 @@ describe("release scripts", () => {
       expect(calls[2]).toContain("pnpm --dir app e2e:smoke");
       expect(calls[2]).toContain("SMOKE_BASE_URL=https://staged.example.com");
       expect(calls[2]).toContain(`SMOKE_EXPECT_COMMIT=${h.commit2}`);
+      expect(calls[2]).toContain("SMOKE_EXPECT_SIGN_IN=on");
       expect(calls[3]).toBe("fake-host promote https://staged.example.com --yes");
       expect(calls[4]).toContain("pnpm --dir app e2e:smoke");
       expect(calls[4]).toContain(`SMOKE_BASE_URL=${liveSrv.url}`);
       expect(calls[4]).toContain(`SMOKE_EXPECT_COMMIT=${h.commit2}`);
+      expect(calls[4]).toContain("SMOKE_EXPECT_SIGN_IN=on");
 
       // Both deploy and promote ran inside the detached worktree at the target sha.
       const repoRealPath = realpathSync(h.repoDir);
@@ -1645,7 +1673,24 @@ describe("release scripts", () => {
 
       const dumps1 = readdirSync(h1.backupDir).filter((f) => f.endsWith(".dump"));
       expect(dumps1).toHaveLength(1);
-      expect(statSync(path.join(h1.backupDir, dumps1[0]!)).size).toBeGreaterThan(0);
+      const dumpPath1 = path.join(h1.backupDir, dumps1[0]!);
+      expect(statSync(dumpPath1).size).toBeGreaterThan(0);
+
+      // pg_dump received exactly -Fc, --no-owner, -n public, -n drizzle, and -f <backup path>
+      // with no other schema/table selection, exclusion, or --strict-names.
+      const pgArgsRuns = readPgDumpArgsLog(h1);
+      expect(pgArgsRuns).toHaveLength(1);
+      expect(pgArgsRuns[0]).toEqual([
+        "-Fc",
+        "--no-owner",
+        "-n",
+        "public",
+        "-n",
+        "drizzle",
+        "-f",
+        dumpPath1,
+      ]);
+
       expect(readdirSync(h1.tmpDir)).toEqual([]);
 
       // Failing pg_dump (non-zero exit even when a partial file was written): stops before db:migrate and host.
@@ -2218,6 +2263,318 @@ describe("release scripts", () => {
       expect(hostCalls(h)).toEqual([]);
     }
   });
+
+  it(
+    "DEPLOY-22: refuses missing or invalid SOUS_EXPECT_SIGN_IN in dry run and real run before calling host, and dry run prints expected mode",
+    async () => {
+      const h = makeHarness();
+      recordPass(h, h.commit2);
+      recordRelease(h, 1, h.commit1, "https://previous.example.com");
+      const liveSrv = await makeLiveServer(h, h.commit1);
+
+      // Missing SOUS_EXPECT_SIGN_IN is reported together with other missing required variables.
+      for (const args of [
+        ["--dry-run", h.commit2],
+        [h.commit2],
+      ] as const) {
+        const missingTogether = await runDeploy(h, args, {
+          SOUS_LIVE_URL: undefined,
+          SOUS_EXPECT_SIGN_IN: undefined,
+        });
+        expect(missingTogether.status).not.toBe(0);
+        expect(missingTogether.stderr).toContain("SOUS_LIVE_URL");
+        expect(missingTogether.stderr).toContain("SOUS_EXPECT_SIGN_IN");
+        expect(hostCalls(h)).toEqual([]);
+
+        const missingAlone = await runDeploy(h, args, {
+          SOUS_LIVE_URL: liveSrv.url,
+          SOUS_EXPECT_SIGN_IN: undefined,
+        });
+        expect(missingAlone.status).not.toBe(0);
+        expect(missingAlone.stderr).toContain("SOUS_EXPECT_SIGN_IN");
+        expect(hostCalls(h)).toEqual([]);
+      }
+
+      // Invalid values are refused in both dry run and real run without calling host.
+      const invalidValues = ["", "ON", "Off", "true", "1", "yes", "on "];
+      for (const badVal of invalidValues) {
+        for (const args of [
+          ["--dry-run", h.commit2],
+          [h.commit2],
+        ] as const) {
+          const res = await runDeploy(h, args, {
+            SOUS_LIVE_URL: liveSrv.url,
+            SOUS_EXPECT_SIGN_IN: badVal,
+          });
+          expect(res.status).not.toBe(0);
+          expect(res.stderr).toContain("SOUS_EXPECT_SIGN_IN");
+          expect(res.stderr).toContain('"on"');
+          expect(res.stderr).toContain('"off"');
+          expect(hostCalls(h)).toEqual([]);
+        }
+      }
+
+      // Dry run prints expected sign-in mode and includes SMOKE_EXPECT_SIGN_IN on both smoke lines.
+      for (const mode of ["on", "off"] as const) {
+        const dryRes = await runDeploy(h, ["--dry-run", h.commit2], {
+          SOUS_LIVE_URL: liveSrv.url,
+          SOUS_EXPECT_SIGN_IN: mode,
+        });
+        expect(dryRes.status).toBe(0);
+        expect(dryRes.stdout).toContain(`Expected sign-in mode: ${mode}`);
+        expect(dryRes.stdout).toContain(
+          `Would smoke staged URL: SMOKE_BASE_URL=<staged-url> SMOKE_EXPECT_COMMIT=${h.commit2} SMOKE_EXPECT_SIGN_IN=${mode} pnpm --dir app e2e:smoke`,
+        );
+        expect(dryRes.stdout).toContain(
+          `Would smoke live URL: SMOKE_BASE_URL=${liveSrv.url} SMOKE_EXPECT_COMMIT=${h.commit2} SMOKE_EXPECT_SIGN_IN=${mode} pnpm --dir app e2e:smoke`,
+        );
+        expect(hostCalls(h)).toEqual([]);
+      }
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it(
+    "DEPLOY-23: accepts JSON staging stdout in compact, pretty-printed, https-prefixed, and top-level forms",
+    async () => {
+      const jsonPayloads = [
+        // Compact one-line JSON with bare hostname under deployment.url.
+        `${JSON.stringify({
+          deployment: {
+            id: "test-deployment-compact",
+            url: "staged.example.com",
+            readyState: "READY",
+          },
+          outcome: "created",
+        })}\n`,
+        // Pretty-printed JSON with bare hostname under deployment.url.
+        `${JSON.stringify(
+          {
+            deployment: {
+              id: "test-deployment-pretty",
+              url: "staged.example.com",
+              readyState: "READY",
+            },
+            outcome: "created",
+          },
+          null,
+          2,
+        )}\n`,
+        // JSON with deployment.url already prefixed with https://.
+        `${JSON.stringify({
+          deployment: {
+            id: "test-deployment-https",
+            url: "https://staged.example.com",
+            readyState: "READY",
+          },
+          outcome: "created",
+        })}\n`,
+        // Top-level url and readyState when there is no deployment object.
+        `${JSON.stringify({
+          url: "staged.example.com",
+          readyState: "READY",
+        })}\n`,
+      ];
+
+      for (const payload of jsonPayloads) {
+        const h = makeHarness();
+        recordPass(h, h.commit2);
+        recordRelease(h, 4, h.commit1, "https://previous.example.com");
+        const liveSrv = await makeLiveServer(h, h.commit1);
+        const stagedSrv = await makeStagedServer(h, h.commit1);
+        writeFileSync(h.hostStdoutFile, payload, "utf8");
+
+        const res = await runDeploy(h, [h.commit2], {
+          SOUS_LIVE_URL: liveSrv.url,
+        });
+
+        expect(res.status).toBe(0);
+        expect(stagedSrv.receivedHeaders.length).toBeGreaterThanOrEqual(1);
+
+        const calls = readCallLog(h);
+        expect(calls).toHaveLength(5);
+        expect(calls[2]).toContain("pnpm --dir app e2e:smoke");
+        expect(calls[2]).toContain("SMOKE_BASE_URL=https://staged.example.com");
+        expect(calls[2]).toContain("SMOKE_EXPECT_SIGN_IN=on");
+        expect(calls[3]).toBe("fake-host promote https://staged.example.com --yes");
+        expect(calls[4]).toContain("pnpm --dir app e2e:smoke");
+        expect(calls[4]).toContain(`SMOKE_BASE_URL=${liveSrv.url}`);
+        expect(calls[4]).toContain("SMOKE_EXPECT_SIGN_IN=on");
+
+        const releaseLines = readFileSync(h.releasesLogFile, "utf8")
+          .split("\n")
+          .filter((line) => line.length > 0);
+        expect(releaseLines).toHaveLength(2);
+        expect(releaseLines[1]).toMatch(
+          new RegExp(
+            `^5 ${h.commit2} https://staged\\.example\\.com \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$`,
+          ),
+        );
+      }
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it(
+    "DEPLOY-24: refuses JSON staging stdout with non-READY readyState, missing url, or invalid url before version check, smoke, or promote",
+    async () => {
+      // Case A: readyState BUILDING stops before staged version check, smoke, or promote.
+      const hBuilding = makeHarness();
+      recordPass(hBuilding, hBuilding.commit2);
+      recordRelease(hBuilding, 4, hBuilding.commit1, "https://previous.example.com");
+      const beforeLogBuilding = readFileSync(hBuilding.releasesLogFile, "utf8");
+      const liveSrvBuilding = await makeLiveServer(hBuilding, hBuilding.commit1);
+      const stagedSrvBuilding = await makeStagedServer(hBuilding, hBuilding.commit1);
+      writeFileSync(
+        hBuilding.hostStdoutFile,
+        `${JSON.stringify({
+          deployment: {
+            id: "test-deployment-building",
+            url: "staged.example.com",
+            readyState: "BUILDING",
+          },
+          outcome: "created",
+        })}\n`,
+        "utf8",
+      );
+
+      const buildingRes = await runDeploy(hBuilding, [hBuilding.commit2], {
+        SOUS_LIVE_URL: liveSrvBuilding.url,
+      });
+      expect(buildingRes.status).not.toBe(0);
+      expect(buildingRes.stderr).toContain("BUILDING");
+      expect(buildingRes.stderr).toContain("nothing was promoted");
+      expect(stagedSrvBuilding.receivedHeaders).toEqual([]);
+      expect(readCallLog(hBuilding).some((line) => line.includes("e2e:smoke"))).toBe(
+        false,
+      );
+      expect(readCallLog(hBuilding).some((line) => line.includes("promote"))).toBe(
+        false,
+      );
+      expect(readFileSync(hBuilding.releasesLogFile, "utf8")).toBe(
+        beforeLogBuilding,
+      );
+
+      // Case B: JSON document with no deployment url stops with the no-URL message.
+      const hMissingUrl = makeHarness();
+      recordPass(hMissingUrl, hMissingUrl.commit2);
+      recordRelease(
+        hMissingUrl,
+        4,
+        hMissingUrl.commit1,
+        "https://previous.example.com",
+      );
+      const beforeLogMissing = readFileSync(hMissingUrl.releasesLogFile, "utf8");
+      const liveSrvMissing = await makeLiveServer(hMissingUrl, hMissingUrl.commit1);
+      const stagedSrvMissing = await makeStagedServer(
+        hMissingUrl,
+        hMissingUrl.commit1,
+      );
+      writeFileSync(
+        hMissingUrl.hostStdoutFile,
+        `${JSON.stringify({
+          deployment: {
+            id: "test-deployment-nourl",
+            readyState: "READY",
+          },
+          outcome: "created",
+        })}\n`,
+        "utf8",
+      );
+
+      const missingUrlRes = await runDeploy(hMissingUrl, [hMissingUrl.commit2], {
+        SOUS_LIVE_URL: liveSrvMissing.url,
+      });
+      expect(missingUrlRes.status).not.toBe(0);
+      expect(missingUrlRes.stderr).toContain(
+        "host staging output contained no https:// URL",
+      );
+      expect(stagedSrvMissing.receivedHeaders).toEqual([]);
+      expect(
+        readCallLog(hMissingUrl).some((line) => line.includes("e2e:smoke")),
+      ).toBe(false);
+      expect(
+        readCallLog(hMissingUrl).some((line) => line.includes("promote")),
+      ).toBe(false);
+      expect(readFileSync(hMissingUrl.releasesLogFile, "utf8")).toBe(
+        beforeLogMissing,
+      );
+
+      // Cases C, D, E: http:// url, url with credentials, and url with a path are each refused.
+      const credUrl = new URL("https://staged.example.com");
+      credUrl.username = "deployuser";
+      credUrl.password = "credsecret";
+      const badUrls = [
+        "http://staged.example.com",
+        credUrl.toString(),
+        "https://staged.example.com/extra",
+      ];
+
+      for (const badUrl of badUrls) {
+        const hBad = makeHarness();
+        recordPass(hBad, hBad.commit2);
+        recordRelease(hBad, 4, hBad.commit1, "https://previous.example.com");
+        const beforeLogBad = readFileSync(hBad.releasesLogFile, "utf8");
+        const liveSrvBad = await makeLiveServer(hBad, hBad.commit1);
+        const stagedSrvBad = await makeStagedServer(hBad, hBad.commit1);
+        writeFileSync(
+          hBad.hostStdoutFile,
+          `${JSON.stringify({
+            deployment: {
+              id: "test-deployment-badurl",
+              url: badUrl,
+              readyState: "READY",
+            },
+            outcome: "created",
+          })}\n`,
+          "utf8",
+        );
+
+        const badRes = await runDeploy(hBad, [hBad.commit2], {
+          SOUS_LIVE_URL: liveSrvBad.url,
+        });
+        expect(badRes.status).not.toBe(0);
+        expect(badRes.stderr).toContain("nothing was promoted");
+        expect(badRes.stderr).not.toContain("credsecret");
+        expect(stagedSrvBad.receivedHeaders).toEqual([]);
+        expect(readCallLog(hBad).some((line) => line.includes("e2e:smoke"))).toBe(
+          false,
+        );
+        expect(readCallLog(hBad).some((line) => line.includes("promote"))).toBe(
+          false,
+        );
+        expect(readFileSync(hBad.releasesLogFile, "utf8")).toBe(beforeLogBad);
+      }
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
+
+  it(
+    "DEPLOY-25: real run with SOUS_EXPECT_SIGN_IN=off passes SMOKE_EXPECT_SIGN_IN=off to both smoke calls",
+    async () => {
+      const h = makeHarness();
+      recordPass(h, h.commit2);
+      recordRelease(h, 4, h.commit1, "https://previous.example.com");
+      const liveSrv = await makeLiveServer(h, h.commit1);
+      await makeStagedServer(h, h.commit1);
+
+      const res = await runDeploy(h, [h.commit2], {
+        SOUS_LIVE_URL: liveSrv.url,
+        SOUS_EXPECT_SIGN_IN: "off",
+      });
+
+      expect(res.status).toBe(0);
+      const calls = readCallLog(h);
+      expect(calls).toHaveLength(5);
+      expect(calls[2]).toContain("pnpm --dir app e2e:smoke");
+      expect(calls[2]).toContain("SMOKE_BASE_URL=https://staged.example.com");
+      expect(calls[2]).toContain("SMOKE_EXPECT_SIGN_IN=off");
+      expect(calls[4]).toContain("pnpm --dir app e2e:smoke");
+      expect(calls[4]).toContain(`SMOKE_BASE_URL=${liveSrv.url}`);
+      expect(calls[4]).toContain("SMOKE_EXPECT_SIGN_IN=off");
+    },
+    REAL_RUN_TIMEOUT_MS,
+  );
 
   function runReleaseCheckWithEnv(
     harness: ReleaseCheckHarness,

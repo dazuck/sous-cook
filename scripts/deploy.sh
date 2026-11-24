@@ -82,10 +82,22 @@ fi
 if [ -z "${SOUS_HOST_LINK_FILE:-}" ]; then
   missing_vars+=("SOUS_HOST_LINK_FILE")
 fi
+if [ -z "${SOUS_EXPECT_SIGN_IN+x}" ]; then
+  missing_vars+=("SOUS_EXPECT_SIGN_IN")
+fi
 if [ "${#missing_vars[@]}" -gt 0 ]; then
   printf 'deploy: missing required environment variable(s): %s\n' "${missing_vars[*]}" >&2
   exit 1
 fi
+
+case "${SOUS_EXPECT_SIGN_IN}" in
+  on|off)
+    ;;
+  *)
+    printf 'deploy: SOUS_EXPECT_SIGN_IN must be "on" or "off", got "%s"\n' "${SOUS_EXPECT_SIGN_IN}" >&2
+    exit 1
+    ;;
+esac
 
 if [ -n "${SMOKE_BYPASS_HEADER:-}" ] && [ -z "${SMOKE_BYPASS_VALUE:-}" ]; then
   printf 'deploy: SMOKE_BYPASS_HEADER is set without SMOKE_BYPASS_VALUE\n' >&2
@@ -748,6 +760,7 @@ fi
 if [ "${dry_run}" -eq 1 ]; then
   printf 'State directory: %s\n' "${state_dir}"
   printf 'Live URL: %s\n' "${live_url}"
+  printf 'Expected sign-in mode: %s\n' "${SOUS_EXPECT_SIGN_IN}"
   printf 'Host link file: %s\n' "${SOUS_HOST_LINK_FILE}"
   if [ -n "${SMOKE_BYPASS_HEADER:-}" ]; then
     printf 'Smoke bypass header: %s (value redacted)\n' "${SMOKE_BYPASS_HEADER}"
@@ -759,10 +772,10 @@ if [ "${dry_run}" -eq 1 ]; then
   fi
   printf 'Would stage: %s\n' "$(format_host_cmd deploy --prod --skip-domain --yes --build-env "SOUS_RELEASE_COMMIT=${sha}")"
   printf 'Would check staged /api/version equals %s\n' "${sha}"
-  printf 'Would smoke staged URL: SMOKE_BASE_URL=<staged-url> SMOKE_EXPECT_COMMIT=%s pnpm --dir app e2e:smoke\n' "${sha}"
+  printf 'Would smoke staged URL: SMOKE_BASE_URL=<staged-url> SMOKE_EXPECT_COMMIT=%s SMOKE_EXPECT_SIGN_IN=%s pnpm --dir app e2e:smoke\n' "${sha}" "${SOUS_EXPECT_SIGN_IN}"
   printf 'Would promote: %s\n' "$(format_host_cmd promote "<staged-url>" --yes)"
   printf 'Would check live /api/version equals %s (waiting up to %ss)\n' "${sha}" "${live_wait_seconds}"
-  printf 'Would smoke live URL: SMOKE_BASE_URL=%s SMOKE_EXPECT_COMMIT=%s pnpm --dir app e2e:smoke\n' "${live_url}" "${sha}"
+  printf 'Would smoke live URL: SMOKE_BASE_URL=%s SMOKE_EXPECT_COMMIT=%s SMOKE_EXPECT_SIGN_IN=%s pnpm --dir app e2e:smoke\n' "${live_url}" "${sha}" "${SOUS_EXPECT_SIGN_IN}"
   printf 'Would record release %s in %s\n' "${next_release_num}" "${releases_log}"
   print_rollback_info
   printf 'dry run: nothing was changed\n'
@@ -809,7 +822,7 @@ if [ "${#new_migrations[@]}" -gt 0 ]; then
     if [ -n "${pg_password}" ]; then export PGPASSWORD="${pg_password}"; fi
     if [ -n "${pg_database}" ]; then export PGDATABASE="${pg_database}"; fi
     if [ -n "${pg_sslmode}" ]; then export PGSSLMODE="${pg_sslmode}"; fi
-    exec pg_dump -Fc --no-owner -f "${backup_path}"
+    exec pg_dump -Fc --no-owner -n public -n drizzle -f "${backup_path}"
   ); then
     pg_dump_ok=1
   fi
@@ -858,9 +871,110 @@ if ! (cd "${worktree_dir}" && "${host_cli}" deploy --prod --skip-domain --yes --
 fi
 cat "${stage_out}"
 
+parse_staged_url_json() {
+  local stage_file="$1"
+  node -e '
+const fs = require("node:fs");
+const stagePath = process.argv[1];
+const noUrlMsg =
+  "deploy: host staging output contained no https:// URL (neither a bare https:// line nor a JSON document with a deployment URL was found); nothing was promoted";
+const invalidUrlMsg =
+  "deploy: host staging output contained an invalid deployment URL (expected an https:// host with no credentials, port, path, query, or fragment); nothing was promoted";
+
+function fail(message) {
+  console.error(message);
+  process.exit(1);
+}
+
+const raw = fs.readFileSync(stagePath, "utf8").trim();
+if (!raw) {
+  fail(noUrlMsg);
+}
+
+let parsed;
+try {
+  parsed = JSON.parse(raw);
+} catch {
+  fail(noUrlMsg);
+}
+if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  fail(noUrlMsg);
+}
+
+const hasDeployment =
+  parsed.deployment !== null &&
+  typeof parsed.deployment === "object" &&
+  !Array.isArray(parsed.deployment);
+const source = hasDeployment ? parsed.deployment : parsed;
+
+if (
+  Object.prototype.hasOwnProperty.call(source, "readyState") &&
+  source.readyState !== undefined &&
+  source.readyState !== null
+) {
+  if (source.readyState !== "READY") {
+    fail(
+      `deploy: staged deployment reported readyState "${String(source.readyState)}" (expected "READY"); nothing was promoted`,
+    );
+  }
+}
+
+const rawUrl = source.url;
+if (typeof rawUrl !== "string" || rawUrl.length === 0) {
+  fail(noUrlMsg);
+}
+if (/[\x00-\x1f\x7f\s]/.test(rawUrl)) {
+  fail(invalidUrlMsg);
+}
+
+const hasScheme = rawUrl.includes("://");
+if (hasScheme && !rawUrl.startsWith("https://")) {
+  fail(invalidUrlMsg);
+}
+const afterScheme = hasScheme ? rawUrl.slice("https://".length) : rawUrl;
+if (
+  !afterScheme ||
+  afterScheme.startsWith("/") ||
+  afterScheme.includes("@") ||
+  afterScheme.includes(":") ||
+  afterScheme.includes("?") ||
+  afterScheme.includes("#") ||
+  afterScheme.includes("\\")
+) {
+  fail(invalidUrlMsg);
+}
+
+let urlObj;
+try {
+  urlObj = new URL(hasScheme ? rawUrl : `https://${rawUrl}`);
+} catch {
+  fail(invalidUrlMsg);
+}
+if (
+  urlObj.protocol !== "https:" ||
+  !urlObj.hostname ||
+  urlObj.username !== "" ||
+  urlObj.password !== "" ||
+  urlObj.port !== "" ||
+  urlObj.search !== "" ||
+  urlObj.hash !== "" ||
+  urlObj.pathname !== "/"
+) {
+  fail(invalidUrlMsg);
+}
+
+process.stdout.write(`https://${urlObj.hostname}`);
+' "${stage_file}"
+}
+
 staged_url="$(awk '{ sub(/\r$/, ""); if ($0 ~ /^https:\/\//) url = $0 } END { print url }' "${stage_out}")"
 if [ -z "${staged_url}" ]; then
-  printf 'deploy: host staging output contained no https:// URL\n' >&2
+  if ! staged_url="$(parse_staged_url_json "${stage_out}")"; then
+    exit 1
+  fi
+fi
+if [ -z "${staged_url}" ]; then
+  printf 'deploy: host staging output contained no https:// URL (neither a bare https:// line nor a JSON document with a deployment URL was found); nothing was promoted\n' >&2
   exit 1
 fi
 printf 'Staged URL: %s\n' "${staged_url}"
@@ -871,6 +985,7 @@ run_smoke() {
     cd "${worktree_dir}"
     export SMOKE_BASE_URL="${target_url}"
     export SMOKE_EXPECT_COMMIT="${sha}"
+    export SMOKE_EXPECT_SIGN_IN="${SOUS_EXPECT_SIGN_IN}"
     if [ -n "${SMOKE_BYPASS_HEADER:-}" ]; then
       export SMOKE_BYPASS_HEADER="${SMOKE_BYPASS_HEADER}"
       export SMOKE_BYPASS_VALUE="${SMOKE_BYPASS_VALUE}"
