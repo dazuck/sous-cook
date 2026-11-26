@@ -35,6 +35,8 @@ export interface SerializedKitchenQueueItem {
   createdAt: string | Date;
   /** The derived cook plan as stored; checked with `isCurrentCookPlan` before use. */
   cookPlan?: unknown;
+  /** Whether the recipe is marked private for this kitchen. */
+  isPrivate?: boolean;
 }
 
 interface RecipeImportModalProps {

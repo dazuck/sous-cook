@@ -100,8 +100,11 @@ export type MissingReason = "refused" | "unread";
 export interface HouseholdRow {
   /** The row's `docSlug`, which is its recipe's id in the household pack. */
   id: string;
+  /** The `doc_recipes.id` UUID, for share links in sign-in mode. */
+  docRecipeId?: string;
   name: string;
   missing: MissingReason | null;
+  isPrivate?: boolean;
 }
 
 export interface HouseholdChapter {
@@ -124,9 +127,22 @@ export interface HouseholdLayout {
   chapters: HouseholdChapter[];
 }
 
+export interface KitchenPackRecord {
+  id: string;
+  packId?: string;
+  packJson: unknown;
+  isOwned: boolean;
+  fromKitchenName: string | null;
+}
+
+export type KitchenPacksReader = () => Promise<readonly KitchenPackRecord[]>;
+
 export interface ShelfPack {
   sourceId: string;
   pack: Pack;
+  isOwned?: boolean;
+  fromKitchenName?: string | null;
+  kitchenPackId?: string;
 }
 
 export interface ShelfError {
@@ -175,7 +191,7 @@ async function readJson(file: string, shown: string): Promise<Read> {
   }
 }
 
-type LibraryLoad =
+export type LibraryLoad =
   { ok: true; libraries: Libraries } | { ok: false; issues: SchemaIssue[] };
 
 /**
@@ -183,7 +199,7 @@ type LibraryLoad =
  * fails the load: refs can't be checked without it, and the shelf never
  * shows a pack whose refs went unchecked.
  */
-async function loadLibraries(packsDir: string): Promise<LibraryLoad> {
+export async function loadLibraries(packsDir: string): Promise<LibraryLoad> {
   const issues: SchemaIssue[] = [];
   async function one<T>(
     file: string,
@@ -308,7 +324,7 @@ async function loadPackFile(
 }
 
 /** One pack, whole: the format's schema, then its refs against the libraries. */
-function validatePack(
+export function validatePack(
   sourceId: string,
   data: unknown,
   libraries: Libraries,
@@ -518,7 +534,13 @@ function householdChapters(
   const none: HouseholdChapter = { title: null, rows: [] };
   for (const row of rows) {
     const title = chapterTitle(row);
-    const entry = { id: row.docSlug, name: row.name, missing: missing.get(row.docSlug) ?? null };
+    const entry: HouseholdRow = {
+      id: row.docSlug,
+      docRecipeId: row.id,
+      name: row.name,
+      missing: missing.get(row.docSlug) ?? null,
+      isPrivate: row.isPrivate,
+    };
     if (title === null) {
       none.rows.push(entry);
       continue;
@@ -559,7 +581,12 @@ export async function loadShelf(
   {
     packsDir,
     readFamilyLibrary,
-  }: { packsDir: string; readFamilyLibrary: FamilyLibraryReader },
+    readKitchenPacks,
+  }: {
+    packsDir: string;
+    readFamilyLibrary: FamilyLibraryReader;
+    readKitchenPacks?: KitchenPacksReader;
+  },
 ): Promise<Shelf> {
   const packs: ShelfPack[] = [];
   const errors: ShelfError[] = [];
@@ -640,7 +667,63 @@ export async function loadShelf(
     loadedFrom.set(load.pack.id, source.id);
     packs.push({ sourceId: source.id, pack: load.pack });
   }
+
+  if (readKitchenPacks && libraries.ok) {
+    let records: readonly KitchenPackRecord[];
+    try {
+      records = await readKitchenPacks();
+    } catch (error) {
+      fail({
+        sourceId: "kitchen-packs",
+        reason: `kitchen packs unreadable: ${error instanceof Error ? error.message : String(error)}`,
+        issues: [],
+      });
+      return { packs, errors, ...(household && { household }) };
+    }
+    for (const record of records) {
+      const sourceId = `${record.isOwned ? "owned" : "shared"}:${record.id}`;
+      const load = validatePack(sourceId, record.packJson, libraries.libraries);
+      if (!load.ok) {
+        fail(load.error);
+        continue;
+      }
+      if (load.pack.kind === "household") {
+        fail({
+          sourceId,
+          packId: load.pack.id,
+          reason: "kitchen pack cannot have kind \"household\"",
+          issues: [],
+        });
+        continue;
+      }
+      const earlier = loadedFrom.get(load.pack.id);
+      if (earlier !== undefined) {
+        fail({
+          sourceId,
+          packId: load.pack.id,
+          reason: `duplicate pack id "${load.pack.id}": source "${earlier}" already loaded it`,
+          issues: [],
+        });
+        continue;
+      }
+      loadedFrom.set(load.pack.id, sourceId);
+      packs.push({
+        sourceId,
+        pack: load.pack,
+        isOwned: record.isOwned,
+        fromKitchenName: record.fromKitchenName,
+        kitchenPackId: record.id,
+      });
+    }
+  }
+
   return { packs, errors, ...(household && { household }) };
+}
+
+export interface PackMeta {
+  isOwned: boolean;
+  fromKitchenName: string | null;
+  kitchenPackId: string;
 }
 
 /** The pack files the registry lists, loaded and checked, with the libraries their refs resolve in. */
@@ -651,6 +734,8 @@ export interface PackFiles {
   libraries: Libraries | null;
   /** Why nothing loaded, when the load itself failed (`loadAppPackFiles`). */
   loadError?: string;
+  /** Ownership/sharing metadata keyed by `pack.id`, present when loaded for a kitchen. */
+  packMeta?: ReadonlyMap<string, PackMeta>;
 }
 
 /**

@@ -8,6 +8,7 @@ import { packReturnKey } from "@/components/cookpacks/Shelf";
 import { BorrowedPage } from "@/components/kitchen/BorrowedPage";
 import { EDGE_X } from "@/components/kitchen/cook-edge";
 import { LABEL } from "@/components/kitchen/KitchenHome";
+import { useSignInMode } from "@/components/kitchen/SignInMode";
 import { allowanceSentence } from "@/lib/kitchen/allowance";
 import { isUnreadableRecipe, QUEUE_REFUSAL_COPY } from "@/lib/kitchen/queue-refusal";
 import {
@@ -45,7 +46,30 @@ export default function PackPage({ params }: PageProps) {
   const packId = decoded(raw);
   const router = useRouter();
   const utils = trpc.useUtils();
+  const signInMode = useSignInMode();
   const { data: view, error } = trpc.getPack.useQuery({ packId });
+  const settings = trpc.getKitchenSettings.useQuery(undefined, {
+    enabled: signInMode,
+  });
+  const canManageCircleSharing =
+    signInMode &&
+    Boolean(view?.isOwned) &&
+    settings.data?.memberRole === "owner";
+  const circleShares = trpc.getPackCircleShares.useQuery(
+    { packId },
+    { enabled: canManageCircleSharing },
+  );
+  const [actionError, setActionError] = useState<string | null>(null);
+  const setCircleShare = trpc.setPackCircleShare.useMutation({
+    onSuccess: () => {
+      setActionError(null);
+      void utils.getPackCircleShares.invalidate({ packId });
+      void utils.getCircleDishes.invalidate();
+    },
+    onError: (err) => {
+      setActionError(err.message || "Could not update circle sharing.");
+    },
+  });
   const [initialAnchor] = useState(() =>
     typeof window === "undefined" ? null : decoded(window.location.hash.slice(1)) || null,
   );
@@ -100,6 +124,16 @@ export default function PackPage({ params }: PageProps) {
     },
   });
 
+  const setPrivate = trpc.setDocRecipePrivate.useMutation({
+    onSuccess: () => {
+      setActionError(null);
+      void utils.getPack.invalidate();
+    },
+    onError: (err) => {
+      setActionError(err.message || "Could not update recipe privacy.");
+    },
+  });
+
   const onPick = (recipeId: string) => {
     if (starting.current) return;
     starting.current = true;
@@ -136,8 +170,42 @@ export default function PackPage({ params }: PageProps) {
                 : undefined
             }
             sendingId={sendingId}
-            sendFailure={sendFailure}
+            sendFailure={sendFailure ?? actionError}
             onPick={onPick}
+            onTogglePrivate={
+              view.kind === "household"
+                ? (docSlug, isPrivate) => setPrivate.mutate({ docSlug, isPrivate })
+                : undefined
+            }
+            onCopyShareLink={
+              signInMode && view.kind === "household"
+                ? async (docRecipeId) => {
+                    if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
+                      return false;
+                    }
+                    try {
+                      await navigator.clipboard.writeText(
+                        `${window.location.origin}/kitchen/shared/${docRecipeId}`,
+                      );
+                      return true;
+                    } catch {
+                      return false;
+                    }
+                  }
+                : undefined
+            }
+            circleSharing={
+              canManageCircleSharing &&
+              circleShares.data &&
+              circleShares.data.kitchens.length > 0
+                ? {
+                    kitchens: circleShares.data.kitchens,
+                    pending: setCircleShare.isPending,
+                    onToggle: (targetKitchenId, shared) =>
+                      setCircleShare.mutate({ packId, targetKitchenId, shared }),
+                  }
+                : undefined
+            }
             initialAnchor={initialAnchor}
             onAnchor={(anchor) => window.history.replaceState(null, "", `#${anchor}`)}
           />

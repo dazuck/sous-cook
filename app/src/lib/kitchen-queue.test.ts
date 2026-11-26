@@ -24,26 +24,35 @@ const KITCHEN_ID = "00000000-0000-4000-8000-000000000001";
 // =============================================================================
 
 // Mock the database module
-vi.mock("./db", () => ({
-  db: {
+vi.mock("./db", () => {
+  const mockDb = {
     insert: vi.fn(),
     select: vi.fn(),
     delete: vi.fn(),
     update: vi.fn(),
+    transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)),
     query: {
       kitchenQueue: {
         findMany: vi.fn(),
         findFirst: vi.fn(),
       },
     },
-  },
-  kitchenQueue: {
-    id: "id",
-    kitchenId: "kitchen_id",
-    status: "status",
-    createdAt: "created_at",
-  },
-}));
+  };
+  return {
+    db: mockDb,
+    kitchenCookLog: {
+      kitchenId: "kitchen_id",
+      queueId: "queue_id",
+    },
+    kitchenQueue: {
+      id: "id",
+      kitchenId: "kitchen_id",
+      status: "status",
+      isPrivate: "is_private",
+      createdAt: "created_at",
+    },
+  };
+});
 
 import { db } from "./db";
 import { sourceHash } from "./serves-estimate-plan";
@@ -341,6 +350,14 @@ describe("removeFromQueue", () => {
   });
 
   it("removes an item from the queue", async () => {
+    const mockSelect = vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([{ isPrivate: false }]),
+        }),
+      }),
+    });
+    (db.select as Mock).mockImplementation(mockSelect);
     const mockDelete = vi.fn().mockReturnValue({
       where: vi.fn().mockResolvedValue(undefined),
     });

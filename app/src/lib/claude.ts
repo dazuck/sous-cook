@@ -176,11 +176,11 @@ type NotionContext = {
  * and no reference block is sent). A connected hook that fails is logged and
  * left out: the cook's question is still answered, without it.
  */
-async function getNotionContext(): Promise<NotionContext> {
+async function getNotionContext(kitchenId: string): Promise<NotionContext> {
   const [pantry, familyContext, recentCooking] = await Promise.all([
     connected.pantry
       ? Promise.resolve()
-          .then(() => hook("pantry").readSections())
+          .then(() => hook("pantry", kitchenId).readSections())
           .then(pantryInventory)
           .catch((error) => {
             console.warn("Could not fetch pantry inventory context:", error);
@@ -189,7 +189,7 @@ async function getNotionContext(): Promise<NotionContext> {
       : null,
     connected["household-context"]
       ? Promise.resolve()
-          .then(() => hook("household-context").read())
+          .then(() => hook("household-context", kitchenId).read())
           .catch((error) => {
             console.warn("Could not fetch household context:", error);
             return "";
@@ -197,7 +197,7 @@ async function getNotionContext(): Promise<NotionContext> {
       : "",
     connected["cook-log"]
       ? Promise.resolve()
-          .then(() => fetchRecentCookLog(hook("cook-log"), 10))
+          .then(() => fetchRecentCookLog(hook("cook-log", kitchenId), 10))
           .catch((error) => {
             console.warn("Could not fetch cook log context:", error);
             return [];
@@ -431,8 +431,8 @@ export async function chat(
   options: ChatOptions = {},
 ): Promise<ChatResponse> {
   const memberId = options.memberId ?? null;
-  // Get Notion context for system prompt injection
-  const notionContext = await getNotionContext();
+  // Get household context for system prompt injection
+  const notionContext = await getNotionContext(kitchenId);
   const contextBlock = buildContextBlock(notionContext);
 
   // Build system prompt with context
@@ -783,7 +783,7 @@ export async function chatCookingAssistant(
         const files =
           parsePackSource(item.recipeData?.source) === null
             ? null
-            : await loadAppPackFiles();
+            : await loadAppPackFiles({ kitchenId });
         const reading = readQueueItem(item, files);
         if (reading.packRecipe) {
           const storedCount = Math.max(

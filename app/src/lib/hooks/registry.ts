@@ -10,25 +10,33 @@
  */
 
 import { connected } from "./connected";
+import { dbCookLog } from "./db-cook-log";
+import { dbHouseholdContext } from "./db-household-context";
+import { createDbIdeasStore } from "./db-ideas";
+import { createDbPantryStore } from "./db-pantry";
+import { dbRecipeLibrary } from "./db-recipe-library";
+import { createDbShoppingListStore } from "./db-shopping-list";
 import { hookSpecDoc, type HookImplementations, type HookName, type Hooks } from "./types";
 
 export const implementations: HookImplementations = {
-  "recipe-library": null,
-  "cook-log": null,
-  pantry: null,
-  "shopping-list": null,
-  ideas: null,
-  "household-context": null,
+  "recipe-library": dbRecipeLibrary,
+  "cook-log": dbCookLog,
+  pantry: (kitchenId) => createDbPantryStore(kitchenId),
+  "shopping-list": (kitchenId) => createDbShoppingListStore(kitchenId),
+  ideas: (kitchenId) => createDbIdeasStore(kitchenId),
+  "household-context": dbHouseholdContext,
 };
 
 /**
  * The implementation of a connected hook. Callers check `connected[name]`
  * first and take their unconnected branch; this is for the other branch.
+ * Per-kitchen hooks require `kitchenId`.
  *
  * @throws Error if the hook's switch is on but its slot is null (naming the
- *   spec to implement), or if it is called for a hook whose switch is off
+ *   spec to implement), if a per-kitchen hook is called without `kitchenId`,
+ *   or if it is called for a hook whose switch is off
  */
-export function hook<K extends HookName>(name: K): Hooks[K] {
+export function hook<K extends HookName>(name: K, kitchenId?: string): Hooks[K] {
   if (!connected[name]) {
     throw new Error(
       `The "${name}" hook is not connected (lib/hooks/connected.ts), so there is nothing to call. ` +
@@ -41,6 +49,14 @@ export function hook<K extends HookName>(name: K): Hooks[K] {
       `The "${name}" hook is switched on in lib/hooks/connected.ts but has no implementation in ` +
         `lib/hooks/registry.ts. Its spec is ${hookSpecDoc(name)}.`,
     );
+  }
+  if (typeof implementation === "function") {
+    if (!kitchenId) {
+      throw new Error(
+        `The "${name}" hook is per-kitchen and requires a kitchenId when calling hook("${name}", kitchenId).`,
+      );
+    }
+    return implementation(kitchenId);
   }
   return implementation as Hooks[K];
 }

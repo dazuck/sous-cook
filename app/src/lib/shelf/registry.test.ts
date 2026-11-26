@@ -77,6 +77,7 @@ function docRow(slug: string, over: Partial<DocRecipeRow> = {}): DocRecipeRow {
     cookPlanError: null,
     cookPlanSourceHash: null,
     cookPlanStamp: null,
+    isPrivate: false,
     ...over,
   };
 }

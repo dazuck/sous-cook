@@ -10,6 +10,7 @@ import {
   type ModelPrice,
 } from "@/lib/ai/prices";
 import { connected } from "@/lib/hooks/connected";
+import { implementations } from "@/lib/hooks/registry";
 import { HOOK_NAMES } from "@/lib/hooks/types";
 import {
   DeploymentConfigError,
@@ -176,7 +177,9 @@ export function checkDeploymentEnv(
     // Validate cap variable syntax before checking hooks and model prices.
     validateCapEnvVars(mode, env);
 
-    const enabledHooks = HOOK_NAMES.filter((name) => connected[name]);
+    const enabledHooks = HOOK_NAMES.filter(
+      (name) => connected[name] && typeof implementations?.[name] !== "function",
+    );
     if (enabledHooks.length > 0) {
       throw new DeploymentConfigError(
         `Sign-in mode cannot start with instance-wide hook(s) connected: ${enabledHooks.join(", ")}. ` +
@@ -270,7 +273,15 @@ function deploymentEnvKey(env: Record<string, string | undefined>): string {
     encodeEnvValue(env.AI_VISION_PROVIDER),
     encodeEnvValue(env.AI_VISION_MODEL),
   ];
-  const hookParts = HOOK_NAMES.map((name) => (connected[name] ? "1" : "0"));
+  const hookParts = HOOK_NAMES.map((name) => {
+    const implKind =
+      typeof implementations?.[name] === "function"
+        ? "f"
+        : implementations?.[name]
+          ? "o"
+          : "n";
+    return `${connected[name] ? "1" : "0"}${implKind}`;
+  });
   return `${envParts.join("\0")}|${hookParts.join("")}`;
 }
 

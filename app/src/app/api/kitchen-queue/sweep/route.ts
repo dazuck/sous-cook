@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { sweepAndLogIdleCooks } from "@/lib/kitchen-auto-finish";
 import { authenticateWebhookRequest } from "@/lib/kitchens/webhook-tokens";
+import { checkWebhookRateLimit } from "@/lib/kitchens/webhook-rate-limit";
 
 /** Empty object only; the token identifies the kitchen. */
 const SweepSchema = z.object({}).strict();
@@ -33,6 +34,9 @@ export const maxDuration = 60;
 export async function POST(request: Request): Promise<Response> {
   const auth = await authenticateWebhookRequest(request);
   if (!auth.ok) return auth.response;
+
+  const rateLimit = checkWebhookRateLimit(auth.kitchen.id);
+  if (!rateLimit.ok) return rateLimit.response;
 
   let body: unknown;
   try {

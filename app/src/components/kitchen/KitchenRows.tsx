@@ -12,6 +12,10 @@ export interface KitchenItem {
    * work it opens with, as its parts, when there is anything to say.
    */
   times?: string[] | null;
+  /** Whether this queued recipe is marked private for the kitchen. */
+  isPrivate?: boolean;
+  /** Whether this queued recipe came from a creator pack (`pack:` / `pack-adapted:`). */
+  isPack?: boolean;
 }
 
 /** A section's label: the meta line's type, ink-soft. */
@@ -65,12 +69,14 @@ export function Row({
   title,
   slot,
   edit,
+  trailing,
   go = false,
   className = "",
 }: {
   title: ReactNode;
   slot?: ReactNode;
   edit?: ReactNode;
+  trailing?: ReactNode;
   go?: boolean;
   className?: string;
 }) {
@@ -102,7 +108,12 @@ export function Row({
           </span>
         )}
       </div>
-      {edit ?? (go && <Onward />)}
+      {edit ?? (
+        <>
+          {trailing}
+          {go && <Onward />}
+        </>
+      )}
     </li>
   );
 }

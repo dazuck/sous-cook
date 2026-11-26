@@ -3,7 +3,9 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { Suspense } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COOKPACKS_COPY } from "@/components/cookpacks/copy";
+import { SignInModeProvider } from "@/components/kitchen/SignInMode";
 import { allowanceError } from "@/lib/kitchen/__tests__/allowance-error";
+import { SIGN_IN_MODE_COOKIE } from "@/lib/kitchens/mode";
 import { refreshFailedLine } from "@/lib/recipe-sync-summary";
 import type { PackPageView } from "@/lib/shelf/view";
 import PackPage from "./page";
@@ -16,10 +18,23 @@ vi.mock("next/navigation", () => ({
 const mockInvalidatePack = vi.fn(() => Promise.resolve());
 const mockInvalidateShelf = vi.fn(() => Promise.resolve());
 const mockInvalidatePlanReport = vi.fn(() => Promise.resolve());
+const mockInvalidatePackCircleShares = vi.fn(() => Promise.resolve());
+const mockInvalidateCircleDishes = vi.fn(() => Promise.resolve());
 const mockQueueMutate = vi.fn();
 const mockSyncMutate = vi.fn();
+const mockSetCircleShareMutate = vi.fn();
 
 let currentView: PackPageView | null = null;
+let currentMemberRole: "owner" | "cook" | null = null;
+let currentCircleShares: {
+  circleName: string | null;
+  kitchens: Array<{
+    kitchenId: string;
+    slug: string;
+    name: string;
+    shared: boolean;
+  }>;
+} = { circleName: null, kitchens: [] };
 let queueMutationOptions: {
   onSuccess?: (item: { id: string }) => void;
   onError?: (err: unknown) => void;
@@ -35,9 +50,37 @@ vi.mock("@/lib/trpc", () => ({
       getPack: { invalidate: mockInvalidatePack },
       getShelf: { invalidate: mockInvalidateShelf },
       libraryPlanReport: { invalidate: mockInvalidatePlanReport },
+      getPackCircleShares: { invalidate: mockInvalidatePackCircleShares },
+      getCircleDishes: { invalidate: mockInvalidateCircleDishes },
     }),
     getPack: {
       useQuery: () => ({ data: currentView, error: null }),
+    },
+    getKitchenSettings: {
+      useQuery: (_input?: unknown, opts?: { enabled?: boolean }) => ({
+        data:
+          opts?.enabled === false
+            ? undefined
+            : {
+                about: "",
+                slug: "maple",
+                name: "Maple Kitchen",
+                memberRole: currentMemberRole,
+              },
+        error: null,
+      }),
+    },
+    getPackCircleShares: {
+      useQuery: (_input?: unknown, opts?: { enabled?: boolean }) => ({
+        data: opts?.enabled ? currentCircleShares : undefined,
+        error: null,
+      }),
+    },
+    setPackCircleShare: {
+      useMutation: () => ({
+        isPending: false,
+        mutate: (input: unknown) => mockSetCircleShareMutate(input),
+      }),
     },
     libraryPlanReport: {
       useQuery: () => ({ data: { needFixes: [], pending: 0, total: 0 } }),
@@ -58,6 +101,11 @@ vi.mock("@/lib/trpc", () => ({
           mutate: () => mockSyncMutate(),
         };
       },
+    },
+    setDocRecipePrivate: {
+      useMutation: () => ({
+        mutate: vi.fn(),
+      }),
     },
   },
 }));
@@ -93,11 +141,17 @@ const HOUSEHOLD: PackPageView = {
 beforeEach(() => {
   vi.clearAllMocks();
   currentView = HOUSEHOLD;
+  currentMemberRole = null;
+  currentCircleShares = { circleName: null, kitchens: [] };
+  document.cookie = `${SIGN_IN_MODE_COOKIE}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
   queueMutationOptions = {};
   syncMutationOptions = {};
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  document.cookie = `${SIGN_IN_MODE_COOKIE}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+});
 
 async function renderPage() {
   const params = Promise.resolve({ packId: HOUSEHOLD.id });
@@ -184,5 +238,59 @@ describe("PackPage", () => {
     expect(mockInvalidateShelf).toHaveBeenCalledTimes(1);
     expect(mockInvalidatePlanReport).toHaveBeenCalledTimes(1);
     logged.mockRestore();
+  });
+
+  it("shows Share with circle switches only for an owner of an owned pack in sign-in mode", async () => {
+    currentView = {
+      ...HOUSEHOLD,
+      id: "owned-pack",
+      kind: "creator",
+      title: "Owned Pack",
+      creator: "Chef Maple",
+      cloth: "walnut",
+      isOwned: true,
+    };
+    currentCircleShares = {
+      circleName: "Sunday Cooks",
+      kitchens: [
+        { kitchenId: "k-b", slug: "cedar", name: "Cedar Kitchen", shared: false },
+      ],
+    };
+
+    // Cook in sign-in mode does not see Share with circle
+    document.cookie = `${SIGN_IN_MODE_COOKIE}=1; path=/`;
+    currentMemberRole = "cook";
+    const params = Promise.resolve({ packId: "owned-pack" });
+    await act(async () => {
+      render(
+        <SignInModeProvider>
+          <Suspense fallback={null}>
+            <PackPage params={params} />
+          </Suspense>
+        </SignInModeProvider>,
+      );
+    });
+    expect(screen.queryByText("Share with circle")).toBeNull();
+    cleanup();
+
+    // Owner in sign-in mode sees Share with circle and can toggle
+    currentMemberRole = "owner";
+    await act(async () => {
+      render(
+        <SignInModeProvider>
+          <Suspense fallback={null}>
+            <PackPage params={params} />
+          </Suspense>
+        </SignInModeProvider>,
+      );
+    });
+    expect(screen.getByText("Share with circle")).toBeTruthy();
+    const toggle = screen.getByRole("switch", { name: "Share with Cedar Kitchen" });
+    fireEvent.click(toggle);
+    expect(mockSetCircleShareMutate).toHaveBeenCalledWith({
+      packId: "owned-pack",
+      targetKitchenId: "k-b",
+      shared: true,
+    });
   });
 });

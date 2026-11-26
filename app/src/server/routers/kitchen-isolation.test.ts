@@ -45,11 +45,13 @@ vi.mock("@/lib/hooks/connected", async () => {
     connected: Object.fromEntries(HOOK_NAMES.map((name) => [name, true])),
   };
 });
-vi.mock("@/lib/hooks/registry", async () => {
+vi.mock("@/lib/hooks/registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/hooks/registry")>();
   const { scriptedCookLog } = await import(
     "../../lib/__tests__/scripted-cook-log"
   );
   return {
+    ...actual,
     hook: (name: string) => {
       if (name === "recipe-library") return { readTabs: mockReadTabs };
       if (name === "ideas") {
@@ -87,7 +89,11 @@ import {
   db,
   docRecipes,
   invites,
+  kitchenCookLog,
   kitchenQueue,
+  kitchens,
+  kitchenWebhookTokens,
+  members,
   recipeIdeasCache,
 } from "@/lib/db";
 import { connected } from "@/lib/hooks/connected";
@@ -109,6 +115,13 @@ import { httpCall } from "@/lib/__tests__/trpc-http";
 import { resetAuthForTests } from "@/lib/auth/auth";
 import { resetDeploymentCheckForTests } from "@/lib/kitchens/deployment";
 import { NotInvitedError } from "@/lib/kitchens/invites";
+import {
+  addKitchenToCircle,
+  createCircle,
+  removeKitchenFromCircle,
+} from "@/lib/kitchens/circles";
+import { addKitchenPack } from "@/lib/kitchens/packs";
+import { PACKS_DIR } from "@/lib/shelf/load";
 import {
   logCookPlanRejections,
   removeFromQueue,
@@ -204,7 +217,7 @@ beforeEach(async () => {
   resetDeploymentCheckForTests(db);
 
   await client.exec(
-    "delete from ai_usage; delete from conversation_logs; delete from cook_reports; delete from doc_recipes; delete from recipe_ideas_cache; delete from kitchen_queue; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_verification; delete from auth_user;",
+    "delete from circle_members; delete from circles; delete from kitchen_pack_shares; delete from kitchen_packs; delete from ai_usage; delete from conversation_logs; delete from cook_reports; delete from kitchen_cook_log; delete from doc_recipes; delete from recipe_ideas_cache; delete from kitchen_queue; delete from kitchen_webhook_tokens; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_verification; delete from auth_user;",
   );
   await client.exec("delete from kitchens where slug <> 'home'");
 
@@ -1607,7 +1620,7 @@ describe("ISO-37: clearShoppingList", () => {
 });
 
 describe("STRUCT-1: router procedure inventory", () => {
-  it("exposes exactly the 37 documented procedures", () => {
+  it("exposes exactly the 55 documented procedures", () => {
     const expected = [
       "health",
       "chatCooking",
@@ -1623,7 +1636,17 @@ describe("STRUCT-1: router procedure inventory", () => {
       "retryCookLog",
       "rateCook",
       "getCookAsk",
+      "setCookLogHeldBack",
       "dismissCookAsk",
+      "getCookLog",
+      "updateCookLogEntry",
+      "getKitchenSettings",
+      "updateKitchenAbout",
+      "listKitchenWebhookTokens",
+      "createKitchenWebhookToken",
+      "revokeKitchenWebhookToken",
+      "setDocRecipePrivate",
+      "setQueueRecipePrivate",
       "removeFromKitchenQueue",
       "getRecentCookingItems",
       "importRecipeFromUrl",
@@ -1638,6 +1661,7 @@ describe("STRUCT-1: router procedure inventory", () => {
       "saveRecipeIdea",
       "submitCookReport",
       "annotateCookReport",
+      "getPantry",
       "parseGroceryInput",
       "addIngredientsToPantry",
       "getRecipePantryReconciliation",
@@ -1646,8 +1670,15 @@ describe("STRUCT-1: router procedure inventory", () => {
       "addShoppingListItems",
       "removeShoppingListItem",
       "clearShoppingList",
+      "getCircleDishes",
+      "getCircleDish",
+      "queueCircleDish",
+      "getSharedRecipe",
+      "queueSharedRecipe",
+      "getPackCircleShares",
+      "setPackCircleShare",
     ];
-    expect(expected).toHaveLength(37);
+    expect(expected).toHaveLength(55);
     expect(Object.keys(appRouter._def.procedures).sort()).toEqual(
       [...expected].sort(),
     );
@@ -1712,7 +1743,7 @@ describe("STRUCT-2 (SLUG-1): router input schemas never accept kitchen, member, 
 describe("AUTH-1: every procedure except health requires a session and kitchen membership", () => {
   const SAMPLE_UUID = "00000000-0000-4000-8000-000000000001";
 
-  it("answers UNAUTHORIZED for all 36 non-health procedures when called without a session", async () => {
+  it("answers UNAUTHORIZED for all 54 non-health procedures when called without a session", async () => {
     const anon = await unauthenticatedSignInCaller();
 
     const calls: Record<string, () => Promise<unknown>> = {
@@ -1752,7 +1783,24 @@ describe("AUTH-1: every procedure except health requires a session and kitchen m
       retryCookLog: () => anon.retryCookLog({ queueId: SAMPLE_UUID }),
       rateCook: () => anon.rateCook({ queueId: SAMPLE_UUID, rating: 5 }),
       getCookAsk: () => anon.getCookAsk({}),
+      setCookLogHeldBack: () =>
+        anon.setCookLogHeldBack({ queueId: SAMPLE_UUID, heldBack: true }),
       dismissCookAsk: () => anon.dismissCookAsk({ queueId: SAMPLE_UUID }),
+      getCookLog: () => anon.getCookLog(),
+      updateCookLogEntry: () =>
+        anon.updateCookLogEntry({ id: SAMPLE_UUID, rating: 4 }),
+      getKitchenSettings: () => anon.getKitchenSettings(),
+      updateKitchenAbout: () =>
+        anon.updateKitchenAbout({ about: "No peanuts." }),
+      listKitchenWebhookTokens: () => anon.listKitchenWebhookTokens(),
+      createKitchenWebhookToken: () =>
+        anon.createKitchenWebhookToken({ label: "assistant" }),
+      revokeKitchenWebhookToken: () =>
+        anon.revokeKitchenWebhookToken({ id: SAMPLE_UUID }),
+      setDocRecipePrivate: () =>
+        anon.setDocRecipePrivate({ docSlug: "dal", isPrivate: true }),
+      setQueueRecipePrivate: () =>
+        anon.setQueueRecipePrivate({ queueId: SAMPLE_UUID, isPrivate: true }),
       removeFromKitchenQueue: () =>
         anon.removeFromKitchenQueue({ queueId: SAMPLE_UUID }),
       getRecentCookingItems: () => anon.getRecentCookingItems({}),
@@ -1778,6 +1826,7 @@ describe("AUTH-1: every procedure except health requires a session and kitchen m
       submitCookReport: () => anon.submitCookReport(makeReport(SAMPLE_UUID)),
       annotateCookReport: () =>
         anon.annotateCookReport({ id: SAMPLE_UUID, note: "note" }),
+      getPantry: () => anon.getPantry(),
       parseGroceryInput: () =>
         anon.parseGroceryInput({ type: "text", content: "apples" }),
       addIngredientsToPantry: () =>
@@ -1794,6 +1843,19 @@ describe("AUTH-1: every procedure except health requires a session and kitchen m
       removeShoppingListItem: () =>
         anon.removeShoppingListItem({ rawOrKey: "Milk" }),
       clearShoppingList: () => anon.clearShoppingList(),
+      getCircleDishes: () => anon.getCircleDishes(),
+      getCircleDish: () => anon.getCircleDish({ logId: SAMPLE_UUID }),
+      queueCircleDish: () => anon.queueCircleDish({ logId: SAMPLE_UUID }),
+      getSharedRecipe: () => anon.getSharedRecipe({ recipeId: SAMPLE_UUID }),
+      queueSharedRecipe: () => anon.queueSharedRecipe({ recipeId: SAMPLE_UUID }),
+      getPackCircleShares: () =>
+        anon.getPackCircleShares({ packId: "my-pack" }),
+      setPackCircleShare: () =>
+        anon.setPackCircleShare({
+          packId: "my-pack",
+          targetKitchenId: SAMPLE_UUID,
+          shared: true,
+        }),
     };
 
     const nonHealthProcedures = Object.keys(appRouter._def.procedures)
@@ -1891,5 +1953,595 @@ describe("AUTH-2: public health procedure", () => {
     expect(result.status).toBe("ok");
     expect(typeof result.timestamp).toBe("string");
     expect(Number.isNaN(Date.parse(result.timestamp))).toBe(false);
+  });
+});
+
+describe("ISO-38: getCookLog and updateCookLogEntry", () => {
+  it("lists and updates only the caller kitchen's cook log rows", async () => {
+    const [entryA] = await db
+      .insert(kitchenCookLog)
+      .values({
+        kitchenId: kitchenA.id,
+        recipeTitle: SECRET_RECIPE_A.name,
+        timestampText: "2026-03-10 18:30",
+        cookedDay: "2026-03-10",
+        rating: 4,
+        notes: "Kitchen A private note",
+        notePrivate: true,
+        heldBack: false,
+      })
+      .returning();
+
+    expect(await callerB.getCookLog()).toEqual([]);
+    const listA = await callerA.getCookLog();
+    expect(listA).toHaveLength(1);
+    expect(listA[0]!.id).toBe(entryA!.id);
+    expect(listA[0]!.recipeTitle).toBe(SECRET_RECIPE_A.name);
+
+    await expect(
+      callerB.updateCookLogEntry({
+        id: entryA!.id,
+        rating: 1,
+        notes: "tampered",
+        heldBack: true,
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    const [unchanged] = await db
+      .select()
+      .from(kitchenCookLog)
+      .where(eq(kitchenCookLog.id, entryA!.id));
+    expect(unchanged?.rating).toBe(4);
+    expect(unchanged?.notes).toBe("Kitchen A private note");
+    expect(unchanged?.heldBack).toBe(false);
+  });
+});
+
+describe("ISO-39: getKitchenSettings and updateKitchenAbout", () => {
+  it("reads and updates only the caller kitchen's settings and about text", async () => {
+    await callerA.updateKitchenAbout({ about: "We avoid tree nuts." });
+
+    const settingsA = await callerA.getKitchenSettings();
+    const settingsB = await callerB.getKitchenSettings();
+
+    expect(settingsA.slug).toBe("kitchen-a");
+    expect(settingsA.about).toBe("We avoid tree nuts.");
+    expect(settingsA.memberRole).toBe("owner");
+
+    expect(settingsB.slug).toBe("kitchen-b");
+    expect(settingsB.about).toBe("");
+
+    await callerB.updateKitchenAbout({ about: "Kitchen B only" });
+    const [rowA] = await db
+      .select({ about: kitchens.about })
+      .from(kitchens)
+      .where(eq(kitchens.id, kitchenA.id));
+    expect(rowA?.about).toBe("We avoid tree nuts.");
+  });
+
+  it("accepts a 2,000-character about string and rejects 2,001 characters with BAD_REQUEST", async () => {
+    const exact = "a".repeat(2000);
+    const updated = await callerA.updateKitchenAbout({ about: exact });
+    expect(updated.about).toBe(exact);
+
+    await expect(
+      callerA.updateKitchenAbout({ about: "a".repeat(2001) }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    const settingsA = await callerA.getKitchenSettings();
+    expect(settingsA.about).toBe(exact);
+  });
+});
+
+describe("ISO-40: setDocRecipePrivate and setQueueRecipePrivate", () => {
+  it("refuses cross-kitchen privacy toggles on doc recipes and queue items", async () => {
+    const [docA] = await db
+      .insert(docRecipes)
+      .values({
+        kitchenId: kitchenA.id,
+        docSlug: "saffron-tart",
+        name: SECRET_RECIPE_A.name,
+        rawDocText: "Saffron tart\n1 cup cream\nBake 30 min.",
+        isPrivate: false,
+      })
+      .returning();
+
+    const rowA = await seedQueueRow(db, kitchenA.id, {
+      recipeData: SECRET_RECIPE_A,
+    });
+
+    await expect(
+      callerB.setDocRecipePrivate({ id: docA!.id, isPrivate: true }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      callerB.setDocRecipePrivate({ docSlug: "saffron-tart", isPrivate: true }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      callerB.setQueueRecipePrivate({ queueId: rowA.id, isPrivate: true }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    const [docAfterB] = await db
+      .select({ isPrivate: docRecipes.isPrivate })
+      .from(docRecipes)
+      .where(eq(docRecipes.id, docA!.id));
+    expect(docAfterB?.isPrivate).toBe(false);
+
+    const [queueAfterB] = await db
+      .select({ isPrivate: kitchenQueue.isPrivate })
+      .from(kitchenQueue)
+      .where(eq(kitchenQueue.id, rowA.id));
+    expect(queueAfterB?.isPrivate).toBe(false);
+
+    expect(
+      await callerA.setDocRecipePrivate({ docSlug: "saffron-tart", isPrivate: true }),
+    ).toMatchObject({ docSlug: "saffron-tart", isPrivate: true });
+    expect(
+      await callerA.setQueueRecipePrivate({ queueId: rowA.id, isPrivate: true }),
+    ).toMatchObject({ id: rowA.id, isPrivate: true });
+  });
+});
+
+describe("ISO-41: owner webhook tokens", () => {
+  it("isolates tokens between kitchens, restricts management to owners in sign-in mode, and enforces the 10-live-token cap", async () => {
+    // Owner of kitchen B
+    const [userB] = await db
+      .insert(authUser)
+      .values({
+        id: "user-owner-b",
+        name: "Owner B",
+        email: "owner-b@example.com",
+        emailVerified: true,
+      })
+      .returning();
+    const [memberB] = await db
+      .insert(members)
+      .values({
+        kitchenId: kitchenB.id,
+        userId: userB!.id,
+        role: "owner",
+      })
+      .returning();
+    const ownerCallerB = callerFor(kitchenB, {
+      id: memberB!.id,
+      role: "owner",
+    });
+
+    // Cook in kitchen A
+    const [cookUserA] = await db
+      .insert(authUser)
+      .values({
+        id: "user-cook-a",
+        name: "Cook A",
+        email: "cook-a@example.com",
+        emailVerified: true,
+      })
+      .returning();
+    const [cookMemberA] = await db
+      .insert(members)
+      .values({
+        kitchenId: kitchenA.id,
+        userId: cookUserA!.id,
+        role: "cook",
+      })
+      .returning();
+    const cookCallerA = callerFor(kitchenA, {
+      id: cookMemberA!.id,
+      role: "cook",
+    });
+
+    // Owner A creates a token
+    const createdA = await callerA.createKitchenWebhookToken({
+      label: "Kitchen assistant",
+    });
+    expect(createdA.label).toBe("Kitchen assistant");
+    expect(createdA.token).toMatch(/^sous_[A-Za-z0-9_-]+$/);
+
+    // Owner B cannot see or revoke Kitchen A's token
+    expect(await ownerCallerB.listKitchenWebhookTokens()).toEqual([]);
+    await expect(
+      ownerCallerB.revokeKitchenWebhookToken({ id: createdA.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    // Cook in Kitchen A is refused with FORBIDDEN
+    await expect(cookCallerA.listKitchenWebhookTokens()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(
+      cookCallerA.createKitchenWebhookToken({ label: "cook-attempt" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      cookCallerA.revokeKitchenWebhookToken({ id: createdA.id }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    // Listing for Owner A never returns plaintext token or SHA-256 hash
+    const listedA = await callerA.listKitchenWebhookTokens();
+    expect(listedA).toHaveLength(1);
+    expect(listedA[0]).toMatchObject({
+      id: createdA.id,
+      label: "Kitchen assistant",
+      lastUsedAt: null,
+    });
+    expect(JSON.stringify(listedA)).not.toContain(createdA.token);
+
+    // Mint 9 more tokens (total 10 live); 11th is refused with CONFLICT
+    const extraIds: string[] = [];
+    for (let i = 2; i <= 10; i++) {
+      const extra = await callerA.createKitchenWebhookToken({
+        label: `Token ${i}`,
+      });
+      extraIds.push(extra.id);
+    }
+    await expect(
+      callerA.createKitchenWebhookToken({ label: "Token 11" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    // Revoking one frees a slot and prevents re-revocation
+    const revoked = await callerA.revokeKitchenWebhookToken({ id: extraIds[0]! });
+    expect(revoked.id).toBe(extraIds[0]);
+    await expect(
+      callerA.revokeKitchenWebhookToken({ id: extraIds[0]! }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    // Kitchen B is unaffected by Kitchen A's 10-token cap
+    const createdB = await ownerCallerB.createKitchenWebhookToken({
+      label: "B token",
+    });
+    expect(createdB.token).toMatch(/^sous_/);
+
+    // Kitchen A can mint one replacement after revoking
+    const replacement = await callerA.createKitchenWebhookToken({
+      label: "Replacement",
+    });
+    expect(replacement.label).toBe("Replacement");
+    const liveCountA = (await callerA.listKitchenWebhookTokens()).length;
+    expect(liveCountA).toBe(10);
+
+    // Revoking createdA removes it from the live list and marks it revoked in DB
+    await callerA.revokeKitchenWebhookToken({ id: createdA.id });
+    expect(
+      (await callerA.listKitchenWebhookTokens()).some(
+        (t) => t.id === createdA.id,
+      ),
+    ).toBe(false);
+    const [dbRow] = await db
+      .select({ revokedAt: kitchenWebhookTokens.revokedAt })
+      .from(kitchenWebhookTokens)
+      .where(eq(kitchenWebhookTokens.id, createdA.id));
+    expect(dbRow?.revokedAt).toBeInstanceOf(Date);
+  });
+
+  it("refuses token management endpoints in single-kitchen mode (SOUS_SIGN_IN=off)", async () => {
+    await client.exec(
+      "delete from kitchen_webhook_tokens; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_verification; delete from auth_user; delete from kitchens where slug <> 'home';",
+    );
+    vi.stubEnv("SOUS_SIGN_IN", "off");
+    for (const name of HOOK_NAMES) {
+      connected[name] = false;
+    }
+    resetDeploymentCheckForTests(db);
+
+    const singleCaller = appRouter.createCaller(await createTRPCContext());
+    await expect(singleCaller.listKitchenWebhookTokens()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(
+      singleCaller.createKitchenWebhookToken({ label: "single" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      singleCaller.revokeKitchenWebhookToken({
+        id: "00000000-0000-4000-8000-000000000001",
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});
+
+describe("ISO-42: getPantry", () => {
+  it("answers UNAUTHORIZED without a session and delegates to the pantry hook when connected", async () => {
+    const anon = await unauthenticatedSignInCaller();
+    await expect(anon.getPantry()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+    expect(mockPantryReadSections).not.toHaveBeenCalled();
+
+    connected.pantry = false;
+    expect(await callerA.getPantry()).toEqual({ sections: [] });
+    expect(mockPantryReadSections).not.toHaveBeenCalled();
+
+    connected.pantry = true;
+    mockPantryReadSections.mockResolvedValueOnce([
+      { heading: "fridge", rawHeading: "Fridge", items: ["2 avocados"] },
+    ]);
+    expect(await callerB.getPantry()).toEqual({
+      sections: [{ heading: "fridge", rawHeading: "Fridge", items: ["2 avocados"] }],
+    });
+    expect(mockPantryReadSections).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ISO-43: setCookLogHeldBack", () => {
+  it("isolates between kitchens and refuses single-kitchen mode", async () => {
+    const qRowA = await seedQueueRow(db, kitchenA.id, {
+      status: "completed",
+      completedAt: new Date(),
+      recipeData: SECRET_RECIPE_A,
+    });
+    await db.insert(kitchenCookLog).values({
+      kitchenId: kitchenA.id,
+      queueId: qRowA.id,
+      recipeTitle: SECRET_RECIPE_A.name,
+      recipeSnapshot: SECRET_RECIPE_A,
+      timestampText: "2026-11-24 19:00",
+      cookedDay: "2026-11-24",
+      heldBack: false,
+    });
+
+    await expect(
+      callerB.setCookLogHeldBack({ queueId: qRowA.id, heldBack: true }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    const toggled = await callerA.setCookLogHeldBack({
+      queueId: qRowA.id,
+      heldBack: true,
+    });
+    expect(toggled).toEqual({ queueId: qRowA.id, heldBack: true });
+
+    await client.exec(
+      "delete from kitchen_cook_log; delete from kitchen_queue; delete from kitchen_webhook_tokens; delete from invites; delete from members; delete from auth_session; delete from auth_account; delete from auth_verification; delete from auth_user; delete from kitchens where slug <> 'home';",
+    );
+    vi.stubEnv("SOUS_SIGN_IN", "off");
+    for (const name of HOOK_NAMES) {
+      connected[name] = false;
+    }
+    resetDeploymentCheckForTests(db);
+    const singleCaller = appRouter.createCaller(await createTRPCContext());
+    await expect(
+      singleCaller.setCookLogHeldBack({
+        queueId: "00000000-0000-4000-8000-000000000001",
+        heldBack: true,
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});
+
+describe("ISO-44: getCircleDishes, getCircleDish, and queueCircleDish", () => {
+  it("isolates dishes to circle members and queues an independent copy for the viewer", async () => {
+    const circle = await createCircle({ name: "Test Circle" }, db);
+    await addKitchenToCircle({ circleId: circle.id, kitchenSlug: "kitchen-a" }, db);
+
+    const [logA] = await db
+      .insert(kitchenCookLog)
+      .values({
+        kitchenId: kitchenA.id,
+        recipeTitle: SECRET_RECIPE_A.name,
+        recipeSnapshot: SECRET_RECIPE_A,
+        timestampText: "2026-11-25 19:00",
+        cookedDay: "2026-11-25",
+        cookedAt: new Date(Date.now() + 2_000),
+        rating: 5,
+        notes: "Flaky crust",
+        heldBack: false,
+      })
+      .returning();
+
+    // Kitchen B is NOT in the circle -> sees nothing and gets NOT_FOUND
+    expect(await callerB.getCircleDishes()).toEqual([]);
+    await expect(
+      callerB.getCircleDish({ logId: logA!.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Not available" });
+    await expect(
+      callerB.queueCircleDish({ logId: logA!.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Not available" });
+
+    // Add Kitchen B to the circle -> sees A's dish and can open & queue a copy
+    await addKitchenToCircle({ circleId: circle.id, kitchenSlug: "kitchen-b" }, db);
+    const dishesB = await callerB.getCircleDishes();
+    expect(dishesB).toHaveLength(1);
+    expect(dishesB[0]).toMatchObject({
+      logId: logA!.id,
+      recipeTitle: SECRET_RECIPE_A.name,
+      kitchenName: "Kitchen A",
+      canOpenRecipe: true,
+    });
+
+    const readDish = await callerB.getCircleDish({ logId: logA!.id });
+    expect(readDish.title).toBe(SECRET_RECIPE_A.name);
+    expect(readDish.recipe.steps).toEqual(SECRET_RECIPE_A.steps);
+
+    const queuedCopy = await callerB.queueCircleDish({ logId: logA!.id });
+    const storedCopy = await snapshotRow(db, kitchenQueue, queuedCopy.id);
+    expect(storedCopy?.kitchenId).toBe(kitchenB.id);
+    expect(storedCopy?.recipeData?.name).toBe(SECRET_RECIPE_A.name);
+    expect(storedCopy?.isPrivate).toBe(false);
+
+    // Removing Kitchen A hides it immediately
+    await removeKitchenFromCircle({ kitchenSlug: "kitchen-a" }, db);
+    expect(await callerB.getCircleDishes()).toEqual([]);
+    await expect(
+      callerB.getCircleDish({ logId: logA!.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Not available" });
+  });
+});
+
+describe("ISO-45: getSharedRecipe and queueSharedRecipe", () => {
+  it("opens share links only for same-circle kitchens and gives identical Not available otherwise", async () => {
+    const circle = await createCircle({ name: "Share Circle" }, db);
+    await addKitchenToCircle({ circleId: circle.id, kitchenSlug: "kitchen-a" }, db);
+
+    const [docA] = await db
+      .insert(docRecipes)
+      .values({
+        kitchenId: kitchenA.id,
+        docSlug: "saffron-tart",
+        name: SECRET_RECIPE_A.name,
+        ingredients: SECRET_RECIPE_A.ingredients,
+        steps: SECRET_RECIPE_A.steps,
+        serves: 4,
+        rawDocText: "Saffron tart",
+        isPrivate: false,
+      })
+      .returning();
+
+    // Outside circle B gets NOT_FOUND
+    await expect(
+      callerB.getSharedRecipe({ recipeId: docA!.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Not available" });
+    await expect(
+      callerB.queueSharedRecipe({ recipeId: docA!.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Not available" });
+
+    // Join circle -> opens and queues into B
+    await addKitchenToCircle({ circleId: circle.id, kitchenSlug: "kitchen-b" }, db);
+    const shared = await callerB.getSharedRecipe({ recipeId: docA!.id });
+    expect(shared.title).toBe(SECRET_RECIPE_A.name);
+    const queued = await callerB.queueSharedRecipe({ recipeId: docA!.id });
+    const storedCopy = await snapshotRow(db, kitchenQueue, queued.id);
+    expect(storedCopy?.kitchenId).toBe(kitchenB.id);
+
+    // Marking private blocks immediately with identical NOT_FOUND
+    await callerA.setDocRecipePrivate({ id: docA!.id, isPrivate: true });
+    await expect(
+      callerB.getSharedRecipe({ recipeId: docA!.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Not available" });
+  });
+});
+
+describe("ISO-46: getPackCircleShares and setPackCircleShare", () => {
+  it("restricts pack circle sharing toggles to the owning kitchen's owner within the circle", async () => {
+    const circle = await createCircle({ name: "Pack Circle" }, db);
+    await addKitchenToCircle({ circleId: circle.id, kitchenSlug: "kitchen-a" }, db);
+    await addKitchenToCircle({ circleId: circle.id, kitchenSlug: "kitchen-b" }, db);
+
+    const samplePack = {
+      id: "owner-circle-pack",
+      title: "Owner Circle Pack",
+      version: "1.0.0",
+      creator: { name: "Chef A" },
+      recipes: [
+        {
+          id: "r1",
+          title: "Simple Broth",
+          serves_base: 4,
+          ingredients: [
+            {
+              id: "i1",
+              name: "Water",
+              qty_canonical: { volume_ml: 500 },
+              display_equivalents: { imperial: { unit: "cup", amount: 2 } },
+            },
+          ],
+          steps: [
+            {
+              id: "s1",
+              type: "action",
+              text: "Boil the water for 5 minutes.",
+              ingredient_refs: ["i1"],
+              timer_sec: 300,
+            },
+          ],
+        },
+      ],
+    };
+    await addKitchenPack(
+      {
+        kitchenSlug: "kitchen-a",
+        rawBytes: JSON.stringify(samplePack),
+        packsDir: PACKS_DIR,
+      },
+      db,
+    );
+
+    const [cookUserA] = await db
+      .insert(authUser)
+      .values({
+        id: "user-cook-circle-a",
+        name: "Cook A",
+        email: "cook-circle-a@example.com",
+        emailVerified: true,
+      })
+      .returning();
+    const [cookMemberA] = await db
+      .insert(members)
+      .values({
+        kitchenId: kitchenA.id,
+        userId: cookUserA!.id,
+        role: "cook",
+      })
+      .returning();
+    const cookCallerA = callerFor(kitchenA, {
+      id: cookMemberA!.id,
+      role: "cook",
+    });
+
+    const [ownerUserB] = await db
+      .insert(authUser)
+      .values({
+        id: "user-owner-circle-b",
+        name: "Owner B",
+        email: "owner-circle-b@example.com",
+        emailVerified: true,
+      })
+      .returning();
+    const [ownerMemberB] = await db
+      .insert(members)
+      .values({
+        kitchenId: kitchenB.id,
+        userId: ownerUserB!.id,
+        role: "owner",
+      })
+      .returning();
+    const ownerCallerB = callerFor(kitchenB, {
+      id: ownerMemberB!.id,
+      role: "owner",
+    });
+
+    // Cook in A is forbidden
+    await expect(
+      cookCallerA.getPackCircleShares({ packId: "owner-circle-pack" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      cookCallerA.setPackCircleShare({
+        packId: "owner-circle-pack",
+        targetKitchenId: kitchenB.id,
+        shared: true,
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    // Owner of B cannot inspect or toggle A's pack
+    await expect(
+      ownerCallerB.getPackCircleShares({ packId: "owner-circle-pack" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      ownerCallerB.setPackCircleShare({
+        packId: "owner-circle-pack",
+        targetKitchenId: kitchenA.id,
+        shared: true,
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    // Owner of A lists and toggles sharing with B on and off
+    const shares = await callerA.getPackCircleShares({
+      packId: "owner-circle-pack",
+    });
+    expect(shares.kitchens).toEqual([
+      { kitchenId: kitchenB.id, slug: "kitchen-b", name: "Kitchen B", shared: false },
+    ]);
+
+    await callerA.setPackCircleShare({
+      packId: "owner-circle-pack",
+      targetKitchenId: kitchenB.id,
+      shared: true,
+    });
+    expect(
+      (await callerB.getPack({ packId: "owner-circle-pack" }))?.title,
+    ).toBe("Owner Circle Pack");
+
+    await callerA.setPackCircleShare({
+      packId: "owner-circle-pack",
+      targetKitchenId: kitchenB.id,
+      shared: false,
+    });
+    expect(
+      await callerB.getPack({ packId: "owner-circle-pack" }),
+    ).toBeNull();
   });
 });

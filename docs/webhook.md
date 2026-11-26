@@ -138,7 +138,7 @@ The cook opens it at `/kitchen/queue/<queue row uuid>`.
 2. After the response, for a recipe that is not a pack recipe: an intake pass that cuts the recipe to the app's own shape (one step per stretch of work, one ingredient per line). If it fails or hits a monthly cap, it is tried again when the cook opens the recipe (a cap refusal stores no error); if it still fails, the cook gets the recipe as sent.
 3. After the response: the cook plan. If it fails or hits a monthly cap, the cook view runs the recipe as written (a cap refusal stores no error, so it can derive after the monthly reset).
 
-So with no model key — or when a monthly cap is reached — a supplied recipe that states `serves` still queues and cooks as written.
+So with no model key, or when a monthly cap is reached, a supplied recipe that states `serves` still queues and cooks as written.
 
 `recipeNotionId` (a string) is also accepted in place of `recipeData`. It is left from an older integration: the row it queues has no recipe to cook from. Don't use it.
 
@@ -189,6 +189,23 @@ Answers `200`:
 Errors: `400 {"error":"Invalid JSON body"}`, `400 {"error":"Invalid sweep","details":[…]}`, and the Auth answers (`401`, `500`).
 
 Idempotent: a cook it finished is no longer cooking, so a second call finds nothing to do.
+
+### Running on a nightly schedule
+
+To sweep idle cooks automatically each night without putting the bearer token on the `curl` command line, write the header to a private mode-`600` file:
+
+```sh
+install -m 600 /dev/null "$HOME/.config/sous/sweep-auth.header"
+printf 'Authorization: Bearer %s\n' "$TOKEN" > "$HOME/.config/sous/sweep-auth.header"
+```
+
+Then schedule `curl` with `-H @"..."` so the token stays out of process arguments:
+
+```cron
+30 3 * * * curl -fsS -X POST https://sous.example.com/api/kitchen-queue/sweep -H @"$HOME/.config/sous/sweep-auth.header" -H "Content-Type: application/json" -d '{}' >/dev/null
+```
+
+Each call sweeps only the kitchen that owns the token. If multiple kitchens use the app, run one scheduled call per kitchen token.
 
 ## `GET /api/packs`
 

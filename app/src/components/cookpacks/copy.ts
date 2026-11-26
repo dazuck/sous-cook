@@ -15,6 +15,8 @@ export const COOKPACKS_COPY = {
   // --- The shelf ---
   /** A pack's count of recipes that cook. */
   recipes: (n: number) => plural(n, "recipe"),
+  /** Attribution for a pack shared by another kitchen. */
+  fromKitchen: (name: string) => `From ${name}`,
   /** "Synced Oct 4", said of the household pack's last Refresh. */
   synced: (date: string) => `synced ${date}`,
   /** The household's label under the shelf when nothing has been synced. */

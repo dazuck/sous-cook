@@ -83,8 +83,10 @@ import {
   type ChunkPlan,
   type LibraryPlanColumns,
   type PlanBudget,
+  type SavedPlan,
 } from "./library-cook-plans";
 import { isSettledPlanError } from "./kitchen/cook-plan-stamp";
+import { isDbRecipeLibrarySource, type DbRecipeLibrarySource } from "./hooks/db-recipe-library";
 import { hook } from "./hooks/registry";
 import type { LibraryTab } from "./hooks/types";
 import {
@@ -684,16 +686,242 @@ export async function writeDocOrder(
  * are unchanged, else derived once, until the time budget is spent; rows
  * after that save with no plan and count as `pending` (Refresh again).
  */
+async function syncDatabaseBackedLibrary(
+  kitchenId: string,
+  source: DbRecipeLibrarySource,
+  budget: PlanBudget,
+  options: SyncRecipesOptions,
+): Promise<SyncRecipesResult> {
+  try {
+    await source.readTabs();
+  } catch (error) {
+    throw new Error(
+      `Couldn't read the recipe library: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(docRecipes)
+    .where(eq(docRecipes.kitchenId, kitchenId))
+    .orderBy(sql`${docRecipes.docPosition} asc nulls last`, asc(docRecipes.docSlug));
+
+  if (rows.length === 0) {
+    throw new Error(
+      "No recipes found in the recipe library. Each recipe should be its own " +
+        "tab, inside a category tab.",
+    );
+  }
+
+  const aiMeter = kitchenMeter(
+    kitchenId,
+    options.memberId ?? null,
+    "library-refresh",
+  );
+
+  const indexedRows = rows.map((row, idx) => ({ row, idx }));
+  const outcomes = await mapWithConcurrency(
+    indexedRows,
+    EXTRACTION_CONCURRENCY,
+    async ({ row, idx }) => {
+      const chunk: RecipeChunk = {
+        docSlug: row.docSlug,
+        name: row.name,
+        category: row.category ?? null,
+        categoryTitle: row.categoryTitle ?? row.category ?? null,
+        position: idx,
+        rawText: row.rawDocText,
+        nonText: false,
+      };
+      const alreadyExtracted =
+        row.extractionError === null &&
+        ((row.steps?.length ?? 0) > 0 || (row.ingredients?.length ?? 0) > 0);
+
+      if (alreadyExtracted) {
+        const recipe: ImportedRecipe = {
+          name: row.name,
+          ...(row.ingredients !== null ? { ingredients: row.ingredients } : {}),
+          ...(row.steps !== null ? { steps: row.steps } : {}),
+          ...(row.estimatedTime !== null ? { estimatedTime: row.estimatedTime } : {}),
+          ...(row.serves !== null ? { serves: row.serves } : {}),
+          ...(row.tags !== null ? { tags: row.tags } : {}),
+          ...(row.notes !== null ? { notes: row.notes } : {}),
+          ...(row.stepIngredients !== null
+            ? { stepIngredients: row.stepIngredients }
+            : {}),
+        };
+
+        let servesCols: {
+          servesEstimate: number | null;
+          servesEstimateBasis: string | null;
+          servesEstimateSourceHash: string | null;
+        };
+        if (recipe.serves != null) {
+          servesCols = {
+            servesEstimate: null,
+            servesEstimateBasis: null,
+            servesEstimateSourceHash: null,
+          };
+        } else if (row.servesEstimate != null && row.servesEstimateBasis != null) {
+          servesCols = {
+            servesEstimate: row.servesEstimate,
+            servesEstimateBasis: row.servesEstimateBasis,
+            servesEstimateSourceHash:
+              row.servesEstimateSourceHash ?? sourceHash("doc_recipes", row.rawDocText),
+          };
+        } else {
+          const serves = await servesForChunk(kitchenId, chunk, recipe, aiMeter);
+          if (!serves.ok) {
+            await db
+              .update(docRecipes)
+              .set({ docPosition: idx })
+              .where(
+                and(
+                  eq(docRecipes.kitchenId, kitchenId),
+                  eq(docRecipes.docSlug, row.docSlug),
+                ),
+              );
+            return {
+              name: row.name,
+              error: `Couldn't estimate a serving count: ${serves.reason}`,
+              notices: [] as ExtractionNotice[],
+              plan: null,
+            };
+          }
+          servesCols = {
+            servesEstimate: serves.servesEstimate?.count ?? null,
+            servesEstimateBasis: serves.servesEstimate?.basis ?? null,
+            servesEstimateSourceHash: serves.servesEstimate
+              ? sourceHash("doc_recipes", row.rawDocText)
+              : null,
+          };
+        }
+
+        const savedPlan: SavedPlan = {
+          cookPlan: row.cookPlan,
+          cookPlanError: row.cookPlanError,
+          cookPlanSourceHash: row.cookPlanSourceHash,
+          cookPlanStamp: row.cookPlanStamp,
+        };
+        const plan = await planForChunk(
+          kitchenId,
+          row.docSlug,
+          recipe,
+          savedPlan,
+          budget,
+          aiMeter,
+        );
+
+        await db
+          .update(docRecipes)
+          .set({
+            docPosition: idx,
+            syncedAt: new Date(),
+            ...servesCols,
+            ...plan.columns,
+          })
+          .where(
+            and(
+              eq(docRecipes.kitchenId, kitchenId),
+              eq(docRecipes.docSlug, row.docSlug),
+            ),
+          );
+
+        return {
+          name: row.name,
+          error: null,
+          notices: [] as ExtractionNotice[],
+          plan,
+        };
+      }
+
+      const extraction = await extractChunk(chunk, aiMeter);
+      if (extraction.recipe === null) {
+        const saveError = await saveRecipe(kitchenId, extraction);
+        return {
+          name: chunk.name,
+          error: extraction.error ?? saveError,
+          notices: extraction.notices,
+          plan: null,
+        };
+      }
+      const serves = await servesForChunk(
+        kitchenId,
+        chunk,
+        extraction.recipe,
+        aiMeter,
+      );
+      if (!serves.ok) {
+        const error = `Couldn't estimate a serving count: ${serves.reason}`;
+        const saveError = await saveRecipe(kitchenId, {
+          chunk,
+          recipe: null,
+          notices: [],
+          error,
+        });
+        return {
+          name: chunk.name,
+          error: saveError ?? error,
+          notices: [] as ExtractionNotice[],
+          plan: null,
+        };
+      }
+      const plan = await planForChunk(
+        kitchenId,
+        chunk.docSlug,
+        extraction.recipe,
+        await readSavedPlan(kitchenId, chunk.docSlug),
+        budget,
+        aiMeter,
+      );
+      const saveError = await saveRecipe(
+        kitchenId,
+        extraction,
+        serves.servesEstimate,
+        plan.columns,
+      );
+      return {
+        name: chunk.name,
+        error: saveError,
+        notices: extraction.notices,
+        plan: saveError === null ? plan : null,
+      };
+    },
+  );
+
+  const failures: Array<{ name: string; error: string }> = [];
+  for (const outcome of outcomes) {
+    if (outcome.error !== null) {
+      failures.push({ name: outcome.name, error: outcome.error });
+    }
+  }
+
+  return {
+    total: rows.length,
+    succeeded: rows.length - failures.length,
+    failed: failures.length,
+    failures,
+    notices: [],
+    stale: [],
+    plans: tallyPlans(outcomes),
+  };
+}
+
 export async function syncRecipesFromDoc(
   kitchenId: string,
   options: SyncRecipesOptions = {},
 ): Promise<SyncRecipesResult> {
   const budget = options.planBudget ?? planBudget();
+  const source = hook("recipe-library", kitchenId);
+  if (isDbRecipeLibrarySource(source)) {
+    return syncDatabaseBackedLibrary(kitchenId, source, budget, options);
+  }
   // Named, so the screen can tell a library out of reach (nothing written
   // yet) from a Refresh that stopped partway (`refreshFailureCause`).
   let tabs: LibraryTab[];
   try {
-    tabs = await hook("recipe-library").readTabs();
+    tabs = await source.readTabs();
   } catch (error) {
     throw new Error(
       `Couldn't read the recipe library: ${error instanceof Error ? error.message : String(error)}`,

@@ -24,22 +24,28 @@ vi.mock("./hooks/connected", async () => {
   return { connected: Object.fromEntries(HOOK_NAMES.map((name) => [name, true])) };
 });
 
-vi.mock("./hooks/registry", async () => {
+vi.mock("./hooks/registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./hooks/registry")>();
   const { scriptedCookLog } = await import("./__tests__/scripted-cook-log");
-  return { hook: () => scriptedCookLog((url, init) => mockFetch(url, init)) };
+  return {
+    ...actual,
+    hook: () => scriptedCookLog((url, init) => mockFetch(url, init)),
+  };
 });
 
 vi.mock("@/lib/db", async () =>
   (await import("./__tests__/test-db")).mockDbModule(),
 );
 
+import { eq } from "drizzle-orm";
 import * as dbModule from "./db";
-import { db, kitchenQueue } from "./db";
+import { authUser, db, kitchenQueue, members } from "./db";
 import {
   callerFor,
   homeKitchen,
   mintToken,
   seedKitchen,
+  seedQueueRow,
 } from "./__tests__/kitchens";
 import { AUTO_FINISH_IDLE_MS, REOPEN_WINDOW_MS } from "./kitchen/auto-finish";
 import {
@@ -806,5 +812,82 @@ describe("through the router: the same path as Done", () => {
     const id = await cooking();
     await expect(router.autoFinishCook({ queueId: id, idleForMs: AUTO_FINISH_IDLE_MS - 1, interactedAt: Date.now() - (AUTO_FINISH_IDLE_MS - 1) })).rejects.toThrow();
     expect((await item(id)).status).toBe("cooking");
+  });
+
+  it("attributes a left cook finished on next start to who started it (or null), never the next cook's starter", async () => {
+    vi.stubEnv("SOUS_SIGN_IN", "on");
+    const seeded = await seedKitchen(db, {
+      slug: "multi-cook-kitchen",
+      name: "Multi Cook Kitchen",
+    });
+    const alice = seeded.member;
+    const [bobUser] = await db
+      .insert(authUser)
+      .values({
+        id: "user_bob_auto_finish",
+        name: "Bob Cook",
+        email: "bob@example.com",
+        emailVerified: true,
+      })
+      .returning();
+    const [bob] = await db
+      .insert(members)
+      .values({
+        kitchenId: seeded.kitchen.id,
+        userId: bobUser!.id,
+        role: "cook",
+      })
+      .returning();
+    if (!bob) throw new Error("Failed to seed Bob member");
+
+    const aliceCaller = callerFor(seeded.kitchen, { id: alice.id, role: alice.role });
+    const bobCaller = callerFor(seeded.kitchen, { id: bob.id, role: bob.role });
+
+    const cook1 = await seedQueueRow(db, seeded.kitchen.id, {
+      status: "pending",
+      recipeData: { name: "Alice's Risotto" },
+    });
+    const cook2 = await seedQueueRow(db, seeded.kitchen.id, {
+      status: "pending",
+      recipeData: { name: "Bob's Tacos" },
+    });
+
+    await aliceCaller.updateKitchenQueueStatus({ queueId: cook1.id, status: "cooking" });
+    await aliceCaller.markCookActivity({
+      queueId: cook1.id,
+      idleForMs: 5_000,
+      interactedAt: Date.now() - 5_000,
+    });
+
+    // Bob starts Cook 2: Cook 1 must attribute to Alice, NOT Bob
+    await bobCaller.updateKitchenQueueStatus({ queueId: cook2.id, status: "cooking" });
+
+    const [afterCook1] = await db
+      .select()
+      .from(kitchenQueue)
+      .where(eq(kitchenQueue.id, cook1.id));
+    expect(afterCook1?.status).toBe("completed");
+    expect(afterCook1?.finishedBy).toBe("auto");
+    expect(afterCook1?.completedByMemberId).toBe(alice.id);
+
+    // An idle cook with unknown starter (null) must stay null when Bob starts Cook 3
+    const cookUnknown = await seedQueueRow(db, seeded.kitchen.id, {
+      status: "cooking",
+      startedAt: new Date(Date.now() - 60_000),
+      lastScreenActiveAt: new Date(Date.now() - 5_000),
+      recipeData: { name: "Unknown Starter Soup" },
+    });
+    const cook3 = await seedQueueRow(db, seeded.kitchen.id, {
+      status: "pending",
+      recipeData: { name: "Bob's Pasta" },
+    });
+    await bobCaller.updateKitchenQueueStatus({ queueId: cook3.id, status: "cooking" });
+
+    const [afterUnknown] = await db
+      .select()
+      .from(kitchenQueue)
+      .where(eq(kitchenQueue.id, cookUnknown.id));
+    expect(afterUnknown?.status).toBe("completed");
+    expect(afterUnknown?.completedByMemberId).toBeNull();
   });
 });

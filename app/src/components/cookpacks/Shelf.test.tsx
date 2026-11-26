@@ -196,3 +196,43 @@ describe("with no household book (no recipe library connected)", () => {
     ]);
   });
 });
+
+describe("owned and shared packs on the shelf", () => {
+  it("shows From <kitchen name> on shared packs and omits it on owned packs", () => {
+    shelf({
+      household: null,
+      ideas: 0,
+      creators: [
+        {
+          id: "owned-suppers",
+          title: "Weeknight Suppers",
+          creator: "Kitchen Owner",
+          recipes: 3,
+          cloth: "walnut",
+          coverRef: null,
+          isOwned: true,
+        },
+        {
+          id: "shared-braises",
+          title: "Sunday Braises",
+          creator: "Chef Friend",
+          recipes: 4,
+          cloth: "walnut",
+          coverRef: null,
+          isOwned: false,
+          fromKitchenName: "North Kitchen",
+        },
+      ],
+    });
+    expect(screen.getByText("From North Kitchen")).toBeTruthy();
+    expect(document.querySelectorAll("[data-from-kitchen]")).toHaveLength(1);
+    const sharedLink = document.querySelector<HTMLElement>("[data-creator-book='shared-braises']")!;
+    expect(sharedLink.getAttribute("aria-label")).toBe(
+      "Sunday Braises, Chef Friend, From North Kitchen, 4 recipes",
+    );
+    const ownedLink = document.querySelector<HTMLElement>("[data-creator-book='owned-suppers']")!;
+    expect(ownedLink.getAttribute("aria-label")).toBe(
+      "Weeknight Suppers, Kitchen Owner, 3 recipes",
+    );
+  });
+});

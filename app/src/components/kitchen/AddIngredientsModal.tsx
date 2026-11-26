@@ -132,6 +132,7 @@ export function AddIngredientsModal({
     interimResults: true,
   });
 
+  const pantryQuery = trpc.getPantry.useQuery(undefined, { enabled: isOpen });
   const parseMutation = trpc.parseGroceryInput.useMutation();
   const addMutation = trpc.addIngredientsToPantry.useMutation();
 
@@ -261,6 +262,7 @@ export function AddIngredientsModal({
         })),
       });
 
+      void pantryQuery.refetch();
       onSuccess?.();
       onClose();
     } catch (err) {
@@ -314,6 +316,22 @@ export function AddIngredientsModal({
       },
     ]);
   };
+
+  const handleStartManualEntry = () => {
+    setErrorMessage(null);
+    setParsedItems([
+      {
+        id: `${Date.now()}-0`,
+        text: "",
+        suggestedSection: "Fridge",
+        checked: true,
+      },
+    ]);
+  };
+
+  const nonEmptySections = (pantryQuery.data?.sections ?? []).filter(
+    (s) => s.items.length > 0,
+  );
 
   if (!isOpen) return null;
 
@@ -488,8 +506,8 @@ export function AddIngredientsModal({
               </div>
             )}
 
-            {/* Parse button (the single ember CTA) */}
-            <div className="pt-2">
+            {/* Parse button (the single ember CTA) + manual add */}
+            <div className="space-y-[var(--space-3)] pt-2">
               <Button
                 variant="primary"
                 size="lg"
@@ -499,7 +517,67 @@ export function AddIngredientsModal({
               >
                 {isParsing ? "Extracting items..." : "Review items"}
               </Button>
+              <Button
+                variant="secondary"
+                size="lg"
+                fullWidth
+                onClick={handleStartManualEntry}
+              >
+                Add items by hand
+              </Button>
             </div>
+
+            {/* Current pantry contents */}
+            <section
+              aria-label="In the pantry"
+              className="space-y-[var(--space-3)] border-t border-ink/[.11] pt-[var(--space-5)]"
+            >
+              <h3 className="text-[length:var(--type-meta)] leading-tight font-semibold text-ink">
+                In the pantry
+              </h3>
+              {pantryQuery.isLoading ? (
+                <p
+                  role="status"
+                  className="text-[length:var(--type-meta)] leading-[1.35] font-medium text-ink-soft"
+                >
+                  Reading the pantry…
+                </p>
+              ) : pantryQuery.error ? (
+                <p
+                  role="status"
+                  className="text-[length:var(--type-meta)] leading-[1.35] font-medium text-ink-soft"
+                >
+                  Couldn&apos;t reach the pantry.
+                </p>
+              ) : nonEmptySections.length === 0 ? (
+                <p
+                  role="status"
+                  className="text-[length:var(--type-meta)] leading-[1.35] font-medium text-ink-soft"
+                >
+                  Nothing in the pantry yet.
+                </p>
+              ) : (
+                <div className="space-y-[var(--space-4)]">
+                  {nonEmptySections.map((section) => (
+                    <div key={section.rawHeading} className="space-y-[var(--space-2)]">
+                      <h4 className="text-[length:var(--type-meta)] leading-tight font-semibold text-ink-soft">
+                        {section.rawHeading}
+                      </h4>
+                      <ul>
+                        {section.items.map((item, idx) => (
+                          <li
+                            key={`${section.rawHeading}-${idx}-${item}`}
+                            className="border-t border-ink/[.11] py-[var(--space-2)] text-[length:var(--type-meta)] leading-[1.35] font-medium text-ink"
+                          >
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         )}
 

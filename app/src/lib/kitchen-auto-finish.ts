@@ -105,8 +105,14 @@ export async function autoFinishCook(
   queueId: string,
   at: Date,
   interactedAt: Date,
+  memberId: string | null = null,
 ): Promise<{ finished: boolean; autoFinished: boolean }> {
-  const { completed } = await updateQueueStatus(kitchenId, queueId, "completed", { by: "auto", at, interactedAt });
+  const { completed } = await updateQueueStatus(kitchenId, queueId, "completed", {
+    by: "auto",
+    at,
+    interactedAt,
+    memberId,
+  });
   return { finished: completed, autoFinished: completed || (await isAutoFinished(kitchenId, queueId)) };
 }
 
@@ -137,7 +143,10 @@ async function finishSittingCooks(
     );
   const finished: string[] = [];
   for (const { id } of sitting) {
-    const { completed } = await updateQueueStatus(kitchenId, id, "completed", { by: "auto", idleBefore: cutoff });
+    const { completed } = await updateQueueStatus(kitchenId, id, "completed", {
+      by: "auto",
+      idleBefore: cutoff,
+    });
     if (!completed) continue;
     finished.push(id);
     await then(id);
@@ -259,7 +268,7 @@ export function finishLeftCooks(
   starting: string,
   now: Date = new Date(),
 ): Promise<string[]> {
-  return finishSittingCooks(kitchenId, now, starting);
+  return finishSittingCooks(kitchenId, now, starting, async () => {});
 }
 
 /**

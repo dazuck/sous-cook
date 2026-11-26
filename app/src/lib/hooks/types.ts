@@ -49,8 +49,16 @@ export interface Hooks {
   "household-context": HouseholdContext;
 }
 
-/** The registry's shape: an implementation, or null for a hook left open. */
-export type HookImplementations = { [K in HookName]: Hooks[K] | null };
+/** A per-kitchen hook factory: creates a hook scoped to one kitchen. */
+export type HookFactory<K extends HookName> = (kitchenId: string) => Hooks[K];
+
+/**
+ * The registry's shape: a static implementation, a per-kitchen factory
+ * `(kitchenId) => impl`, or null for a hook left open.
+ */
+export type HookImplementations = {
+  [K in HookName]: Hooks[K] | HookFactory<K> | null;
+};
 
 /** Where a hook's spec lives, from the repo root. */
 export function hookSpecDoc(name: HookName): string {

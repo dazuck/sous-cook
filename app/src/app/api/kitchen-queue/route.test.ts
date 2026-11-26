@@ -7,6 +7,10 @@ vi.mock("@/lib/kitchens/webhook-tokens", () => ({
   authenticateWebhookRequest: vi.fn(),
 }));
 
+vi.mock("@/lib/kitchens/packs", () => ({
+  readVisibleKitchenPacks: vi.fn().mockResolvedValue([]),
+}));
+
 // Mock kitchen-queue module
 vi.mock("@/lib/kitchen-queue", () => ({
   addToKitchenQueue: vi.fn(),

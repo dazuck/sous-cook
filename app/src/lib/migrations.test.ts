@@ -163,16 +163,17 @@ describe("Database migrations", () => {
     const cut = migrationsUpTo(2);
     const { client, db } = await migratedTestDb(cut.dir);
     try {
-      const home = await homeKitchen(db);
+      const homeResult = await client.query<{ id: string }>(
+        `SELECT id FROM "kitchens" WHERE "slug" = 'home' LIMIT 1`,
+      );
+      const home = homeResult.rows[0];
+      if (!home) throw new Error("Default home kitchen missing at migration 0002");
       // At migration 0002, auth_user and members do not exist yet, so insert
-      // the second kitchen row directly.
-      const [other] = await db
-        .insert(schema.kitchens)
-        .values({
-          slug: "other-kitchen",
-          name: "Other Kitchen",
-        })
-        .returning();
+      // the second kitchen row directly without columns added in later migrations.
+      const otherResult = await client.query<{ id: string }>(
+        `INSERT INTO "kitchens" ("slug", "name") VALUES ('other-kitchen', 'Other Kitchen') RETURNING "id"`,
+      );
+      const other = otherResult.rows[0];
       if (!other) throw new Error("Failed to insert other-kitchen");
 
       const reportId = "1f8fad5b-d9cb-469f-a165-70867728950e";

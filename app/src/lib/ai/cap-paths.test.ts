@@ -34,21 +34,25 @@ vi.mock("@/lib/hooks/connected", async () => {
     connected: Object.fromEntries(HOOK_NAMES.map((name) => [name, false])),
   };
 });
-vi.mock("@/lib/hooks/registry", () => ({
-  hook: (name: string) => {
-    if (name === "recipe-library") {
-      return { readTabs: mockReadTabs };
-    }
-    if (name === "pantry") {
-      return {
-        readSections: mockPantryReadSections,
-        addItems: vi.fn(),
-        applyUpdates: vi.fn(),
-      };
-    }
-    throw new Error(`Unexpected hook "${name}" in cap-paths.test.ts`);
-  },
-}));
+vi.mock("@/lib/hooks/registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/hooks/registry")>();
+  return {
+    ...actual,
+    hook: (name: string) => {
+      if (name === "recipe-library") {
+        return { readTabs: mockReadTabs };
+      }
+      if (name === "pantry") {
+        return {
+          readSections: mockPantryReadSections,
+          addItems: vi.fn(),
+          applyUpdates: vi.fn(),
+        };
+      }
+      throw new Error(`Unexpected hook "${name}" in cap-paths.test.ts`);
+    },
+  };
+});
 
 import * as dbModule from "@/lib/db";
 import {

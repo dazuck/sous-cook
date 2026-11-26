@@ -14,8 +14,23 @@
  *   pnpm --dir app kitchens spend [--month YYYY-MM]
  *   pnpm --dir app kitchens cap set --kitchen <slug> --usd <amount>
  *   pnpm --dir app kitchens cap clear --kitchen <slug>
+ *   pnpm --dir app kitchens export --kitchen <slug> --out <file>
+ *   pnpm --dir app kitchens import --kitchen <slug> --file <file> [--dry-run]
+ *   pnpm --dir app kitchens pack add --kitchen <slug> --file <pack.json>
+ *   pnpm --dir app kitchens pack list [--kitchen <slug>]
+ *   pnpm --dir app kitchens pack remove --pack <id> [--kitchen <slug>]
+ *   pnpm --dir app kitchens pack share --pack <id> --with <slug> [--kitchen <slug>]
+ *   pnpm --dir app kitchens pack unshare --pack <id> --with <slug> [--kitchen <slug>]
+ *   pnpm --dir app kitchens circle create --name <name>
+ *   pnpm --dir app kitchens circle add --circle <id> --kitchen <slug>
+ *   pnpm --dir app kitchens circle remove --kitchen <slug> [--circle <id>]
+ *   pnpm --dir app kitchens circle list
  */
 
+import { realpathSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "../drizzle/schema";
@@ -40,6 +55,27 @@ import {
   uninviteEmail,
   type CreateInviteInput,
 } from "../src/lib/kitchens/admin";
+import {
+  addKitchenToCircle,
+  assertSignInModeForCircles,
+  createCircle,
+  listCircles,
+  removeKitchenFromCircle,
+} from "../src/lib/kitchens/circles";
+import {
+  exportKitchenData,
+  formatExportSummary,
+  formatImportSummary,
+  importKitchenData,
+} from "../src/lib/kitchens/export-import";
+import {
+  addKitchenPack,
+  assertSignInModeForPackSharing,
+  listKitchenPacks,
+  removeKitchenPack,
+  shareKitchenPack,
+  unshareKitchenPack,
+} from "../src/lib/kitchens/packs";
 
 const USAGE = [
   "Usage:",
@@ -55,6 +91,17 @@ const USAGE = [
   "  pnpm --dir app kitchens spend [--month YYYY-MM]",
   "  pnpm --dir app kitchens cap set --kitchen <slug> --usd <amount>",
   "  pnpm --dir app kitchens cap clear --kitchen <slug>",
+  "  pnpm --dir app kitchens export --kitchen <slug> --out <file>",
+  "  pnpm --dir app kitchens import --kitchen <slug> --file <file> [--dry-run]",
+  "  pnpm --dir app kitchens pack add --kitchen <slug> --file <pack.json>",
+  "  pnpm --dir app kitchens pack list [--kitchen <slug>]",
+  "  pnpm --dir app kitchens pack remove --pack <id> [--kitchen <slug>]",
+  "  pnpm --dir app kitchens pack share --pack <id> --with <slug> [--kitchen <slug>]",
+  "  pnpm --dir app kitchens pack unshare --pack <id> --with <slug> [--kitchen <slug>]",
+  "  pnpm --dir app kitchens circle create --name <name>",
+  "  pnpm --dir app kitchens circle add --circle <id> --kitchen <slug>",
+  "  pnpm --dir app kitchens circle remove --kitchen <slug> [--circle <id>]",
+  "  pnpm --dir app kitchens circle list",
 ].join("\n");
 
 interface ParsedFlags {
@@ -131,9 +178,32 @@ type ParsedCommand =
   | { kind: "token-list"; input: { kitchenSlug?: string } }
   | { kind: "spend"; input: { month?: string } }
   | { kind: "cap-set"; input: { kitchenSlug: string; usd: string } }
-  | { kind: "cap-clear"; input: { kitchenSlug: string } };
+  | { kind: "cap-clear"; input: { kitchenSlug: string } }
+  | { kind: "export"; input: { kitchenSlug: string; out: string } }
+  | {
+      kind: "import";
+      input: { kitchenSlug: string; file: string; dryRun: boolean };
+    }
+  | { kind: "pack-add"; input: { kitchenSlug: string; filePath: string } }
+  | { kind: "pack-list"; input: { kitchenSlug?: string } }
+  | { kind: "pack-remove"; input: { pack: string; kitchenSlug?: string } }
+  | {
+      kind: "pack-share";
+      input: { pack: string; withKitchenSlug: string; kitchenSlug?: string };
+    }
+  | {
+      kind: "pack-unshare";
+      input: { pack: string; withKitchenSlug: string; kitchenSlug?: string };
+    }
+  | { kind: "circle-create"; input: { name: string } }
+  | { kind: "circle-add"; input: { circleId: string; kitchenSlug: string } }
+  | {
+      kind: "circle-remove";
+      input: { kitchenSlug: string; circleId?: string };
+    }
+  | { kind: "circle-list" };
 
-function parseCommand(args: readonly string[]): ParsedCommand {
+export function parseCommand(args: readonly string[]): ParsedCommand {
   const [command, ...rest] = args;
 
   if (command === "invite") {
@@ -303,6 +373,127 @@ function parseCommand(args: readonly string[]): ParsedCommand {
     );
   }
 
+  if (command === "export") {
+    const flags = parseFlags(rest, new Set(["kitchen", "out"]));
+    return {
+      kind: "export",
+      input: {
+        kitchenSlug: requireFlag(flags, "kitchen"),
+        out: requireFlag(flags, "out"),
+      },
+    };
+  }
+
+  if (command === "import") {
+    const flags = parseFlags(
+      rest,
+      new Set(["kitchen", "file"]),
+      new Set(["dry-run"]),
+    );
+    return {
+      kind: "import",
+      input: {
+        kitchenSlug: requireFlag(flags, "kitchen"),
+        file: requireFlag(flags, "file"),
+        dryRun: flags.booleans.has("dry-run"),
+      },
+    };
+  }
+
+  if (command === "pack") {
+    const [subcommand, ...packRest] = rest;
+    if (subcommand === "add") {
+      const flags = parseFlags(packRest, new Set(["kitchen", "file"]));
+      return {
+        kind: "pack-add",
+        input: {
+          kitchenSlug: requireFlag(flags, "kitchen"),
+          filePath: requireFlag(flags, "file"),
+        },
+      };
+    }
+    if (subcommand === "list") {
+      const flags = parseFlags(packRest, new Set(["kitchen"]));
+      return {
+        kind: "pack-list",
+        input: { kitchenSlug: flags.values.get("kitchen") },
+      };
+    }
+    if (subcommand === "remove") {
+      const flags = parseFlags(packRest, new Set(["pack", "kitchen"]));
+      return {
+        kind: "pack-remove",
+        input: {
+          pack: requireFlag(flags, "pack"),
+          kitchenSlug: flags.values.get("kitchen"),
+        },
+      };
+    }
+    if (subcommand === "share") {
+      const flags = parseFlags(packRest, new Set(["pack", "with", "kitchen"]));
+      return {
+        kind: "pack-share",
+        input: {
+          pack: requireFlag(flags, "pack"),
+          withKitchenSlug: requireFlag(flags, "with"),
+          kitchenSlug: flags.values.get("kitchen"),
+        },
+      };
+    }
+    if (subcommand === "unshare") {
+      const flags = parseFlags(packRest, new Set(["pack", "with", "kitchen"]));
+      return {
+        kind: "pack-unshare",
+        input: {
+          pack: requireFlag(flags, "pack"),
+          withKitchenSlug: requireFlag(flags, "with"),
+          kitchenSlug: flags.values.get("kitchen"),
+        },
+      };
+    }
+    throw new KitchenAdminError(
+      `Unknown pack subcommand "${subcommand ?? ""}".\n${USAGE}`,
+    );
+  }
+
+  if (command === "circle") {
+    const [subcommand, ...circleRest] = rest;
+    if (subcommand === "create") {
+      const flags = parseFlags(circleRest, new Set(["name"]));
+      return {
+        kind: "circle-create",
+        input: { name: requireFlag(flags, "name") },
+      };
+    }
+    if (subcommand === "add") {
+      const flags = parseFlags(circleRest, new Set(["circle", "kitchen"]));
+      return {
+        kind: "circle-add",
+        input: {
+          circleId: requireFlag(flags, "circle"),
+          kitchenSlug: requireFlag(flags, "kitchen"),
+        },
+      };
+    }
+    if (subcommand === "remove") {
+      const flags = parseFlags(circleRest, new Set(["kitchen", "circle"]));
+      return {
+        kind: "circle-remove",
+        input: {
+          kitchenSlug: requireFlag(flags, "kitchen"),
+          circleId: flags.values.get("circle"),
+        },
+      };
+    }
+    if (subcommand === "list") {
+      parseFlags(circleRest, new Set());
+      return { kind: "circle-list" };
+    }
+    throw new KitchenAdminError(
+      `Unknown circle subcommand "${subcommand ?? ""}".\n${USAGE}`,
+    );
+  }
+
   throw new KitchenAdminError(
     `Unknown command "${args.join(" ")}".\n${USAGE}`,
   );
@@ -323,6 +514,15 @@ async function main(): Promise<void> {
     parsed.kind === "remove-member"
   ) {
     assertSignInModeForAdmin(parsed.kind);
+  }
+  if (parsed.kind === "pack-share") {
+    assertSignInModeForPackSharing("pack share");
+  }
+  if (parsed.kind === "pack-unshare") {
+    assertSignInModeForPackSharing("pack unshare");
+  }
+  if (parsed.kind.startsWith("circle-")) {
+    assertSignInModeForCircles(parsed.kind.replace("-", " "));
   }
 
   const connectionString = process.env.DATABASE_URL;
@@ -479,17 +679,178 @@ async function main(): Promise<void> {
         console.log(formatClearKitchenCapSummary(cleared));
         return;
       }
+
+      case "export": {
+        const exported = await exportKitchenData(
+          { kitchenSlug: parsed.input.kitchenSlug },
+          db,
+        );
+        const outPath = path.resolve(parsed.input.out);
+        await mkdir(path.dirname(outPath), { recursive: true });
+        await writeFile(outPath, exported.json, "utf8");
+        console.log(formatExportSummary(exported, outPath));
+        return;
+      }
+
+      case "import": {
+        const filePath = path.resolve(parsed.input.file);
+        let rawText: string;
+        try {
+          rawText = await readFile(filePath, "utf8");
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          throw new KitchenAdminError(
+            `Could not read import file "${filePath}": ${detail}`,
+          );
+        }
+        const imported = await importKitchenData(
+          {
+            kitchenSlug: parsed.input.kitchenSlug,
+            data: rawText,
+            dryRun: parsed.input.dryRun,
+          },
+          db,
+        );
+        console.log(formatImportSummary(imported));
+        return;
+      }
+
+      case "pack-add": {
+        const added = await addKitchenPack(parsed.input, db);
+        console.log(
+          `Added pack "${added.packId}" ("${added.title}", ${added.sizeBytes} bytes, id: ${added.id}) to kitchen "${added.kitchenSlug}".`,
+        );
+        return;
+      }
+
+      case "pack-list": {
+        const packs = await listKitchenPacks(parsed.input, db);
+        if (packs.length === 0) {
+          console.log("No owned packs found.");
+          return;
+        }
+        console.log(
+          ["id", "kitchen", "pack_id", "title", "bytes", "shares"].join("\t"),
+        );
+        for (const p of packs) {
+          const shareText =
+            p.shares.length === 0
+              ? "-"
+              : p.shares.map((s) => s.slug).join(",");
+          console.log(
+            [
+              p.id,
+              p.kitchenSlug,
+              p.packId,
+              p.title,
+              String(p.sizeBytes),
+              shareText,
+            ].join("\t"),
+          );
+        }
+        return;
+      }
+
+      case "pack-remove": {
+        const removed = await removeKitchenPack(parsed.input, db);
+        console.log(
+          `Removed pack "${removed.packId}" ("${removed.title}", id: ${removed.id}) from kitchen "${removed.kitchenSlug}".`,
+        );
+        return;
+      }
+
+      case "pack-share": {
+        const shared = await shareKitchenPack(parsed.input, db);
+        if (shared.alreadyShared) {
+          console.log(
+            `Pack "${shared.packId}" from "${shared.ownerKitchenSlug}" is already shared with "${shared.sharedWithKitchenSlug}".`,
+          );
+        } else {
+          console.log(
+            `Shared pack "${shared.packId}" ("${shared.title}") from "${shared.ownerKitchenSlug}" with "${shared.sharedWithKitchenSlug}".`,
+          );
+        }
+        return;
+      }
+
+      case "pack-unshare": {
+        const unshared = await unshareKitchenPack(parsed.input, db);
+        if (unshared.removed) {
+          console.log(
+            `Unshared pack "${unshared.packId}" from "${unshared.sharedWithKitchenSlug}".`,
+          );
+        } else {
+          console.log(
+            `Pack "${unshared.packId}" was not shared with "${unshared.sharedWithKitchenSlug}".`,
+          );
+        }
+        return;
+      }
+
+      case "circle-create": {
+        const created = await createCircle(parsed.input, db);
+        console.log(`Created circle "${created.name}" (${created.id}).`);
+        return;
+      }
+
+      case "circle-add": {
+        const added = await addKitchenToCircle(parsed.input, db);
+        console.log(
+          `Added kitchen "${added.kitchenSlug}" ("${added.kitchenName}") to circle "${added.circleName}" (${added.circleId}).`,
+        );
+        return;
+      }
+
+      case "circle-remove": {
+        const removed = await removeKitchenFromCircle(parsed.input, db);
+        console.log(
+          `Removed kitchen "${removed.kitchenSlug}" from circle "${removed.circleName}" (${removed.circleId}).`,
+        );
+        return;
+      }
+
+      case "circle-list": {
+        const listed = await listCircles(db);
+        if (listed.length === 0) {
+          console.log("No circles found.");
+          return;
+        }
+        for (const circle of listed) {
+          console.log(`${circle.id}\t${circle.name}`);
+          for (const member of circle.members) {
+            console.log(
+              `  ${member.slug}\t${member.name}\t${member.joinedAt.toISOString()}`,
+            );
+          }
+        }
+        return;
+      }
     }
   } finally {
     await client.end();
   }
 }
 
-main().catch((err) => {
-  if (err instanceof Error) {
-    console.error(err.message);
-  } else {
-    console.error(err);
+function isDirectCliInvocation(): boolean {
+  const arg = process.argv[1];
+  if (!arg) return false;
+  try {
+    return (
+      realpathSync(path.resolve(arg)) ===
+      realpathSync(fileURLToPath(import.meta.url))
+    );
+  } catch {
+    return path.resolve(arg) === fileURLToPath(import.meta.url);
   }
-  process.exit(1);
-});
+}
+
+if (isDirectCliInvocation()) {
+  main().catch((err) => {
+    if (err instanceof Error) {
+      console.error(err.message);
+    } else {
+      console.error(err);
+    }
+    process.exit(1);
+  });
+}

@@ -8,7 +8,20 @@
 /** A path's `d`, or a rounded rect `[x, y, w, h, rx]`. */
 type Shape = string | { r: [number, number, number, number, number] };
 
-export type GlyphName = "cookpacks" | "queue" | "ingredients" | "import" | "pull" | "pullOpen" | "shopping" | "ask" | "signOut";
+export type GlyphName =
+  | "cookpacks"
+  | "queue"
+  | "ingredients"
+  | "import"
+  | "pull"
+  | "pullOpen"
+  | "shopping"
+  | "saved"
+  | "ask"
+  | "recipeBook"
+  | "cookLog"
+  | "settings"
+  | "signOut";
 
 const GLYPHS: Record<GlyphName, Shape[]> = {
   // Cookpacks: three books on a shelf, the last leaning
@@ -29,8 +42,19 @@ const GLYPHS: Record<GlyphName, Shape[]> = {
   pullOpen: ["M9 6l6 6-6 6"],
   // Shopping list (panel only): a list with ticks
   shopping: ["M4.5 7.4l1.5 1.5 2.7-3", "M11 7.5h8.5", "M4.5 12.4l1.5 1.5 2.7-3", "M11 12.5h8.5", "M4.5 17.4l1.5 1.5 2.7-3", "M11 17.5h8.5"],
+  // Saved for later (panel only): a bookmark ribbon
+  saved: ["M7 4.5h10v15l-5-3.5-5 3.5Z"],
   // Ask Sous (panel only): a speech bubble
   ask: ["M12 4.5c4.7 0 8.5 3.1 8.5 7 0 2.1-1.1 4-2.9 5.3l.7 3.2-3.6-1.6c-.9.2-1.8.3-2.7.3-4.7 0-8.5-3.1-8.5-7.2S7.3 4.5 12 4.5Z"],
+  // Recipe book (panel only): an open book
+  recipeBook: [
+    "M3.5 5.5h6a2.5 2.5 0 0 1 2.5 2.5v11.5a2 2 0 0 0-2-2h-6.5Z",
+    "M20.5 5.5h-6a2.5 2.5 0 0 0-2.5 2.5v11.5a2 2 0 0 1 2-2h6.5Z",
+  ],
+  // Cook log (panel only): a journal page with lines
+  cookLog: [{ r: [5.5, 4, 13, 16, 2] }, "M9 9h6", "M9 13h6", "M9 17h4"],
+  // Settings (panel only): three horizontal sliders
+  settings: ["M4 7h16", "M4 12h16", "M4 17h16", "M9 5v4", "M15 10v4", "M10 15v4"],
   // Sign out (panel only, in sign-in mode): a door with an arrow leaving it
   signOut: ["M10 4.5H7a2.5 2.5 0 0 0-2.5 2.5v10A2.5 2.5 0 0 0 7 19.5h3", "M14.5 8.5 18 12l-3.5 3.5M18 12H9.5"],
 };

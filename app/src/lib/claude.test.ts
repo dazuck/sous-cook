@@ -38,6 +38,26 @@ vi.mock("./shelf/load", () => ({
   loadAppPackFiles: (...args: unknown[]) => mockLoadAppPackFiles(...args),
 }));
 
+const mockReadHouseholdContext = vi.fn<() => Promise<string>>().mockResolvedValue("");
+const mockReadCookLog = vi.fn<() => Promise<string[][]>>().mockResolvedValue([
+  ["timestamp", "recipe_name", "recipe_anchor", "rating", "notes"],
+]);
+vi.mock("./hooks/connected", async () => {
+  const { HOOK_NAMES } = await import("./hooks/types");
+  return {
+    connected: Object.fromEntries(HOOK_NAMES.map((name) => [name, false])),
+  };
+});
+vi.mock("./hooks/registry", () => ({
+  hook: (name: string) => {
+    if (name === "household-context") return { read: mockReadHouseholdContext };
+    if (name === "cook-log") return { read: mockReadCookLog };
+    throw new Error(`Unexpected hook in claude.test: ${name}`);
+  },
+}));
+
+import { connected } from "./hooks/connected";
+import { HOOK_NAMES } from "./hooks/types";
 import {
   COOKING_MAX_TOKENS,
   answerContent,
@@ -228,6 +248,13 @@ describe("answerContent", () => {
 describe("chatCookingAssistant", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    for (const name of HOOK_NAMES) {
+      connected[name] = false;
+    }
+    mockReadHouseholdContext.mockResolvedValue("");
+    mockReadCookLog.mockResolvedValue([
+      ["timestamp", "recipe_name", "recipe_anchor", "rating", "notes"],
+    ]);
     mockGetConfig.mockReturnValue({
       textProvider: "google",
       textModel: "gemini-3.5-flash",
@@ -286,6 +313,32 @@ describe("chatCookingAssistant", () => {
     const call = mockAiChat.mock.calls[0][0];
     expect(call.systemPrompt).toContain("<current_recipe>\nRoast Chicken\n</current_recipe>");
     expect(call.systemPrompt).not.toContain("<reference_info>");
+  });
+
+  it("includes household-context when non-empty and omits reference_info when empty", async () => {
+    connected["household-context"] = true;
+    mockReadHouseholdContext.mockResolvedValueOnce("   \n  ");
+
+    await chatCookingAssistant(
+      KITCHEN_ID,
+      "cook-session-empty-ctx",
+      [{ role: "user", content: "What can I add?" }],
+      "Roast Chicken",
+    );
+    expect(mockAiChat.mock.calls[0][0].systemPrompt).not.toContain("<reference_info>");
+
+    mockReadHouseholdContext.mockResolvedValueOnce("We avoid peanuts. Four of us.");
+    await chatCookingAssistant(
+      KITCHEN_ID,
+      "cook-session-with-ctx",
+      [{ role: "user", content: "What oil should I use?" }],
+      "Stir Fry",
+    );
+    const call = mockAiChat.mock.calls[1][0];
+    expect(call.systemPrompt).toContain("<reference_info>");
+    expect(call.systemPrompt).toContain("Family context:\nWe avoid peanuts. Four of us.");
+    const userLogCall = mockInsertValues.mock.calls.filter((c) => c[0]?.role === "user")[1];
+    expect(String(userLogCall?.[0]?.context)).toContain("We avoid peanuts. Four of us.");
   });
 
   it("loads server recipe, creator, states/commons notes, cookPlan, and scaled [context] when queueId is provided", async () => {

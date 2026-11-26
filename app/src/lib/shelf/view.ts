@@ -44,6 +44,10 @@ export interface CreatorOnShelf {
   recipes: number;
   cloth: Cloth;
   coverRef: string | null;
+  /** True when the pack is owned by this kitchen in `kitchen_packs`. */
+  isOwned?: boolean;
+  /** Name of the sharing kitchen when this pack is shared from another kitchen. */
+  fromKitchenName?: string | null;
 }
 
 export interface ShelfView {
@@ -71,6 +75,10 @@ export interface PackRowView {
   /** The title-vocabulary tags as they read ("Thanksgiving", "summer"). */
   tags: string[];
   missing: MissingReason | null;
+  /** Whether the recipe is marked private (household book rows only). */
+  isPrivate?: boolean;
+  /** The `doc_recipes.id` UUID (household book rows only, for share links). */
+  docRecipeId?: string;
 }
 
 export interface PackChapterView {
@@ -95,6 +103,10 @@ export interface PackPageView {
   chapters: PackChapterView[];
   /** A creator pack's cloth, for its binding. */
   cloth: Cloth | null;
+  /** True when the pack is owned by this kitchen in `kitchen_packs`. */
+  isOwned?: boolean;
+  /** Name of the sharing kitchen when this pack is shared from another kitchen. */
+  fromKitchenName?: string | null;
 }
 
 /** "Oct 4": a sync's date as the kitchen reads it, in the kitchen's time zone (`lib/kitchen/zone.ts`). */

@@ -55,7 +55,7 @@ export async function cachedIdeasCount(kitchenId: string): Promise<number | null
 export async function getRecipeIdeas(kitchenId: string): Promise<RecipeIdeas> {
   let text: string;
   try {
-    text = await hook("ideas").readText();
+    text = await hook("ideas", kitchenId).readText();
   } catch (error) {
     console.warn("Could not read the recipe ideas:", error);
     const cached = await readCachedIdeas(kitchenId);
@@ -77,8 +77,8 @@ export async function getRecipeIdeas(kitchenId: string): Promise<RecipeIdeas> {
 }
 
 /** Appends a new idea as the list's last line. */
-export async function saveRecipeIdea(text: string): Promise<void> {
+export async function saveRecipeIdea(kitchenId: string, text: string): Promise<void> {
   const trimmed = text.trim();
   if (trimmed === "") throw new Error("Cannot save an empty recipe idea.");
-  await hook("ideas").append(trimmed);
+  await hook("ideas", kitchenId).append(trimmed);
 }

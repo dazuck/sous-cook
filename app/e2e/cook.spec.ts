@@ -322,6 +322,15 @@ test.describe("Cook mode", () => {
     expect(p1After!.status).toBe("completed");
     expect(p1After!.finishedBy).toBe("pressed");
 
+    // With the cook-log hook connected, finishing opens "How was it?" for Thin White Sauce.
+    await expect(
+      page.getByRole("heading", { level: 2, name: "How was it?" }),
+    ).toBeVisible();
+    await expect(page.getByText(RECIPE_NAMES.thinWhiteSauce)).toBeVisible();
+
+    // Dismissing the ask ("Not now") reveals Boiled Custard as the next pending dish.
+    await page.getByRole("button", { name: "Not now" }).click();
+
     // Thin White Sauce is no longer offered to start on the home screen; Boiled Custard is now on top
     // (app/src/components/kitchen/KitchenHome.tsx:200, 442)
     await expect(

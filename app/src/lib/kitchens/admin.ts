@@ -22,12 +22,14 @@ import {
 } from "../ai/spend";
 import { normalizeEmail } from "./invites";
 import { isValidKitchenSlug, slugFromName } from "./slug";
-import { generateWebhookToken } from "./webhook-tokens";
+import {
+  WebhookTokenError,
+  listKitchenWebhookTokens,
+  mintKitchenWebhookToken,
+  revokeKitchenWebhookToken,
+} from "./webhook-tokens";
 
 export type AdminDb = PgDatabase<PgQueryResultHKT, typeof schema>;
-
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Raised when an operator command cannot proceed (unknown kitchen, missing
@@ -802,32 +804,17 @@ export async function createWebhookToken(
     }
   }
 
-  const { token, tokenSha256 } = generateWebhookToken();
-  const [inserted] = await database
-    .insert(kitchenWebhookTokens)
-    .values({
-      kitchenId: kitchen.id,
-      tokenSha256,
-      label,
-    })
-    .returning({
-      id: kitchenWebhookTokens.id,
-      label: kitchenWebhookTokens.label,
-      createdAt: kitchenWebhookTokens.createdAt,
-    });
-
-  if (!inserted) {
-    throw new Error("Failed to insert webhook token.");
+  try {
+    return await mintKitchenWebhookToken(
+      { kitchenId: kitchen.id, label },
+      database,
+    );
+  } catch (err) {
+    if (err instanceof WebhookTokenError) {
+      throw new KitchenAdminError(err.message);
+    }
+    throw err;
   }
-
-  return {
-    id: inserted.id,
-    kitchenSlug: kitchen.slug,
-    kitchenName: kitchen.name,
-    label: inserted.label,
-    createdAt: inserted.createdAt,
-    token,
-  };
 }
 
 /**
@@ -838,53 +825,14 @@ export async function revokeWebhookToken(
   input: { id: string },
   database: AdminDb = db,
 ): Promise<RevokedWebhookToken> {
-  const id = input.id.trim();
-  if (!UUID_PATTERN.test(id)) {
-    throw new KitchenAdminError(`Invalid token id "${id}".`);
+  try {
+    return await revokeKitchenWebhookToken({ id: input.id }, database);
+  } catch (err) {
+    if (err instanceof WebhookTokenError) {
+      throw new KitchenAdminError(err.message);
+    }
+    throw err;
   }
-
-  const [existing] = await database
-    .select({
-      id: kitchenWebhookTokens.id,
-      label: kitchenWebhookTokens.label,
-      revokedAt: kitchenWebhookTokens.revokedAt,
-      kitchenSlug: kitchens.slug,
-    })
-    .from(kitchenWebhookTokens)
-    .innerJoin(kitchens, eq(kitchenWebhookTokens.kitchenId, kitchens.id))
-    .where(eq(kitchenWebhookTokens.id, id))
-    .limit(1);
-
-  if (!existing) {
-    throw new KitchenAdminError(`Webhook token "${id}" not found.`);
-  }
-  if (existing.revokedAt !== null) {
-    throw new KitchenAdminError(
-      `Webhook token "${id}" (${existing.kitchenSlug}, "${existing.label}") was already revoked at ${existing.revokedAt.toISOString()}.`,
-    );
-  }
-
-  const [updated] = await database
-    .update(kitchenWebhookTokens)
-    .set({ revokedAt: sql`now()` })
-    .where(
-      and(
-        eq(kitchenWebhookTokens.id, id),
-        isNull(kitchenWebhookTokens.revokedAt),
-      ),
-    )
-    .returning({ revokedAt: kitchenWebhookTokens.revokedAt });
-
-  if (!updated?.revokedAt) {
-    throw new KitchenAdminError(`Webhook token "${id}" is already revoked.`);
-  }
-
-  return {
-    id: existing.id,
-    kitchenSlug: existing.kitchenSlug,
-    label: existing.label,
-    revokedAt: updated.revokedAt,
-  };
 }
 
 /**
@@ -895,35 +843,16 @@ export async function listWebhookTokens(
   input: { kitchenSlug?: string } = {},
   database: AdminDb = db,
 ): Promise<ListedWebhookToken[]> {
-  let kitchenIdFilter: string | null = null;
+  let kitchenIdFilter: string | undefined;
   if (input.kitchenSlug !== undefined) {
     const kitchen = await requireKitchenBySlug(input.kitchenSlug, database);
     kitchenIdFilter = kitchen.id;
   }
 
-  const query = database
-    .select({
-      id: kitchenWebhookTokens.id,
-      kitchenSlug: kitchens.slug,
-      label: kitchenWebhookTokens.label,
-      createdAt: kitchenWebhookTokens.createdAt,
-      lastUsedAt: kitchenWebhookTokens.lastUsedAt,
-      revokedAt: kitchenWebhookTokens.revokedAt,
-    })
-    .from(kitchenWebhookTokens)
-    .innerJoin(kitchens, eq(kitchenWebhookTokens.kitchenId, kitchens.id));
-
-  const rows =
-    kitchenIdFilter !== null
-      ? await query
-          .where(eq(kitchenWebhookTokens.kitchenId, kitchenIdFilter))
-          .orderBy(asc(kitchenWebhookTokens.createdAt))
-      : await query.orderBy(
-          asc(kitchens.slug),
-          asc(kitchenWebhookTokens.createdAt),
-        );
-
-  return rows;
+  return listKitchenWebhookTokens(
+    { kitchenId: kitchenIdFilter, includeRevoked: true },
+    database,
+  );
 }
 
 export interface SetKitchenCapResult {

@@ -26,19 +26,24 @@
  * for a rating on rows with none skips a row the app has rated.
  */
 
-import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import type { CookLogRef } from "../../drizzle/schema";
-import { db, kitchenQueue } from "./db";
+import { authUser, db, docRecipes, kitchenCookLog, kitchenQueue, members } from "./db";
 import {
   appendCookLog,
   cookLogRating,
   cookLogTimestamp,
   CookLogRowMoved,
+  normalizeRecipeName,
   rateCookLog,
   retimeCookLog,
 } from "./hooks/cook-log";
+import { isDbCookLogGrid } from "./hooks/db-cook-log";
 import { hook } from "./hooks/registry";
 import { getQueueItem, type KitchenQueueItem } from "./kitchen-queue";
+import { readVisibleKitchenPacks } from "./kitchens/packs";
+import { parsePackSource } from "./pack-convert/to-queue";
+import { getDocRecipeBySlug, slugify } from "./recipe-sync";
 
 /**
  * A write that has stored neither a row nor an error this long after Done,
@@ -77,6 +82,199 @@ export class CookLogItemNotFound extends Error {
     super(`Kitchen queue item not found: ${queueId}`);
     this.name = "CookLogItemNotFound";
   }
+}
+
+/** No cook log entry has the id; the router answers NOT_FOUND. */
+export class CookLogEntryNotFound extends Error {
+  constructor(readonly entryId: string) {
+    super(`Cook log entry not found: ${entryId}`);
+    this.name = "CookLogEntryNotFound";
+  }
+}
+
+interface ResolvedRecipeMetadata {
+  docRecipeId: string | null;
+  packSource: string | null;
+  sourceKitchenPackId: string | null;
+  recipeIsPrivate: boolean;
+}
+
+async function resolveRecipeMetadata(
+  kitchenId: string,
+  item: KitchenQueueItem,
+): Promise<ResolvedRecipeMetadata> {
+  const rawSource = item.recipeData?.source ?? null;
+  const packRef = parsePackSource(rawSource);
+  if (packRef !== null) {
+    let sourceKitchenPackId = item.sourceKitchenPackId ?? null;
+    if (sourceKitchenPackId === null) {
+      const visible = await readVisibleKitchenPacks(kitchenId);
+      const matched = visible.find(
+        (record) =>
+          (record.packId ?? (record.packJson as { id?: unknown } | null)?.id) ===
+          packRef.packId,
+      );
+      sourceKitchenPackId = matched?.id ?? null;
+    }
+    return {
+      docRecipeId: null,
+      packSource: rawSource,
+      sourceKitchenPackId,
+      recipeIsPrivate: Boolean(item.isPrivate),
+    };
+  }
+  const name = item.recipeData?.name?.trim() ?? "";
+  const slug = name ? slugify(name) : "";
+  let doc = slug ? await getDocRecipeBySlug(kitchenId, slug) : null;
+  if (!doc && rawSource === "library" && name) {
+    const [byName] = await db
+      .select()
+      .from(docRecipes)
+      .where(and(eq(docRecipes.kitchenId, kitchenId), eq(docRecipes.name, name)))
+      .limit(1);
+    doc = byName ?? null;
+  }
+  return {
+    docRecipeId: doc?.id ?? null,
+    packSource: null,
+    sourceKitchenPackId: null,
+    recipeIsPrivate: Boolean(item.isPrivate || doc?.isPrivate),
+  };
+}
+
+async function findCookLogRow(
+  kitchenId: string,
+  log: CookLogRef,
+): Promise<{
+  id: string;
+  heldBack: boolean;
+  visibilityChosen: boolean;
+  noteUpdatedAt: Date | null;
+} | null> {
+  const expectedKey = normalizeRecipeName(log.recipeName);
+  const rows = await db
+    .select({
+      id: kitchenCookLog.id,
+      timestampText: kitchenCookLog.timestampText,
+      recipeTitle: kitchenCookLog.recipeTitle,
+      heldBack: kitchenCookLog.heldBack,
+      visibilityChosen: kitchenCookLog.visibilityChosen,
+      noteUpdatedAt: kitchenCookLog.noteUpdatedAt,
+    })
+    .from(kitchenCookLog)
+    .where(eq(kitchenCookLog.kitchenId, kitchenId))
+    .orderBy(asc(kitchenCookLog.position));
+
+  if (Number.isInteger(log.row) && log.row >= 2) {
+    const byOffset = rows[log.row - 2];
+    if (
+      byOffset &&
+      byOffset.timestampText === log.timestamp &&
+      normalizeRecipeName(byOffset.recipeTitle) === expectedKey
+    ) {
+      return {
+        id: byOffset.id,
+        heldBack: byOffset.heldBack,
+        visibilityChosen: byOffset.visibilityChosen,
+        noteUpdatedAt: byOffset.noteUpdatedAt,
+      };
+    }
+  }
+
+  const matched = rows.filter(
+    (row) =>
+      row.timestampText === log.timestamp &&
+      normalizeRecipeName(row.recipeTitle) === expectedKey,
+  );
+  if (matched.length !== 1) return null;
+  const sole = matched[0]!;
+  return {
+    id: sole.id,
+    heldBack: sole.heldBack,
+    visibilityChosen: sole.visibilityChosen,
+    noteUpdatedAt: sole.noteUpdatedAt,
+  };
+}
+
+async function syncCookLogMetadata(
+  kitchenId: string,
+  item: KitchenQueueItem,
+  log: CookLogRef,
+): Promise<void> {
+  const existing = await findCookLogRow(kitchenId, log);
+  if (!existing) return;
+  const { docRecipeId, packSource, sourceKitchenPackId, recipeIsPrivate } =
+    await resolveRecipeMetadata(kitchenId, item);
+  await db
+    .update(kitchenCookLog)
+    .set({
+      queueId: item.id,
+      docRecipeId,
+      packSource,
+      sourceKitchenPackId,
+      recipeIsPrivate,
+      recipeSnapshot: item.recipeData ?? null,
+      cookedByMemberId: item.completedByMemberId ?? null,
+      cookedAt: item.completedAt ? new Date(item.completedAt) : new Date(),
+    })
+    .where(
+      and(
+        eq(kitchenCookLog.kitchenId, kitchenId),
+        eq(kitchenCookLog.id, existing.id),
+      ),
+    );
+}
+
+async function syncCookLogRatingMetadata(
+  kitchenId: string,
+  item: KitchenQueueItem,
+  log: CookLogRef,
+  options: {
+    rating: number;
+    notes?: string;
+    notePrivate?: boolean;
+    heldBack?: boolean;
+  },
+): Promise<void> {
+  const existing = await findCookLogRow(kitchenId, log);
+  if (!existing) return;
+  const { docRecipeId, packSource, sourceKitchenPackId, recipeIsPrivate } =
+    await resolveRecipeMetadata(kitchenId, item);
+  const trimmedNote = options.notes?.trim();
+  const updates: Partial<typeof kitchenCookLog.$inferInsert> = {
+    queueId: item.id,
+    docRecipeId,
+    packSource,
+    sourceKitchenPackId,
+    recipeIsPrivate,
+    recipeSnapshot: item.recipeData ?? null,
+    cookedByMemberId: item.completedByMemberId ?? null,
+    cookedAt: item.completedAt ? new Date(item.completedAt) : new Date(),
+    rating: options.rating,
+  };
+  if (trimmedNote !== undefined && trimmedNote.length > 0) {
+    updates.notes = trimmedNote;
+    updates.noteUpdatedAt = new Date();
+  }
+  if (options.notePrivate !== undefined) {
+    updates.notePrivate = options.notePrivate;
+  }
+  if (options.heldBack !== undefined) {
+    updates.heldBack = options.heldBack;
+    updates.visibilityChosen = true;
+  } else if (!existing.visibilityChosen) {
+    updates.heldBack = options.rating <= 3;
+  }
+
+  await db
+    .update(kitchenCookLog)
+    .set(updates)
+    .where(
+      and(
+        eq(kitchenCookLog.kitchenId, kitchenId),
+        eq(kitchenCookLog.id, existing.id),
+      ),
+    );
 }
 
 /** Whether `at` is within `LOST_WRITE_MS` before `now`. */
@@ -309,7 +507,8 @@ async function moveRow(
   try {
     const held = await itemOrThrow(kitchenId, item.id);
     if (!held.cookLog || !held.completedAt || rowOnFinish(held)) return "moved";
-    const moved = await retimeCookLog(hook("cook-log"), held.cookLog, new Date(held.completedAt));
+    const moved = await retimeCookLog(hook("cook-log", kitchenId), held.cookLog, new Date(held.completedAt));
+    await syncCookLogMetadata(kitchenId, held, moved);
     await db
       .update(kitchenQueue)
       .set({ cookLog: moved })
@@ -377,7 +576,21 @@ async function writeCook(
 
   let log: CookLogRef;
   try {
-    log = await appendCookLog(hook("cook-log"), { name, at: new Date(item.completedAt) });
+    const grid = hook("cook-log", kitchenId);
+    if (isDbCookLogGrid(grid)) {
+      const metadata = await resolveRecipeMetadata(kitchenId, item);
+      log = await grid.appendCookEntry({
+        name,
+        at: new Date(item.completedAt),
+        queueId: item.id,
+        ...metadata,
+        recipeSnapshot: item.recipeData ?? null,
+        cookedByMemberId: item.completedByMemberId ?? null,
+      });
+    } else {
+      log = await appendCookLog(grid, { name, at: new Date(item.completedAt) });
+      await syncCookLogMetadata(kitchenId, item, log);
+    }
   } catch (err) {
     const error = messageOf(err).slice(0, ERROR_LIMIT);
     await storeError(kitchenId, queueId, claimedAt, error);
@@ -538,7 +751,15 @@ export async function rateCook(
     queueId,
     rating,
     notes,
-  }: { queueId: string; rating: number; notes?: string },
+    notePrivate,
+    heldBack,
+  }: {
+    queueId: string;
+    rating: number;
+    notes?: string;
+    notePrivate?: boolean;
+    heldBack?: boolean;
+  },
   now?: Date,
 ): Promise<RateOutcome> {
   const { item, status } = await writableItem(kitchenId, queueId, now ?? new Date());
@@ -562,7 +783,29 @@ export async function rateCook(
 
   let rated: CookLogRef;
   try {
-    rated = await rateCookLog(hook("cook-log"), log, rating, notes);
+    const grid = hook("cook-log", kitchenId);
+    if (isDbCookLogGrid(grid)) {
+      const metadata = await resolveRecipeMetadata(kitchenId, item);
+      rated = await grid.rateCookEntry(log, {
+        rating,
+        notes,
+        notePrivate,
+        heldBack,
+        queueId: item.id,
+        ...metadata,
+        recipeSnapshot: item.recipeData ?? null,
+        cookedByMemberId: item.completedByMemberId ?? null,
+        cookedAt: item.completedAt ? new Date(item.completedAt) : new Date(),
+      });
+    } else {
+      rated = await rateCookLog(grid, log, rating, notes);
+      await syncCookLogRatingMetadata(kitchenId, item, rated, {
+        rating,
+        notes,
+        notePrivate,
+        heldBack,
+      });
+    }
   } catch (err) {
     if (err instanceof CookLogRowMoved) {
       throw new CookLogConflict("row-moved", err.message);
@@ -605,6 +848,8 @@ export interface CookAsk {
   /** The recipe's name, or null for a legacy item with none. */
   name: string | null;
   state: CookAskState;
+  /** Whether the cook log entry is currently held back from circle friends (sign-in mode). */
+  heldBack?: boolean;
 }
 
 /** A day is at most 25 hours (where clocks change in autumn); a margin over. */
@@ -711,7 +956,7 @@ export async function openCookAsk(
     // error, and the query answers it as one.
     let found: Awaited<ReturnType<typeof cookLogRating>>;
     try {
-      found = await cookLogRating(hook("cook-log"), item.cookLog);
+      found = await cookLogRating(hook("cook-log", kitchenId), item.cookLog);
     } catch (err) {
       if (err instanceof CookLogRowMoved) return ask("row-moved");
       console.error(
@@ -754,4 +999,283 @@ export async function dismissCookAsk(
   if (closed.length > 0) return;
   const item = await itemOrThrow(kitchenId, queueId);
   if (item.status !== "completed") throw notCompleted(queueId);
+}
+
+// =============================================================================
+// Kitchen Cook Log Screen Queries & Edits (Package 1)
+// =============================================================================
+
+export interface KitchenCookLogViewEntry {
+  id: string;
+  queueId: string | null;
+  docRecipeId: string | null;
+  packSource: string | null;
+  recipeTitle: string;
+  timestampText: string;
+  cookedDay: string;
+  cookedAt: Date;
+  cookedByMemberId: string | null;
+  cookedByName: string | null;
+  rating: number | null;
+  notes: string;
+  notePrivate: boolean;
+  noteUpdatedAt: Date | null;
+  heldBack: boolean;
+  visibilityChosen: boolean;
+}
+
+/**
+ * Lists a kitchen's own cook log entries, newest first.
+ */
+export async function listCookLogEntries(
+  kitchenId: string,
+): Promise<KitchenCookLogViewEntry[]> {
+  const rows = await db
+    .select({
+      id: kitchenCookLog.id,
+      queueId: kitchenCookLog.queueId,
+      docRecipeId: kitchenCookLog.docRecipeId,
+      packSource: kitchenCookLog.packSource,
+      recipeTitle: kitchenCookLog.recipeTitle,
+      timestampText: kitchenCookLog.timestampText,
+      cookedDay: kitchenCookLog.cookedDay,
+      cookedAt: kitchenCookLog.cookedAt,
+      cookedByMemberId: kitchenCookLog.cookedByMemberId,
+      cookedByName: authUser.name,
+      rating: kitchenCookLog.rating,
+      notes: kitchenCookLog.notes,
+      notePrivate: kitchenCookLog.notePrivate,
+      noteUpdatedAt: kitchenCookLog.noteUpdatedAt,
+      heldBack: kitchenCookLog.heldBack,
+      visibilityChosen: kitchenCookLog.visibilityChosen,
+    })
+    .from(kitchenCookLog)
+    .leftJoin(members, eq(kitchenCookLog.cookedByMemberId, members.id))
+    .leftJoin(authUser, eq(members.userId, authUser.id))
+    .where(eq(kitchenCookLog.kitchenId, kitchenId))
+    .orderBy(desc(kitchenCookLog.cookedAt), desc(kitchenCookLog.position));
+
+  return rows.map((r) => ({
+    ...r,
+    cookedByName: r.cookedByName ?? null,
+  }));
+}
+
+/**
+ * Updates one cook log entry owned by `kitchenId` and closes any open
+ * "How was it?" ask for the same cook when a rating is saved.
+ *
+ * @throws CookLogEntryNotFound if no entry belongs to `kitchenId`
+ */
+export async function updateCookLogEntry(
+  kitchenId: string,
+  input: {
+    id: string;
+    rating?: number | null;
+    notes?: string;
+    notePrivate?: boolean;
+    heldBack?: boolean;
+  },
+): Promise<KitchenCookLogViewEntry> {
+  const [existing] = await db
+    .select()
+    .from(kitchenCookLog)
+    .where(
+      and(
+        eq(kitchenCookLog.kitchenId, kitchenId),
+        eq(kitchenCookLog.id, input.id),
+      ),
+    )
+    .limit(1);
+
+  if (!existing) {
+    throw new CookLogEntryNotFound(input.id);
+  }
+
+  const updates: Partial<typeof kitchenCookLog.$inferInsert> = {};
+  if (input.rating !== undefined) {
+    if (
+      input.rating !== null &&
+      (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5)
+    ) {
+      throw new Error(`Invalid rating: ${input.rating}`);
+    }
+    updates.rating = input.rating;
+  }
+  if (input.notes !== undefined) {
+    updates.notes = input.notes.trim();
+    updates.noteUpdatedAt = new Date();
+  }
+  if (input.notePrivate !== undefined) {
+    updates.notePrivate = input.notePrivate;
+  }
+  if (input.heldBack !== undefined) {
+    updates.heldBack = input.heldBack;
+    updates.visibilityChosen = true;
+  } else if (input.rating !== undefined && !existing.visibilityChosen) {
+    updates.heldBack = input.rating !== null ? input.rating <= 3 : false;
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await db
+      .update(kitchenCookLog)
+      .set(updates)
+      .where(
+        and(
+          eq(kitchenCookLog.kitchenId, kitchenId),
+          eq(kitchenCookLog.id, input.id),
+        ),
+      );
+  }
+
+  const [updated] = await db
+    .select({
+      id: kitchenCookLog.id,
+      queueId: kitchenCookLog.queueId,
+      docRecipeId: kitchenCookLog.docRecipeId,
+      packSource: kitchenCookLog.packSource,
+      recipeTitle: kitchenCookLog.recipeTitle,
+      timestampText: kitchenCookLog.timestampText,
+      cookedDay: kitchenCookLog.cookedDay,
+      cookedAt: kitchenCookLog.cookedAt,
+      cookedByMemberId: kitchenCookLog.cookedByMemberId,
+      cookedByName: authUser.name,
+      rating: kitchenCookLog.rating,
+      notes: kitchenCookLog.notes,
+      notePrivate: kitchenCookLog.notePrivate,
+      noteUpdatedAt: kitchenCookLog.noteUpdatedAt,
+      heldBack: kitchenCookLog.heldBack,
+      visibilityChosen: kitchenCookLog.visibilityChosen,
+    })
+    .from(kitchenCookLog)
+    .leftJoin(members, eq(kitchenCookLog.cookedByMemberId, members.id))
+    .leftJoin(authUser, eq(members.userId, authUser.id))
+    .where(
+      and(
+        eq(kitchenCookLog.kitchenId, kitchenId),
+        eq(kitchenCookLog.id, input.id),
+      ),
+    )
+    .limit(1);
+
+  if (!updated) {
+    throw new CookLogEntryNotFound(input.id);
+  }
+
+  if (
+    updated.queueId &&
+    input.rating !== undefined &&
+    input.rating !== null
+  ) {
+    await db
+      .update(kitchenQueue)
+      .set({ ratingClosedAt: sql`now()` })
+      .where(
+        and(
+          eq(kitchenQueue.kitchenId, kitchenId),
+          eq(kitchenQueue.id, updated.queueId),
+          isNull(kitchenQueue.ratingClosedAt),
+        ),
+      );
+  }
+
+  return {
+    ...updated,
+    cookedByName: updated.cookedByName ?? null,
+  };
+}
+
+/**
+ * Reads the current `heldBack` flag for a finished cook's log row, resolving
+ * through the item's `cookLog` reference so recooks read the latest row.
+ */
+export async function getCookAskHeldBack(
+  kitchenId: string,
+  queueId: string,
+): Promise<boolean | undefined> {
+  const item = await getQueueItem(kitchenId, queueId);
+  if (!item) return undefined;
+  if (item.cookLog) {
+    const existing = await findCookLogRow(kitchenId, item.cookLog);
+    return existing?.heldBack;
+  }
+  const [row] = await db
+    .select({ heldBack: kitchenCookLog.heldBack })
+    .from(kitchenCookLog)
+    .where(
+      and(
+        eq(kitchenCookLog.kitchenId, kitchenId),
+        eq(kitchenCookLog.queueId, queueId),
+      ),
+    )
+    .orderBy(desc(kitchenCookLog.cookedAt), desc(kitchenCookLog.position))
+    .limit(1);
+  return row?.heldBack;
+}
+
+/**
+ * Toggles `heldBack` directly from the "How was it?" surface for a finished
+ * cook, recording `visibilityChosen = true` so a subsequent rating preserves
+ * the cook's choice.
+ */
+export async function setCookLogHeldBack(
+  kitchenId: string,
+  queueId: string,
+  heldBack: boolean,
+): Promise<{ queueId: string; heldBack: boolean }> {
+  const item = await itemOrThrow(kitchenId, queueId);
+  if (item.status !== "completed") {
+    throw notCompleted(queueId);
+  }
+  let targetId: string | null = null;
+  if (item.cookLog) {
+    const existing = await findCookLogRow(kitchenId, item.cookLog);
+    if (!existing) {
+      throw new CookLogConflict(
+        "row-moved",
+        `Cook Log row ${item.cookLog.row} no longer holds "${item.cookLog.recipeName}"`,
+      );
+    }
+    targetId = existing.id;
+  } else {
+    const [latest] = await db
+      .select({ id: kitchenCookLog.id })
+      .from(kitchenCookLog)
+      .where(
+        and(
+          eq(kitchenCookLog.kitchenId, kitchenId),
+          eq(kitchenCookLog.queueId, queueId),
+        ),
+      )
+      .orderBy(desc(kitchenCookLog.cookedAt), desc(kitchenCookLog.position))
+      .limit(1);
+    targetId = latest?.id ?? null;
+  }
+
+  if (!targetId) {
+    if (cookLogStatus(item) === "writing") {
+      throw new CookLogConflict(
+        "writing",
+        "Still writing this cook to the Cook Log; try again in a moment",
+      );
+    }
+    throw new CookLogEntryNotFound(queueId);
+  }
+
+  const [updated] = await db
+    .update(kitchenCookLog)
+    .set({ heldBack, visibilityChosen: true })
+    .where(
+      and(
+        eq(kitchenCookLog.kitchenId, kitchenId),
+        eq(kitchenCookLog.id, targetId),
+      ),
+    )
+    .returning({ heldBack: kitchenCookLog.heldBack });
+
+  if (!updated) {
+    throw new CookLogEntryNotFound(queueId);
+  }
+
+  return { queueId, heldBack: updated.heldBack };
 }

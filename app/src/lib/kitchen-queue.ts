@@ -9,7 +9,7 @@
 import { randomUUID } from "node:crypto";
 import { eq, and, desc, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-import { conversationLogs, db, kitchenQueue } from "./db";
+import { conversationLogs, db, kitchenCookLog, kitchenQueue } from "./db";
 import type {
   KitchenQueueStatus,
   KitchenQueueRecipeData,
@@ -83,6 +83,10 @@ export interface KitchenQueueInput {
    * recipes only. Records which recipe it is for; `ensureIntake` runs it.
    */
   intake?: boolean;
+  /** Whether the recipe is marked private for this kitchen (default false). */
+  isPrivate?: boolean;
+  /** Owning `kitchen_packs.id` UUID when queued from a DB pack; null otherwise. */
+  sourceKitchenPackId?: string | null;
 }
 
 /**
@@ -170,6 +174,8 @@ export async function addToKitchenQueue(
         input.intake && input.recipeData
           ? sourceHash("kitchen_queue", input.recipeData)
           : null,
+      isPrivate: input.isPrivate ?? false,
+      sourceKitchenPackId: input.sourceKitchenPackId ?? null,
     })
     .returning({ id: kitchenQueue.id });
 
@@ -226,9 +232,10 @@ export const getQueueItem = getQueueItemForKitchen;
  * server's of a cook whose last-screen activity is at or before `idleBefore`.
  */
 export type QueueFinish =
-  | { by: "pressed" }
-  | { by: "auto"; at: Date; interactedAt: Date }
-  | { by: "auto"; idleBefore: Date };
+  | { by: "pressed"; memberId?: string | null }
+  | { by: "auto"; at: Date; interactedAt: Date; memberId?: string | null }
+  | { by: "auto"; idleBefore: Date }
+  | { by: "start"; memberId?: string | null };
 
 /**
  * Updates the status of a queue item, stamping the cook's real transitions.
@@ -285,9 +292,18 @@ export async function updateQueueStatus(
   }
 
   if (status === "cooking") {
+    const starterMemberId = finish.by === "start" ? finish.memberId ?? null : null;
     const moved = await db
       .update(kitchenQueue)
-      .set({ status, startedAt: sql`now()`, finishedBy: null, lastScreenActiveAt: null, lastInteractionAt: null })
+      .set({
+        status,
+        startedAt: sql`now()`,
+        finishedBy: null,
+        lastScreenActiveAt: null,
+        lastInteractionAt: null,
+        startedByMemberId: starterMemberId,
+        completedByMemberId: null,
+      })
       .where(
         and(
           eq(kitchenQueue.kitchenId, kitchenId),
@@ -303,7 +319,7 @@ export async function updateQueueStatus(
     const active = kitchenQueue.lastScreenActiveAt;
     // When this finish dates the cook, before the start's floor and now's cap.
     const when =
-      finish.by === "pressed"
+      finish.by === "pressed" || finish.by === "start"
         ? sql`now()`
         : "at" in finish
           ? sql`${finish.at.toISOString()}::timestamptz`
@@ -312,12 +328,22 @@ export async function updateQueueStatus(
     // Read off the row as it was: a cook reopened after an auto-finish,
     // finished again within the window of its first finish.
     const carried = sql`(${kitchenQueue.status} = 'cooking' and ${kitchenQueue.finishedBy} = 'auto' and ${kitchenQueue.completedAt} is not null and ${completedAt} <= ${kitchenQueue.completedAt} + ${`${REOPEN_WINDOW_MS} milliseconds`}::interval)`;
+    const completedByMemberId =
+      finish.by === "pressed" || finish.by === "start"
+        ? finish.memberId ?? null
+        : "at" in finish
+          ? finish.memberId
+            ? sql`coalesce(${kitchenQueue.startedByMemberId}, ${finish.memberId}::uuid)`
+            : kitchenQueue.startedByMemberId
+          : kitchenQueue.startedByMemberId;
+    const finishedBy = finish.by === "auto" ? "auto" : "pressed";
     const moved = await db
       .update(kitchenQueue)
       .set({
         status,
         completedAt,
-        finishedBy: finish.by,
+        finishedBy,
+        completedByMemberId,
         // The row as it was: only a cook's own finish keeps its start.
         startedAt: sql`case when ${kitchenQueue.status} = 'cooking' then ${kitchenQueue.startedAt} end`,
         cookLog: sql`case when ${carried} then ${kitchenQueue.cookLog} end`,
@@ -328,7 +354,7 @@ export async function updateQueueStatus(
         ratingClosedAt: sql`case when ${carried} then ${kitchenQueue.ratingClosedAt} end`,
       })
       .where(
-        finish.by === "pressed"
+        finish.by === "pressed" || finish.by === "start"
           ? and(
               eq(kitchenQueue.kitchenId, kitchenId),
               eq(kitchenQueue.id, queueId),
@@ -357,13 +383,14 @@ export async function updateQueueStatus(
 
   await db
     .update(kitchenQueue)
-    .set({ status })
+    .set({ status, startedByMemberId: null })
     .where(and(eq(kitchenQueue.kitchenId, kitchenId), eq(kitchenQueue.id, queueId)));
   return { completed: false, started: false };
 }
 
 /**
- * Removes an item from a kitchen's queue.
+ * Removes an item from a kitchen's queue, preserving `recipe_is_private = true`
+ * on any existing cook-log rows for this item so friend visibility stays locked.
  *
  * @param kitchenId - The owning kitchen ID
  * @param queueId - The queue item ID to remove
@@ -372,9 +399,29 @@ export async function removeFromQueue(
   kitchenId: string,
   queueId: string,
 ): Promise<void> {
-  await db
-    .delete(kitchenQueue)
-    .where(and(eq(kitchenQueue.kitchenId, kitchenId), eq(kitchenQueue.id, queueId)));
+  await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ isPrivate: kitchenQueue.isPrivate })
+      .from(kitchenQueue)
+      .where(and(eq(kitchenQueue.kitchenId, kitchenId), eq(kitchenQueue.id, queueId)))
+      .limit(1);
+
+    if (existing?.isPrivate) {
+      await tx
+        .update(kitchenCookLog)
+        .set({ recipeIsPrivate: true })
+        .where(
+          and(
+            eq(kitchenCookLog.kitchenId, kitchenId),
+            eq(kitchenCookLog.queueId, queueId),
+          ),
+        );
+    }
+
+    await tx
+      .delete(kitchenQueue)
+      .where(and(eq(kitchenQueue.kitchenId, kitchenId), eq(kitchenQueue.id, queueId)));
+  });
 }
 
 /**

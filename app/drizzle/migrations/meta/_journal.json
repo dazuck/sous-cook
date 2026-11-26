@@ -43,6 +43,41 @@
       "when": 1795421552474,
       "tag": "0005_ai_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795579030510,
+      "tag": "0006_kitchen_data",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795582162079,
+      "tag": "0007_kitchen_packs",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795584573433,
+      "tag": "0008_pantry_shopping_ideas",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795586594873,
+      "tag": "0009_circles",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795712122536,
+      "tag": "0010_review_fixes",
+      "breakpoints": true
     }
   ]
 }

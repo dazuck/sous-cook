@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { takeReturn } from "@/lib/kitchen/return-focus";
+import type { CircleDishSummary } from "@/lib/circle-dishes";
 import type { ShelfView } from "@/lib/shelf/view";
 import {
   DISH_NAME_SIZES,
@@ -76,6 +77,9 @@ interface KitchenHomeProps {
   onStart: (item: KitchenItem) => void;
   onRemove: (id: string) => void;
   onMarkDone: (id: string) => void;
+  onTogglePrivate?: (id: string, isPrivate: boolean) => void;
+  onCopyShareLink?: (id: string) => Promise<boolean> | boolean;
+  circleDishes?: CircleDishSummary[];
   onOpenImport: () => void;
   onOpenAddIngredients?: () => void;
   onOpenShoppingList?: () => void;
@@ -289,6 +293,9 @@ export function KitchenHome({
   onStart,
   onRemove,
   onMarkDone,
+  onTogglePrivate,
+  onCopyShareLink,
+  circleDishes,
   onOpenImport,
   onOpenAddIngredients,
   onOpenShoppingList,
@@ -337,7 +344,7 @@ export function KitchenHome({
           className={`absolute inset-0 overflow-y-auto pr-[calc(96*var(--cpx))] pl-[var(--edge)]`}
         >
           {ready && (
-            <div className="flex h-full flex-col items-center justify-center">
+            <div className={`flex ${circleDishes && circleDishes.length > 0 ? "min-h-full py-[var(--space-5)]" : "h-full"} flex-col items-center justify-center`}>
               <div
                 data-subject
                 className={`${subject === "ask" ? "mt-[var(--space-6)] mb-auto" : "my-auto"} flex w-full max-w-[calc(880*var(--cpx))] shrink-0 flex-col items-center gap-y-[var(--space-3)]`}
@@ -536,6 +543,41 @@ export function KitchenHome({
                     )}
                   </section>
                 )}
+
+                {circleDishes && circleDishes.length > 0 && (
+                  <section
+                    data-circle-dishes
+                    aria-label="In your circle"
+                    className="mt-[var(--space-4)] w-full max-w-[calc(760*var(--cpx))] border-t border-ink/[.11] pt-[var(--space-3)]"
+                  >
+                    <ul className="flex flex-col gap-y-[calc(4*var(--cpx))]">
+                      {circleDishes.map((dish) => (
+                        <li
+                          key={dish.logId}
+                          data-circle-dish={dish.logId}
+                          className="flex flex-wrap items-baseline gap-x-[calc(10*var(--cpx))] gap-y-[calc(2*var(--cpx))] py-[calc(4*var(--cpx))] text-[length:var(--type-meta)] leading-snug text-ink-soft"
+                        >
+                          {dish.canOpenRecipe ? (
+                            <Link
+                              href={`/kitchen/circle/dish/${dish.logId}`}
+                              className={`inline-flex min-h-[var(--target)] items-center rounded-[var(--radius-1)] font-medium text-ink ${WORD_TEXT} active:bg-sand ${FOCUS}`}
+                            >
+                              {dish.recipeTitle}
+                            </Link>
+                          ) : (
+                            <span className="font-medium text-ink">{dish.recipeTitle}</span>
+                          )}
+                          <span>{dish.kitchenName}</span>
+                          <span>{dish.cookedDay}</span>
+                          {dish.rating !== null && <span>{dish.rating} of 5</span>}
+                          {dish.note && (
+                            <span className="max-w-[calc(340*var(--cpx))] truncate">{dish.note}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
               </div>
             </div>
           )}
@@ -552,6 +594,7 @@ export function KitchenHome({
         onOpenImport={onOpenImport}
         onOpenAddIngredients={onOpenAddIngredients}
         onOpenShoppingList={onOpenShoppingList}
+        onOpenSaved={onOpenSaved}
         onOpenAsk={onOpenAsk}
         addIngredientsLabel={KITCHEN_COPY.addIngredients}
         flagged={flagged}
@@ -565,6 +608,8 @@ export function KitchenHome({
           onStart={onStart}
           onRemove={onRemove}
           onMarkDone={onMarkDone}
+          onTogglePrivate={onTogglePrivate}
+          onCopyShareLink={onCopyShareLink}
           onClose={() => setQueueOpen(false)}
         />
       )}

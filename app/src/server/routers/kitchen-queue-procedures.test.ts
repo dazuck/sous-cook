@@ -295,6 +295,10 @@ function queueRow(
     finishedBy: null,
     lastScreenActiveAt: null,
     lastInteractionAt: null,
+    isPrivate: false,
+    startedByMemberId: null,
+    completedByMemberId: null,
+    sourceKitchenPackId: null,
     ...over,
   };
 }

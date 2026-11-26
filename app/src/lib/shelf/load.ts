@@ -1,11 +1,15 @@
 import path from "node:path";
+import { readVisibleKitchenPacks } from "../kitchens/packs";
 import { readFamilyLibrary } from "../recipe-sync";
 import {
   SHELF_SOURCES,
   loadPackFiles,
   loadShelf,
+  validatePack,
   type PackFiles,
+  type PackMeta,
   type Shelf,
+  type ShelfError,
   type ShelfSource,
 } from "./registry";
 
@@ -24,7 +28,7 @@ export const PACKS_DIR = path.resolve(process.cwd(), "..", "packs");
  */
 export const PACK_PLANS_DIR = path.resolve(process.cwd(), "pack-plans");
 
-/** The shelf as the app reads it: the registry's sources, the repo's packs, the kitchen's family library from the DB. */
+/** The shelf as the app reads it: the registry's sources, the repo's packs, the kitchen's family library and visible DB packs. */
 export function loadAppShelf(
   kitchenId: string,
   {
@@ -35,6 +39,7 @@ export function loadAppShelf(
   return loadShelf(sources, {
     packsDir,
     readFamilyLibrary: () => readFamilyLibrary(kitchenId),
+    readKitchenPacks: () => readVisibleKitchenPacks(kitchenId),
   });
 }
 
@@ -43,15 +48,23 @@ const packFilesBySources = new Map<readonly ShelfSource[], Promise<PackFiles>>()
 /**
  * The registry's pack files as the app reads them for a `pack:` queue row
  * (slice B5d, D1), loaded once per server instance: they change only with a
- * deploy. It never throws: a load that fails (packs/ missing, an I/O error)
- * comes back with no packs and `loadError`, so a pack row reads its
- * projection, as before B5d (verify round 1). Only a load whose libraries
- * read is kept; any other is tried again on the next call.
+ * deploy. When `kitchenId` is given, also appends that kitchen's owned and
+ * shared DB packs (never cached across requests). It never throws for static
+ * file errors: a load that fails (packs/ missing, an I/O error) comes back with
+ * no packs and `loadError`, so a pack row reads its projection.
  */
 export function loadAppPackFiles({
   sources = SHELF_SOURCES,
   packsDir = PACKS_DIR,
-}: { sources?: readonly ShelfSource[]; packsDir?: string } = {}): Promise<PackFiles> {
+  kitchenId,
+}: {
+  sources?: readonly ShelfSource[];
+  packsDir?: string;
+  kitchenId?: string;
+} = {}): Promise<PackFiles> {
+  if (kitchenId !== undefined) {
+    return loadAppPackFilesForKitchen(kitchenId, { sources, packsDir });
+  }
   const existing = packFilesBySources.get(sources);
   if (existing !== undefined) return existing;
   const loading = loadPackFiles(sources, { packsDir }).catch(
@@ -69,6 +82,54 @@ export function loadAppPackFiles({
     }
   });
   return loading;
+}
+
+async function loadAppPackFilesForKitchen(
+  kitchenId: string,
+  {
+    sources,
+    packsDir,
+  }: { sources: readonly ShelfSource[]; packsDir: string },
+): Promise<PackFiles> {
+  const base = await loadAppPackFiles({ sources, packsDir });
+  if (base.libraries === null) return base;
+
+  const records = await readVisibleKitchenPacks(kitchenId);
+  const packs = [...base.packs];
+  const errors: ShelfError[] = [...base.errors];
+  const seenIds = new Set(packs.map((p) => p.id));
+  const packMeta = new Map<string, PackMeta>();
+
+  for (const record of records) {
+    const sourceId = `${record.isOwned ? "owned" : "shared"}:${record.id}`;
+    const load = validatePack(sourceId, record.packJson, base.libraries);
+    if (!load.ok) {
+      errors.push(load.error);
+      console.error(
+        `[shelf] source ${load.error.sourceId}${load.error.packId ? ` (pack ${load.error.packId})` : ""}: ${load.error.reason}`,
+        load.error.issues,
+      );
+      continue;
+    }
+    if (load.pack.kind === "household" || seenIds.has(load.pack.id)) {
+      continue;
+    }
+    seenIds.add(load.pack.id);
+    packs.push(load.pack);
+    packMeta.set(load.pack.id, {
+      isOwned: record.isOwned,
+      fromKitchenName: record.fromKitchenName,
+      kitchenPackId: record.id,
+    });
+  }
+
+  return {
+    packs,
+    errors,
+    libraries: base.libraries,
+    ...(base.loadError !== undefined && { loadError: base.loadError }),
+    packMeta,
+  };
 }
 
 /** Forget the kept pack files (tests). */

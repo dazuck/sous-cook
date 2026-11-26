@@ -70,11 +70,9 @@ describe("the appliance home frame", () => {
 });
 
 describe("the right-edge appliance icon rail and pull-out tab", () => {
-  it("exposes direct 1-tap icons for Cookpacks, Up next, Add ingredients, and Import, plus a pull-out tab with labels", () => {
+  it("exposes direct 1-tap icons for Cookpacks, Up next, and Import, plus a pull-out tab with Add ingredients and other labels", () => {
     const props = home({ onOpenAddIngredients: vi.fn(), onOpenAsk: vi.fn() });
     const rail = document.querySelector<HTMLElement>("[data-home-rail]")!;
-    fireEvent.click(within(rail).getByRole("button", { name: KITCHEN_COPY.addIngredients }));
-    expect(props.onOpenAddIngredients).toHaveBeenCalledTimes(1);
 
     // Direct 1-tap Import on the rail:
     fireEvent.click(within(rail).getByRole("button", { name: "Import recipe" }));
@@ -83,6 +81,11 @@ describe("the right-edge appliance icon rail and pull-out tab", () => {
     // Pulling out the tab via the More handle reveals labeled rows and closes on selection:
     fireEvent.click(within(rail).getByRole("button", { name: "More" }));
     expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: KITCHEN_COPY.addIngredients }));
+    expect(props.onOpenAddIngredients).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    fireEvent.click(within(rail).getByRole("button", { name: "More" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Import" }));
     expect(props.onOpenImport).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("menu")).toBeNull();
@@ -421,5 +424,61 @@ describe("reads that haven't answered (item 2)", () => {
   it("says nothing once everything has answered", () => {
     home({ loading: null });
     expect(document.querySelector("[data-home-status]")).toBeNull();
+  });
+});
+
+describe("circle dishes on home", () => {
+  it("renders one quiet line per circle kitchen, linking only openable dishes and omitting nothing when empty", () => {
+    home({ circleDishes: [] });
+    expect(document.querySelector("[data-circle-dishes]")).toBeNull();
+    cleanup();
+
+    home({
+      circleDishes: [
+        {
+          logId: "log-open",
+          recipeTitle: "Lemon Pasta",
+          kitchenName: "Maple Kitchen",
+          cookedDay: "2026-11-24",
+          rating: 5,
+          note: "Extra zest",
+          canOpenRecipe: true,
+          packBlocked: false,
+        },
+        {
+          logId: "log-private",
+          recipeTitle: "Family Broth",
+          kitchenName: "Cedar Kitchen",
+          cookedDay: "2026-11-23",
+          rating: 4,
+          note: null,
+          canOpenRecipe: false,
+          packBlocked: false,
+        },
+        {
+          logId: "log-pack-blocked",
+          recipeTitle: "Hidden Pack Stew",
+          kitchenName: "Birch Kitchen",
+          cookedDay: "2026-11-22",
+          rating: null,
+          note: null,
+          canOpenRecipe: false,
+          packBlocked: true,
+        },
+      ],
+    });
+
+    const section = document.querySelector("[data-circle-dishes]")!;
+    expect(section).toBeTruthy();
+    const openLink = within(section as HTMLElement).getByRole("link", { name: "Lemon Pasta" });
+    expect(openLink.getAttribute("href")).toBe("/kitchen/circle/dish/log-open");
+    expect(section.textContent).toContain("Maple Kitchen");
+    expect(section.textContent).toContain("5 of 5");
+    expect(section.textContent).toContain("Extra zest");
+
+    expect(within(section as HTMLElement).queryByRole("link", { name: "Family Broth" })).toBeNull();
+    expect(section.textContent).toContain("Family Broth");
+    expect(within(section as HTMLElement).queryByRole("link", { name: "Hidden Pack Stew" })).toBeNull();
+    expect(section.textContent).toContain("Hidden Pack Stew");
   });
 });

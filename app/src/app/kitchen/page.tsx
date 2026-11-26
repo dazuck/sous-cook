@@ -14,6 +14,7 @@ import {
   type RetryAnswer,
 } from "@/components/kitchen/CookAsk";
 import { AskSous } from "@/components/kitchen/AskSous";
+import { useSignInMode } from "@/components/kitchen/SignInMode";
 import {
   AddIngredientsModal,
   RecipeImportModal,
@@ -27,6 +28,7 @@ import type { ImportedRecipe } from "@/lib/recipe-import";
 import { dishName } from "@/lib/kitchen/dish-name";
 import { recipeTimeLine } from "@/lib/kitchen/time-line";
 import { pruneSessions } from "@/lib/kitchen/cook-session";
+import { parsePackSource } from "@/lib/pack-convert/to-queue";
 
 /** How long the home waits for its reads before it draws what it has (item 2). */
 const READ_WAIT_MS = 3000;
@@ -42,16 +44,19 @@ function nameOf(item: SerializedKitchenQueueItem): string {
  * before the cook does).
  */
 function kitchenItem(item: SerializedKitchenQueueItem): KitchenItem {
-  return { id: item.id, name: nameOf(item), times: recipeTimeLine(item.cookPlan, item.recipeData?.estimatedTime) };
+  return {
+    id: item.id,
+    name: nameOf(item),
+    times: recipeTimeLine(item.cookPlan, item.recipeData?.estimatedTime),
+    isPrivate: item.isPrivate,
+    isPack: parsePackSource(item.recipeData?.source) !== null,
+  };
 }
-
-// =============================================================================
-// Main Kitchen Page
-// =============================================================================
 
 function KitchenPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const signInMode = useSignInMode();
 
   // Modal state. The home page deep-links here with ?import=true or ?shopping=true;
   // that nav always mounts this page fresh, so reading the param once is enough.
@@ -105,35 +110,54 @@ function KitchenPageContent() {
     {},
     { refetchInterval: askPollInterval },
   );
+  const circleDishesQuery = trpc.getCircleDishes.useQuery(undefined, {
+    enabled: signInMode,
+    refetchInterval: 30_000,
+  });
   // Not now hides the line at once; a dismiss the server refused brings it back.
   const [dismissed, setDismissed] = useState<string | null>(null);
   const rateCook = trpc.rateCook.useMutation();
   const retryCookLog = trpc.retryCookLog.useMutation();
   const dismissCookAsk = trpc.dismissCookAsk.useMutation();
+  const setCookLogHeldBack = trpc.setCookLogHeldBack.useMutation({
+    onSuccess: () => {
+      void utils.getCookAsk.invalidate();
+      void utils.getCookLog.invalidate();
+      void utils.getCircleDishes.invalidate();
+    },
+  });
 
   // Helper to refetch both queues, and the ask a finish may have opened
   const refetchAll = () => {
     refetchQueue();
     refetchCooking();
     refetchAsk();
+    if (signInMode) {
+      void utils.getCircleDishes.invalidate();
+    }
   };
 
   const handleRate = async (
     queueId: string,
     rating: number,
     note: string,
+    notePrivate?: boolean,
   ): Promise<RateAnswer> => {
     try {
       const result = await rateCook.mutateAsync({
         queueId,
         rating,
         ...(note ? { notes: note } : {}),
+        ...(notePrivate !== undefined ? { notePrivate } : {}),
       });
       return result.rated ? "rated" : "failed";
     } catch (err) {
       return refusedAnswer(err);
     } finally {
       void refetchAsk();
+      if (signInMode) {
+        void utils.getCircleDishes.invalidate();
+      }
     }
   };
 
@@ -160,6 +184,7 @@ function KitchenPageContent() {
   };
 
   // Mutations
+  const utils = trpc.useUtils();
   const addToQueue = trpc.addToKitchenQueue.useMutation({
     onSuccess: () => refetchAll(),
   });
@@ -169,10 +194,17 @@ function KitchenPageContent() {
   const removeFromQueue = trpc.removeFromKitchenQueue.useMutation({
     onSuccess: () => refetchAll(),
   });
+  const setQueuePrivate = trpc.setQueueRecipePrivate.useMutation({
+    onSuccess: () => refetchAll(),
+  });
   const importFromUrl = trpc.importRecipeFromUrl.useMutation();
   const importFromText = trpc.importRecipeFromText.useMutation();
   const importFromImage = trpc.importRecipeFromImage.useMutation();
-  const saveRecipeIdea = trpc.saveRecipeIdea.useMutation();
+  const saveRecipeIdea = trpc.saveRecipeIdea.useMutation({
+    onSuccess: () => {
+      void utils.getRecipeIdeas.invalidate();
+    },
+  });
 
   const handleImportRecipe = async (recipe: ImportedRecipe) => {
     // Add to kitchen queue
@@ -254,7 +286,8 @@ function KitchenPageContent() {
     answered(queueStatus) &&
     answered(cookingStatus) &&
     answered(completedStatus) &&
-    answered(askStatus);
+    answered(askStatus) &&
+    (!signInMode || answered(circleDishesQuery.status));
   // A read that never answers (a hung server, a tablet that's offline: its queries pause)
   // must not leave the body blank for good (verifier round 1, item 2). Offline, the body
   // draws at once with what was last kept (the cached answers, else none); online, it waits
@@ -282,23 +315,57 @@ function KitchenPageContent() {
           .slice(0, 3)
           .map(kitchenItem)}
         shelf={shelf}
-        onOpenSaved={() => setIsSavedOpen(true)}
+        onOpenSaved={connected.ideas ? () => setIsSavedOpen(true) : undefined}
         flagged={<FlaggedEntry />}
         ask={
           cookAsk &&
           cookAsk.queueId !== dismissed && (
             <CookAskLine
               ask={cookAsk}
-              onRate={(rating, note) => handleRate(cookAsk.queueId, rating, note)}
+              onRate={(rating, note, notePrivate) =>
+                handleRate(cookAsk.queueId, rating, note, notePrivate)
+              }
               onRetry={() => handleRetry(cookAsk.queueId)}
               onDismiss={() => handleDismiss(cookAsk.queueId)}
+              onToggleHeldBack={
+                signInMode && cookAsk.heldBack !== undefined
+                  ? (heldBack) =>
+                      setCookLogHeldBack
+                        .mutateAsync({ queueId: cookAsk.queueId, heldBack })
+                        .then(
+                          () => true,
+                          () => false,
+                        )
+                  : undefined
+              }
             />
           )
         }
+        circleDishes={signInMode ? (circleDishesQuery.data ?? []) : undefined}
         onStart={handleStartFromQueue}
         onRemove={handleRemoveFromQueue}
         onMarkDone={(queueId) =>
           updateQueueStatus.mutate({ queueId, status: "completed" })
+        }
+        onTogglePrivate={(queueId, isPrivate) =>
+          setQueuePrivate.mutate({ queueId, isPrivate })
+        }
+        onCopyShareLink={
+          signInMode
+            ? async (queueId) => {
+                if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
+                  return false;
+                }
+                try {
+                  await navigator.clipboard.writeText(
+                    `${window.location.origin}/kitchen/shared/${queueId}`,
+                  );
+                  return true;
+                } catch {
+                  return false;
+                }
+              }
+            : undefined
         }
         onOpenImport={() => setIsImportModalOpen(true)}
         // A hook left unconnected takes its tile and its modal with it.

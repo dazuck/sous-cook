@@ -5,6 +5,10 @@ vi.mock("@/lib/kitchens/webhook-tokens", () => ({
   authenticateWebhookRequest: vi.fn(),
 }));
 
+vi.mock("@/lib/kitchens/packs", () => ({
+  readVisibleKitchenPacks: vi.fn().mockResolvedValue([]),
+}));
+
 import { authenticateWebhookRequest } from "@/lib/kitchens/webhook-tokens";
 import { GET } from "../route";
 

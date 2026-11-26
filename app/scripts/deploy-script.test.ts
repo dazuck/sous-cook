@@ -1344,7 +1344,7 @@ describe("release scripts", () => {
     if (existsSync(h.backupDir)) {
       expect(readdirSync(h.backupDir)).toEqual([]);
     }
-  });
+  }, REAL_RUN_TIMEOUT_MS);
 
   it("DEPLOY-5: rollback line picks the most recent releases.log entry matching the live commit, or warns when none matches", async () => {
     const h = makeHarness();

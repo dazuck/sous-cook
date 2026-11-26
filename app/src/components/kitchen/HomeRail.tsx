@@ -20,6 +20,7 @@ interface HomeRailProps {
   onOpenImport: () => void;
   onOpenAddIngredients?: () => void;
   onOpenShoppingList?: () => void;
+  onOpenSaved?: () => void;
   onOpenAsk?: () => void;
   addIngredientsLabel: string;
   flagged?: ReactNode;
@@ -51,10 +52,11 @@ const TAB_ROW = `flex w-full min-h-[var(--target)] cursor-pointer items-center p
 
 /**
  * Right-edge appliance icon rail for `/kitchen`:
- * - Direct 1-tap etched line icons for Cookpacks, Up next / queue, Add ingredients, and Import.
+ * - Direct 1-tap etched line icons for Cookpacks, Import, and Up next / queue.
  * - Long-pressing (320 ms), dragging left along the bar, or tapping the pull-out handle ("More")
  *   fades in a warm `--paper` panel naming each icon, level with it, and surfacing the destinations the
- *   rail doesn't have (Ask Sous, Shopping list, and Sign out in sign-in mode). The handle is the way out.
+ *   rail doesn't have (Ask Sous, Add ingredients, Shopping list, Saved for later, Recipe book, Cook log,
+ *   Settings, and Sign out in sign-in mode). The handle is the way out.
  */
 export function HomeRail({
   cookpacks,
@@ -64,6 +66,7 @@ export function HomeRail({
   onOpenImport,
   onOpenAddIngredients,
   onOpenShoppingList,
+  onOpenSaved,
   onOpenAsk,
   addIngredientsLabel,
   flagged,
@@ -203,20 +206,7 @@ export function HomeRail({
           <span aria-hidden="true" className="size-[var(--target)] shrink-0" />
         ) : null}
 
-        {/* 4. Add ingredients */}
-        {onOpenAddIngredients && (
-          <button
-            type="button"
-            aria-label={addIngredientsLabel}
-            onClick={onOpenAddIngredients}
-            className={RAIL_ICON_BTN}
-          >
-            {draw("ingredients")}
-            <span aria-hidden="true" className={RAIL_TIP}>{addIngredientsLabel}</span>
-          </button>
-        )}
-
-        {/* 5. Pull-out tab handle ("More"): also opens on long-press or drag-left, and closes the panel while it is open */}
+        {/* 4. Pull-out tab handle ("More"): also opens on long-press or drag-left, and closes the panel while it is open */}
         <button
           ref={button}
           type="button"
@@ -251,8 +241,11 @@ export function HomeRail({
             data-rail-tab
             data-holds-keys
             {...panelFocus}
-            style={{ top: `calc(${6 - SLOT_CPX * rowsAbove} * var(--cpx) - 1px)` }}
-            className="absolute right-0 z-40 w-[calc(440*var(--cpx))] max-w-[calc(100vw-var(--edge)-30*var(--cpx))] overflow-hidden rounded-[var(--radius-2)] border border-ink/[.14] bg-paper opacity-100 shadow-none transition-opacity duration-[320ms] ease-[var(--ease)] starting:opacity-0 motion-reduce:duration-[200ms]"
+            style={{
+              top: `calc(${6 - SLOT_CPX * rowsAbove} * var(--cpx) - 1px)`,
+              maxHeight: "calc(50dvh + 180 * var(--cpx))",
+            }}
+            className="absolute right-0 z-40 w-[calc(440*var(--cpx))] max-w-[calc(100vw-var(--edge)-30*var(--cpx))] overflow-x-hidden overflow-y-auto rounded-[var(--radius-2)] border border-ink/[.14] bg-paper opacity-100 shadow-none transition-opacity duration-[320ms] ease-[var(--ease)] starting:opacity-0 motion-reduce:duration-[200ms]"
           >
             {/* The way out: a chevron strip down the panel's left edge, pointing back toward the rail. The panel covers the More handle, so this closes it. */}
             <button
@@ -303,6 +296,28 @@ export function HomeRail({
                   <span className={ICON_CELL}>{draw("shopping")}</span>
                 </button>
               )}
+
+              {onOpenSaved && (
+                <button type="button" role="menuitem" onClick={choose(onOpenSaved)} className={TAB_ROW}>
+                  <span className="flex-1">Saved for later</span>
+                  <span className={ICON_CELL}>{draw("saved")}</span>
+                </button>
+              )}
+
+              <Link href="/kitchen/cookpacks/household-book" role="menuitem" onClick={() => setOpenState(false)} className={TAB_ROW}>
+                <span className="flex-1">Recipe book</span>
+                <span className={ICON_CELL}>{draw("recipeBook")}</span>
+              </Link>
+
+              <Link href="/kitchen/cook-log" role="menuitem" onClick={() => setOpenState(false)} className={TAB_ROW}>
+                <span className="flex-1">Cook log</span>
+                <span className={ICON_CELL}>{draw("cookLog")}</span>
+              </Link>
+
+              <Link href="/kitchen/settings" role="menuitem" onClick={() => setOpenState(false)} className={TAB_ROW}>
+                <span className="flex-1">Settings</span>
+                <span className={ICON_CELL}>{draw("settings")}</span>
+              </Link>
 
               <SignOutRow rowClassName={TAB_ROW} icon={<span className={ICON_CELL}>{draw("signOut")}</span>} />
             </div>

@@ -71,12 +71,14 @@ function SavedSlip({ ideas, onOpen }: { ideas: number | null; onOpen: () => void
 
 /** A creator's book on the shelf: its cloth board, which opens its view. */
 function CreatorBook({ pack }: { pack: CreatorOnShelf }) {
+  const fromLabel = pack.fromKitchenName ? COOKPACKS_COPY.fromKitchen(pack.fromKitchenName) : null;
+  const ariaParts = [pack.title, pack.creator, fromLabel, COOKPACKS_COPY.recipes(pack.recipes)].filter(Boolean);
   return (
     <Link
       href={packHref(pack.id)}
       data-creator-book={pack.id}
       data-return-focus={packReturnKey(pack.id)}
-      aria-label={`${pack.title}, ${pack.creator}, ${COOKPACKS_COPY.recipes(pack.recipes)}`}
+      aria-label={ariaParts.join(", ")}
       className={`${BOOK_TAP} shrink-0`}
     >
       <ClothCover title={pack.title} cloth={pack.cloth} />
@@ -89,6 +91,11 @@ function CreatorLabel({ pack }: { pack: CreatorOnShelf }) {
   return (
     <div className="w-[calc(198*var(--cpx))] shrink-0 last:w-auto last:min-w-[calc(198*var(--cpx))]">
       <p className="text-[length:var(--type-meta)] leading-[1.3] font-semibold text-ink">{pack.creator}</p>
+      {pack.fromKitchenName && (
+        <p data-from-kitchen className={`${LABEL} leading-[1.3]`}>
+          {COOKPACKS_COPY.fromKitchen(pack.fromKitchenName)}
+        </p>
+      )}
       <p className={`${LABEL} leading-[1.3]`}>{COOKPACKS_COPY.recipes(pack.recipes)}</p>
     </div>
   );
@@ -243,9 +250,15 @@ export function Shelf({
   oneRow?: boolean;
 }) {
   const { household } = view;
+  const showHousehold =
+    household !== null &&
+    (household.state !== "empty" ||
+      household.missing > 0 ||
+      household.syncedAt !== null ||
+      (view.ideas !== null && view.ideas > 0));
   const host = useRef<HTMLDivElement>(null);
   const row = useRef<HTMLDivElement>(null);
-  const count = useOneRow(host, row, view.creators.length, oneRow, household !== null);
+  const count = useOneRow(host, row, view.creators.length, oneRow, showHousehold);
   const creators = view.creators.slice(0, count);
   return (
     <div ref={host} className="flex w-full flex-col items-center">
@@ -262,7 +275,7 @@ export function Shelf({
       >
         {/* Books row standing on the shelf line */}
         <div ref={row} className={`flex items-end ${oneRow ? "flex-nowrap" : "flex-wrap"} gap-x-[var(--space-6)] gap-y-[calc(36*var(--cpx))]`}>
-          {household !== null && (
+          {showHousehold && household !== null && (
             <HouseholdBook household={household} ideas={view.ideas} onOpenSaved={onOpenSaved} />
           )}
           {creators.map((pack) => (
@@ -275,7 +288,7 @@ export function Shelf({
 
         {/* Shelf labels row directly under the books */}
         <div className="flex flex-wrap gap-x-[var(--space-6)] pt-[calc(14*var(--cpx))]">
-          {household !== null && (
+          {showHousehold && household !== null && (
             <div className="w-[calc(198*var(--cpx))] shrink-0">
               <p data-household-label className={`${LABEL} leading-[1.3]`}>
                 {householdLabel(household)}

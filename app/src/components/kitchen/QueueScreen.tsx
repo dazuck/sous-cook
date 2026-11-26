@@ -16,6 +16,9 @@ export const QUEUE_COPY = {
   madeRecently: "Made recently",
   remove: "Remove",
   markDone: "Mark as done",
+  privateLabel: "Private",
+  copyShareLink: "Copy share link",
+  copiedShareLink: "Copied",
   empty: "Nothing queued.",
 } as const;
 
@@ -26,6 +29,8 @@ interface QueueScreenProps {
   onStart: (item: KitchenItem) => void;
   onRemove: (id: string) => void;
   onMarkDone: (id: string) => void;
+  onTogglePrivate?: (id: string, isPrivate: boolean) => void;
+  onCopyShareLink?: (id: string) => Promise<boolean> | boolean;
   onClose: () => void;
 }
 
@@ -37,9 +42,61 @@ interface QueueScreenProps {
  * screen's own state and goes with it; the screen stays open when the last
  * row leaves (F8), saying so in one line.
  */
-export function QueueScreen({ cooking, queue, recent, onStart, onRemove, onMarkDone, onClose }: QueueScreenProps) {
+function PrivateButton({ item, onTogglePrivate }: { item: KitchenItem; onTogglePrivate: (id: string, isPrivate: boolean) => void }) {
+  const pressed = Boolean(item.isPrivate);
+  return (
+    <button
+      type="button"
+      data-queue-private={item.id}
+      aria-pressed={pressed}
+      onClick={() => onTogglePrivate(item.id, !pressed)}
+      className={`z-10 -my-[calc(18*var(--cpx))] ${ACTION} ${pressed ? ACTION_IN_FORCE : ACTION_AT_REST}`}
+    >
+      {QUEUE_COPY.privateLabel}
+    </button>
+  );
+}
+
+function queueSlot(item: KitchenItem) {
+  if (item.times && item.isPrivate) {
+    return (
+      <>
+        <TimeLineWords parts={item.times} />
+        {" · "}
+        {QUEUE_COPY.privateLabel}
+      </>
+    );
+  }
+  if (item.times) return <TimeLineWords parts={item.times} />;
+  if (item.isPrivate) return QUEUE_COPY.privateLabel;
+  return undefined;
+}
+
+function ShareLinkButton({
+  id,
+  copied,
+  onCopy,
+}: {
+  id: string;
+  copied: boolean;
+  onCopy: (id: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-queue-share={id}
+      onClick={() => onCopy(id)}
+      className={`z-10 -my-[calc(18*var(--cpx))] ${ACTION} ${copied ? ACTION_IN_FORCE : ACTION_AT_REST}`}
+    >
+      {copied ? QUEUE_COPY.copiedShareLink : QUEUE_COPY.copyShareLink}
+    </button>
+  );
+}
+
+export function QueueScreen({ cooking, queue, recent, onStart, onRemove, onMarkDone, onTogglePrivate, onCopyShareLink, onClose }: QueueScreenProps) {
   const ids = useId();
   const [editOn, setEditOn] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const editable = cooking.length + queue.length > 0;
   // Nothing left to edit ends the edit, so a cook queued later isn't met with its Remove already out.
   if (editOn && !editable) setEditOn(false);
@@ -88,7 +145,38 @@ export function QueueScreen({ cooking, queue, recent, onStart, onRemove, onMarkD
                         {item.name}
                       </a>
                     }
-                    edit={editing ? <RowEdit label={QUEUE_COPY.markDone} onClick={() => onMarkDone(item.id)} /> : undefined}
+                    slot={item.isPrivate ? QUEUE_COPY.privateLabel : undefined}
+                    edit={
+                      editing ? (
+                        <span className="z-10 flex items-center gap-[calc(8*var(--cpx))]">
+                          {onCopyShareLink && !item.isPack && !item.isPrivate && (
+                            <ShareLinkButton
+                              id={item.id}
+                              copied={copiedId === item.id}
+                              onCopy={(id) => {
+                                try {
+                                  const result = onCopyShareLink(id);
+                                  if (typeof result === "boolean") {
+                                    if (result) setCopiedId(id);
+                                    return;
+                                  }
+                                  void Promise.resolve(result).then(
+                                    (copied) => {
+                                      if (copied) setCopiedId(id);
+                                    },
+                                    () => {},
+                                  );
+                                } catch {
+                                  // Leave copied state unchanged when clipboard copy fails.
+                                }
+                              }}
+                            />
+                          )}
+                          {onTogglePrivate && <PrivateButton item={item} onTogglePrivate={onTogglePrivate} />}
+                          <RowEdit label={QUEUE_COPY.markDone} onClick={() => onMarkDone(item.id)} />
+                        </span>
+                      ) : undefined
+                    }
                     go
                   />
                 ))}
@@ -107,8 +195,38 @@ export function QueueScreen({ cooking, queue, recent, onStart, onRemove, onMarkD
                         {item.name}
                       </button>
                     }
-                    slot={item.times && <TimeLineWords parts={item.times} />}
-                    edit={editing ? <RowEdit label={QUEUE_COPY.remove} onClick={() => onRemove(item.id)} /> : undefined}
+                    slot={queueSlot(item)}
+                    edit={
+                      editing ? (
+                        <span className="z-10 flex items-center gap-[calc(8*var(--cpx))]">
+                          {onCopyShareLink && !item.isPack && !item.isPrivate && (
+                            <ShareLinkButton
+                              id={item.id}
+                              copied={copiedId === item.id}
+                              onCopy={(id) => {
+                                try {
+                                  const result = onCopyShareLink(id);
+                                  if (typeof result === "boolean") {
+                                    if (result) setCopiedId(id);
+                                    return;
+                                  }
+                                  void Promise.resolve(result).then(
+                                    (copied) => {
+                                      if (copied) setCopiedId(id);
+                                    },
+                                    () => {},
+                                  );
+                                } catch {
+                                  // Leave copied state unchanged when clipboard copy fails.
+                                }
+                              }}
+                            />
+                          )}
+                          {onTogglePrivate && <PrivateButton item={item} onTogglePrivate={onTogglePrivate} />}
+                          <RowEdit label={QUEUE_COPY.remove} onClick={() => onRemove(item.id)} />
+                        </span>
+                      ) : undefined
+                    }
                     go
                   />
                 ))}

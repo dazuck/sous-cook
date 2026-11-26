@@ -6,9 +6,13 @@ const stores = vi.hoisted(() => ({
   "shopping-list": { list: vi.fn(), add: vi.fn(), remove: vi.fn(), clear: vi.fn() },
 }));
 
-vi.mock("../../lib/hooks/registry", () => ({
-  hook: (name: keyof typeof stores) => stores[name],
-}));
+vi.mock("../../lib/hooks/registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/hooks/registry")>();
+  return {
+    ...actual,
+    hook: (name: keyof typeof stores) => stores[name],
+  };
+});
 
 vi.mock("../../lib/hooks/connected", async () => {
   const { HOOK_NAMES } = await import("../../lib/hooks/types");

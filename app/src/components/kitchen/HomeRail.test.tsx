@@ -50,6 +50,7 @@ function makeRailProps() {
     onOpenImport: vi.fn(),
     onOpenAddIngredients: vi.fn(),
     onOpenShoppingList: vi.fn(),
+    onOpenSaved: vi.fn(),
     onOpenAsk: vi.fn(),
     addIngredientsLabel: "Add ingredients",
   };
@@ -259,6 +260,12 @@ describe("SIGNOUT-1: Sign out in the kitchen home rail menu", () => {
       .getAllByRole("menuitem")
       .map((item) => item.textContent);
     expect(singleModeNames).toEqual(bareNames);
+    expect(bareNames).toContain("Add ingredients");
+    expect(bareNames).toContain("Shopping list");
+    expect(bareNames).toContain("Saved for later");
+    expect(
+      document.querySelectorAll('nav[aria-label="Kitchen shortcuts"] > *'),
+    ).toHaveLength(3); // Cookpacks, Import recipe, More handle (word is null)
   });
 
   it("b. shows the refused message, keeps the menu open, and keeps storage intact on a 500 response", async () => {

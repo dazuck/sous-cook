@@ -14,6 +14,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import type { Pack } from "@sous/pack";
 import type { CookPlan } from "../src/lib/kitchen/cook-plan";
 import type { CookReportInput } from "../src/lib/cook-reports";
 import { authUser } from "./auth-schema";
@@ -39,6 +40,8 @@ export const kitchens = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     slug: text("slug").notNull().unique(),
     name: text("name").notNull(),
+    /** Optional household context typed on Settings ("About my kitchen"), up to 2000 chars. */
+    about: text("about").default("").notNull(),
     /** Optional per-kitchen monthly AI cap in micro-dollars; null uses the deployment default. */
     aiMonthlyCapMicros: bigint("ai_monthly_cap_micros", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -51,6 +54,7 @@ export const kitchens = pgTable(
       sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and length(${t.slug}) <= 40`,
     ),
     check("kitchens_name_length", sql`length(${t.name}) between 1 and 80`),
+    check("kitchens_about_length", sql`char_length(${t.about}) <= 2000`),
     check(
       "kitchens_cap_nonnegative",
       sql`${t.aiMonthlyCapMicros} is null or ${t.aiMonthlyCapMicros} >= 0`,
@@ -390,6 +394,18 @@ export const kitchenQueue = pgTable("kitchen_queue", {
    * start clears it. Prod gets it from scripts/add-auto-finish-columns.ts.
    */
   lastInteractionAt: timestamp("last_interaction_at", { withTimezone: true }),
+  /** Whether the recipe is marked private for this kitchen (excluded from friend sharing). */
+  isPrivate: boolean("is_private").default(false).notNull(),
+  /** Signed-in member who started the active cook; null if unknown or in single-kitchen mode. */
+  startedByMemberId: uuid("started_by_member_id").references(() => members.id, {
+    onDelete: "set null",
+  }),
+  /** Signed-in member who finished the cook; null in single-kitchen mode or sweeps. */
+  completedByMemberId: uuid("completed_by_member_id").references(() => members.id, {
+    onDelete: "set null",
+  }),
+  /** Owning `kitchen_packs.id` row when queued from a DB pack; null otherwise. */
+  sourceKitchenPackId: uuid("source_kitchen_pack_id"),
 }, (t) => [
   ...servesEstimateChecks("kitchen_queue", t),
   check(
@@ -502,6 +518,8 @@ export const docRecipes = pgTable("doc_recipes", {
   cookPlanError: text("cook_plan_error"),
   cookPlanSourceHash: text("cook_plan_source_hash"),
   cookPlanStamp: text("cook_plan_stamp"),
+  /** Whether this household recipe is private (default false). */
+  isPrivate: boolean("is_private").default(false).notNull(),
 }, (t) => [
   ...servesEstimateChecks("doc_recipes", t),
   check(
@@ -658,4 +676,235 @@ export const aiUsage = pgTable(
     index("ai_usage_kitchen_created_idx").on(t.kitchenId, t.createdAt),
     index("ai_usage_created_idx").on(t.createdAt),
   ],
+).enableRLS();
+
+// =============================================================================
+// Kitchen Cook Log (Package 1)
+// =============================================================================
+
+/**
+ * Per-kitchen cook log entries: one row per finished cook, storing which
+ * recipe, title, day, member who cooked, rating (1-5 or null), note, note
+ * privacy, and whether the dish is held back from friends.
+ */
+export const kitchenCookLog = pgTable(
+  "kitchen_cook_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kitchenId: uuid("kitchen_id")
+      .notNull()
+      .references(() => kitchens.id, { onDelete: "restrict" }),
+    position: integer("position").generatedAlwaysAsIdentity().notNull(),
+    queueId: uuid("queue_id"),
+    docRecipeId: uuid("doc_recipe_id").references(() => docRecipes.id, {
+      onDelete: "set null",
+    }),
+    packSource: text("pack_source"),
+    sourceKitchenPackId: uuid("source_kitchen_pack_id"),
+    recipeIsPrivate: boolean("recipe_is_private").default(false).notNull(),
+    recipeSnapshot: jsonb("recipe_snapshot").$type<KitchenQueueRecipeData>(),
+    recipeTitle: text("recipe_title").notNull(),
+    timestampText: text("timestamp_text").notNull(),
+    cookedDay: text("cooked_day").notNull(),
+    cookedAt: timestamp("cooked_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    cookedByMemberId: uuid("cooked_by_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    rating: integer("rating"),
+    notes: text("notes").default("").notNull(),
+    notePrivate: boolean("note_private").default(false).notNull(),
+    noteUpdatedAt: timestamp("note_updated_at", { withTimezone: true }),
+    heldBack: boolean("held_back").default(false).notNull(),
+    visibilityChosen: boolean("visibility_chosen").default(false).notNull(),
+  },
+  (t) => [
+    check(
+      "kitchen_cook_log_rating_range",
+      sql`${t.rating} is null or (${t.rating} between 1 and 5)`,
+    ),
+    index("kitchen_cook_log_kitchen_pos_idx").on(t.kitchenId, t.position),
+    index("kitchen_cook_log_kitchen_queue_idx").on(t.kitchenId, t.queueId),
+    index("kitchen_cook_log_kitchen_cooked_idx").on(t.kitchenId, t.cookedAt),
+  ],
+).enableRLS();
+
+// =============================================================================
+// Kitchen Packs and Pack Shares (Package 4)
+// =============================================================================
+
+/**
+ * Validated Pack Format v0 packs owned by a kitchen (up to 20 packs, 2 MB each).
+ */
+export const kitchenPacks = pgTable(
+  "kitchen_packs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kitchenId: uuid("kitchen_id")
+      .notNull()
+      .references(() => kitchens.id, { onDelete: "restrict" }),
+    packId: text("pack_id").notNull(),
+    packJson: jsonb("pack_json").$type<Pack>().notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    unique("kitchen_packs_kitchen_pack_unique").on(t.kitchenId, t.packId),
+    check(
+      "kitchen_packs_size_limit",
+      sql`${t.sizeBytes} > 0 and ${t.sizeBytes} <= 2097152`,
+    ),
+  ],
+).enableRLS();
+
+/**
+ * Shares of a kitchen's owned pack with another kitchen.
+ */
+export const kitchenPackShares = pgTable(
+  "kitchen_pack_shares",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kitchenPackId: uuid("kitchen_pack_id")
+      .notNull()
+      .references(() => kitchenPacks.id, { onDelete: "cascade" }),
+    sharedWithKitchenId: uuid("shared_with_kitchen_id")
+      .notNull()
+      .references(() => kitchens.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    unique("kitchen_pack_shares_unique").on(
+      t.kitchenPackId,
+      t.sharedWithKitchenId,
+    ),
+    index("kitchen_pack_shares_shared_with_idx").on(t.sharedWithKitchenId),
+  ],
+).enableRLS();
+
+// =============================================================================
+// Kitchen Pantry, Shopping List, and Ideas (Package 5)
+// =============================================================================
+
+/**
+ * Per-kitchen pantry sections (e.g. "Fridge", "Freezer", "Pantry", or
+ * household-edited headings), ordered by `position`.
+ */
+export const kitchenPantrySections = pgTable(
+  "kitchen_pantry_sections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kitchenId: uuid("kitchen_id")
+      .notNull()
+      .references(() => kitchens.id, { onDelete: "restrict" }),
+    position: integer("position").generatedAlwaysAsIdentity().notNull(),
+    rawHeading: text("raw_heading").notNull(),
+  },
+  (t) => [index("kitchen_pantry_sections_kitchen_pos_idx").on(t.kitchenId, t.position)],
+).enableRLS();
+
+/**
+ * Per-kitchen pantry lines inside a section, ordered by `position`.
+ */
+export const kitchenPantryItems = pgTable(
+  "kitchen_pantry_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kitchenId: uuid("kitchen_id")
+      .notNull()
+      .references(() => kitchens.id, { onDelete: "restrict" }),
+    sectionId: uuid("section_id")
+      .notNull()
+      .references(() => kitchenPantrySections.id, { onDelete: "cascade" }),
+    position: integer("position").generatedAlwaysAsIdentity().notNull(),
+    text: text("text").notNull(),
+  },
+  (t) => [
+    index("kitchen_pantry_items_section_pos_idx").on(t.sectionId, t.position),
+    index("kitchen_pantry_items_kitchen_idx").on(t.kitchenId),
+  ],
+).enableRLS();
+
+/**
+ * Per-kitchen shopping list lines (`"<item>"` or `"<item> — <for>"`), ordered
+ * by `position`.
+ */
+export const kitchenShoppingList = pgTable(
+  "kitchen_shopping_list",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kitchenId: uuid("kitchen_id")
+      .notNull()
+      .references(() => kitchens.id, { onDelete: "restrict" }),
+    position: integer("position").generatedAlwaysAsIdentity().notNull(),
+    line: text("line").notNull(),
+  },
+  (t) => [index("kitchen_shopping_list_kitchen_pos_idx").on(t.kitchenId, t.position)],
+).enableRLS();
+
+/**
+ * Per-kitchen saved recipe ideas, ordered by `position`.
+ */
+export const kitchenIdeas = pgTable(
+  "kitchen_ideas",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kitchenId: uuid("kitchen_id")
+      .notNull()
+      .references(() => kitchens.id, { onDelete: "restrict" }),
+    position: integer("position").generatedAlwaysAsIdentity().notNull(),
+    line: text("line").notNull(),
+  },
+  (t) => [index("kitchen_ideas_kitchen_pos_idx").on(t.kitchenId, t.position)],
+).enableRLS();
+
+// =============================================================================
+// Circles (Package 6)
+// =============================================================================
+
+/** Maximum number of kitchens in one circle. */
+export const MAX_CIRCLE_MEMBERS = 12;
+
+/**
+ * A small closed group of kitchens whose members see each other's latest
+ * showing finished dish.
+ */
+export const circles = pgTable(
+  "circles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [check("circles_name_length", sql`length(${t.name}) between 1 and 80`)],
+).enableRLS();
+
+/**
+ * Membership of one kitchen in at most one circle (`kitchen_id` is unique).
+ */
+export const circleMembers = pgTable(
+  "circle_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    circleId: uuid("circle_id")
+      .notNull()
+      .references(() => circles.id, { onDelete: "cascade" }),
+    kitchenId: uuid("kitchen_id")
+      .notNull()
+      .unique()
+      .references(() => kitchens.id, { onDelete: "cascade" }),
+    joinedAt: timestamp("joined_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("circle_members_circle_idx").on(t.circleId)],
 ).enableRLS();

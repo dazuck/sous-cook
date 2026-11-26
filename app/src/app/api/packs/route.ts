@@ -1,86 +1,17 @@
 import { NextResponse } from "next/server";
-import type { Recipe } from "@sous/pack";
 import { librarySubset } from "@/lib/pack-convert/native-read";
 import { EMPTY_LIBRARY } from "@/lib/pack-convert/recipe-library";
 import { packRecipeToQueueData } from "@/lib/pack-convert/to-queue";
 import { loadAppPackFiles } from "@/lib/shelf/load";
 import { authenticateWebhookRequest } from "@/lib/kitchens/webhook-tokens";
-
-const STAPLE_NAMES = new Set([
-  "water",
-  "lukewarm water",
-  "boiling water",
-  "cold water",
-  "warm water",
-  "salt",
-  "kosher salt",
-  "table salt",
-  "fine table salt",
-  "sea salt",
-  "flaky salt",
-  "pepper",
-  "black pepper",
-  "white pepper",
-  "oil",
-  "olive oil",
-  "vegetable oil",
-  "neutral oil",
-  "cooking oil",
-  "fat for deep frying",
-  "frying fat",
-]);
-
-function isStaple(name: string, saltType: string | undefined): boolean {
-  if (saltType !== undefined) return true;
-  return STAPLE_NAMES.has(name.trim().toLowerCase());
-}
-
-function mainIngredientsOf(recipe: Recipe): string[] {
-  const uniqueNonStaple: string[] = [];
-  const seenNonStaple = new Set<string>();
-  const uniqueAll: string[] = [];
-  const seenAll = new Set<string>();
-
-  for (const ing of recipe.ingredients) {
-    const key = ing.name.trim().toLowerCase();
-    if (!key) continue;
-    if (!seenAll.has(key)) {
-      seenAll.add(key);
-      uniqueAll.push(ing.name.trim());
-    }
-    if (!isStaple(ing.name, ing.qty_canonical.salt_type) && !seenNonStaple.has(key)) {
-      seenNonStaple.add(key);
-      uniqueNonStaple.push(ing.name.trim());
-    }
-  }
-
-  const chosen = uniqueNonStaple.length > 0 ? uniqueNonStaple : uniqueAll;
-  return chosen.slice(0, 6);
-}
-
-function firstSentence(text: string): string | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  const match = /^[^.!?]+[.!?]/.exec(trimmed);
-  return match ? match[0].trim() : trimmed;
-}
-
-function hookOf(recipe: Recipe): string | null {
-  if (recipe.story && recipe.story.trim() !== "") {
-    return firstSentence(recipe.story);
-  }
-  const firstNote = recipe.creator_notes?.[0];
-  if (firstNote && firstNote.trim() !== "") {
-    return firstSentence(firstNote);
-  }
-  return null;
-}
+import { checkWebhookRateLimit } from "@/lib/kitchens/webhook-rate-limit";
+import { buildPackDigest } from "@/lib/kitchens/pack-digest";
 
 /**
  * GET /api/packs
  *
  * Serves the live registered creator packs (`SHELF_SOURCES` `pack-file` entries)
- * to `kitchen.py`:
+ * plus the kitchen's owned and shared DB packs to `kitchen.py`:
  * - `GET /api/packs`: compact digest per pack and per recipe.
  * - `GET /api/packs?pack=<packId>&recipe=<recipeId>`: full validated Recipe +
  *   pack header + resolved commons/states subset + queue projection.
@@ -91,7 +22,10 @@ export async function GET(request: Request): Promise<Response> {
   const auth = await authenticateWebhookRequest(request);
   if (!auth.ok) return auth.response;
 
-  const files = await loadAppPackFiles();
+  const rateLimit = checkWebhookRateLimit(auth.kitchen.id);
+  if (!rateLimit.ok) return rateLimit.response;
+
+  const files = await loadAppPackFiles({ kitchenId: auth.kitchen.id });
   if (files.loadError !== undefined) {
     return NextResponse.json({ error: files.loadError }, { status: 500 });
   }
@@ -115,6 +49,7 @@ export async function GET(request: Request): Promise<Response> {
         { status: 404 },
       );
     }
+    const meta = files.packMeta?.get(pack.id);
     const projected = packRecipeToQueueData(recipe, pack.id);
     const library = files.libraries
       ? librarySubset(recipe, files.libraries)
@@ -124,6 +59,7 @@ export async function GET(request: Request): Promise<Response> {
         id: pack.id,
         title: pack.title,
         creator: pack.creator,
+        ...(meta?.fromKitchenName ? { from_kitchen_name: meta.fromKitchenName } : {}),
       },
       recipe,
       library,
@@ -131,28 +67,5 @@ export async function GET(request: Request): Promise<Response> {
     });
   }
 
-  const packs = files.packs.map((pack) => ({
-    id: pack.id,
-    title: pack.title,
-    creator: {
-      name: pack.creator.name,
-      ...(pack.creator.bio !== undefined && { bio: pack.creator.bio }),
-      ...(pack.creator.voice_notes !== undefined && {
-        voice_notes: pack.creator.voice_notes,
-      }),
-    },
-    description: pack.description ?? null,
-    recipes: pack.recipes.map((r) => ({
-      id: r.id,
-      title: r.title,
-      time_total_min: r.time_total_min ?? null,
-      time_active_min: r.time_active_min ?? null,
-      serves_base: r.serves_base,
-      tags: r.tags ?? [],
-      main_ingredients: mainIngredientsOf(r),
-      hook: hookOf(r),
-    })),
-  }));
-
-  return NextResponse.json({ packs });
+  return NextResponse.json({ packs: buildPackDigest(files) });
 }

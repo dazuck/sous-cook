@@ -14,10 +14,10 @@
 import type { HookName } from "./types";
 
 export const connected: Record<HookName, boolean> = {
-  "recipe-library": false,
-  "cook-log": false,
-  pantry: false,
-  "shopping-list": false,
-  ideas: false,
-  "household-context": false,
+  "recipe-library": true,
+  "cook-log": true,
+  pantry: true,
+  "shopping-list": true,
+  ideas: true,
+  "household-context": true,
 };

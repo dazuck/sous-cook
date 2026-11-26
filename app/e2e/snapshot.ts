@@ -9,7 +9,11 @@ export const E2E_SNAPSHOT_SCHEMA = "e2e_seed";
  * Every table that tests or single-kitchen routes can write.
  * Checked against app/drizzle/schema.ts: kitchens, members, invites, the auth_*
  * tables, and Drizzle migration bookkeeping are never copied or truncated.
- * None of these tables have foreign keys referencing one another.
+ * `doc_recipes` precedes `kitchen_cook_log` because `kitchen_cook_log.doc_recipe_id`
+ * references `doc_recipes(id)`. `kitchen_packs` precedes `kitchen_pack_shares`
+ * because `kitchen_pack_shares.kitchen_pack_id` references `kitchen_packs(id)`.
+ * `kitchen_pantry_sections` precedes `kitchen_pantry_items` because
+ * `kitchen_pantry_items.section_id` references `kitchen_pantry_sections(id)`.
  */
 export const E2E_DATA_TABLES = [
   "kitchen_queue",
@@ -19,7 +23,24 @@ export const E2E_DATA_TABLES = [
   "cook_reports",
   "ai_usage",
   "kitchen_webhook_tokens",
+  "kitchen_cook_log",
+  "kitchen_packs",
+  "kitchen_pack_shares",
+  "kitchen_pantry_sections",
+  "kitchen_pantry_items",
+  "kitchen_shopping_list",
+  "kitchen_ideas",
+  "circles",
+  "circle_members",
 ] as const;
+
+const IDENTITY_TABLES: ReadonlySet<E2eDataTable> = new Set([
+  "kitchen_cook_log",
+  "kitchen_pantry_sections",
+  "kitchen_pantry_items",
+  "kitchen_shopping_list",
+  "kitchen_ideas",
+]);
 
 export type E2eDataTable = (typeof E2E_DATA_TABLES)[number];
 
@@ -28,7 +49,7 @@ export type E2eDataTable = (typeof E2E_DATA_TABLES)[number];
  */
 export function truncateDataTablesSql(): string {
   const list = E2E_DATA_TABLES.map((table) => `public.${table}`).join(", ");
-  return `TRUNCATE TABLE ${list};`;
+  return `TRUNCATE TABLE ${list} RESTART IDENTITY;`;
 }
 
 /**
@@ -53,8 +74,9 @@ export function snapshotSql(): string {
 export function restoreSql(): string {
   const statements: string[] = [truncateDataTablesSql()];
   for (const table of E2E_DATA_TABLES) {
+    const override = IDENTITY_TABLES.has(table) ? " OVERRIDING SYSTEM VALUE" : "";
     statements.push(
-      `INSERT INTO public.${table} SELECT * FROM ${E2E_SNAPSHOT_SCHEMA}.${table};`,
+      `INSERT INTO public.${table}${override} SELECT * FROM ${E2E_SNAPSHOT_SCHEMA}.${table};`,
     );
   }
   return statements.join("\n");

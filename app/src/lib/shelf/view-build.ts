@@ -53,11 +53,15 @@ function householdChapters(layout: HouseholdLayout, pack: Pack | undefined): Pac
     anchor: chapter.title === null ? null : anchors[next++]!,
     title: chapter.title,
     rows: chapter.rows.flatMap((row): PackRowView[] => {
+      const householdMeta = {
+        ...(row.isPrivate !== undefined ? { isPrivate: row.isPrivate } : {}),
+        ...(row.docRecipeId !== undefined ? { docRecipeId: row.docRecipeId } : {}),
+      };
       if (row.missing !== null) {
-        return [{ id: row.id, title: titleTags(row.name).title, times: null, serves: null, tags: [], missing: row.missing }];
+        return [{ id: row.id, title: titleTags(row.name).title, times: null, serves: null, tags: [], missing: row.missing, ...householdMeta }];
       }
       const recipe = recipes.get(row.id);
-      return recipe === undefined ? [] : [recipeRow(recipe)];
+      return recipe === undefined ? [] : [{ ...recipeRow(recipe), ...householdMeta }];
     }),
   }));
 }
@@ -105,13 +109,15 @@ export function shelfView(shelf: Shelf, ideas: number | null): { household: Hous
   };
   const creators = shelf.packs
     .filter((p) => p.pack.kind !== "household")
-    .map(({ pack }) => ({
-      id: pack.id,
-      title: pack.title,
-      creator: pack.creator.name,
-      recipes: pack.recipes.length,
+    .map((entry) => ({
+      id: entry.pack.id,
+      title: entry.pack.title,
+      creator: entry.pack.creator.name,
+      recipes: entry.pack.recipes.length,
       cloth: "walnut" as const,
-      coverRef: pack.cover_ref ?? null,
+      coverRef: entry.pack.cover_ref ?? null,
+      ...(entry.isOwned !== undefined && { isOwned: entry.isOwned }),
+      ...(entry.fromKitchenName != null && { fromKitchenName: entry.fromKitchenName }),
     }));
   return { household, creators, ideas };
 }
@@ -135,8 +141,9 @@ export function packView(shelf: Shelf, packId: string): PackPageView | null {
       cloth: null,
     };
   }
-  const pack = shelf.packs.find((p) => p.pack.id === packId && p.pack.kind !== "household")?.pack;
-  if (pack === undefined) return null;
+  const entry = shelf.packs.find((p) => p.pack.id === packId && p.pack.kind !== "household");
+  if (entry === undefined) return null;
+  const { pack } = entry;
   return {
     id: pack.id,
     kind: "creator",
@@ -148,5 +155,7 @@ export function packView(shelf: Shelf, packId: string): PackPageView | null {
     missing: 0,
     chapters: creatorChapters(pack),
     cloth: "walnut",
+    ...(entry.isOwned !== undefined && { isOwned: entry.isOwned }),
+    ...(entry.fromKitchenName != null && { fromKitchenName: entry.fromKitchenName }),
   };
 }

@@ -14,6 +14,7 @@ vi.mock("@/lib/db", async () =>
 import * as dbModule from "@/lib/db";
 import { authUser, db, invites, kitchens, members } from "@/lib/db";
 import { connected } from "@/lib/hooks/connected";
+import { implementations } from "@/lib/hooks/registry";
 import { HOOK_NAMES } from "@/lib/hooks/types";
 import { GET as authGet } from "@/app/api/auth/[...all]/route";
 import { GET as packsGet } from "@/app/api/packs/route";
@@ -401,17 +402,21 @@ describe("Deployment modes and start-up checks", () => {
     }
   });
 
-  it("MODE-4: sign-in mode refuses when any hook is connected, naming the hook", () => {
+  it("MODE-4: sign-in mode allows per-kitchen DB hooks and refuses instance-wide or unimplemented hooks, naming the hook", () => {
     for (const hookName of HOOK_NAMES) {
       for (const n of HOOK_NAMES) connected[n] = false;
       connected[hookName] = true;
 
-      expect(() => checkDeploymentEnv({ ...TEST_AUTH_ENV })).toThrow(
-        DeploymentConfigError,
-      );
-      expect(() => checkDeploymentEnv({ ...TEST_AUTH_ENV })).toThrow(
-        new RegExp(hookName),
-      );
+      if (typeof implementations[hookName] === "function") {
+        expect(checkDeploymentEnv({ ...TEST_AUTH_ENV })).toBe("sign-in");
+      } else {
+        expect(() => checkDeploymentEnv({ ...TEST_AUTH_ENV })).toThrow(
+          DeploymentConfigError,
+        );
+        expect(() => checkDeploymentEnv({ ...TEST_AUTH_ENV })).toThrow(
+          new RegExp(hookName),
+        );
+      }
     }
   });
 

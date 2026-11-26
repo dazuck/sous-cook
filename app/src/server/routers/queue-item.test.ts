@@ -19,6 +19,10 @@ vi.mock("../../lib/recipe-sync", async (importOriginal) => ({
   readFamilyLibrary: vi.fn(),
 }));
 
+vi.mock("../../lib/kitchens/packs", () => ({
+  readVisibleKitchenPacks: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("../../lib/shelf/load", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../lib/shelf/load")>();
   return { ...original, loadAppPackFiles: vi.fn(original.loadAppPackFiles) };

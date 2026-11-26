@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { EDGE_X } from "@/components/kitchen/cook-edge";
 import { MENU_PANEL, useMenuDismiss } from "@/components/kitchen/CookMenu";
 import { ACTION, ACTION_AT_REST, FOCUS, LABEL, ROW_TAP, Row } from "@/components/kitchen/KitchenHome";
+import { ACTION_IN_FORCE } from "@/components/kitchen/control-style";
 import { WIDTH } from "@/components/kitchen/ReportsPanel";
 import { footMask, useMoreBelow } from "@/hooks/useMoreBelow";
 import { usePortrait } from "@/hooks/usePortrait";
@@ -29,6 +30,17 @@ export interface RefreshControl {
   onRefresh: () => void;
 }
 
+export interface CircleShareControl {
+  kitchens: Array<{
+    kitchenId: string;
+    slug: string;
+    name: string;
+    shared: boolean;
+  }>;
+  pending: boolean;
+  onToggle: (kitchenId: string, shared: boolean) => void;
+}
+
 export interface PackViewProps {
   view: PackPageView;
   /** The household pack's Refresh; absent for a creator pack. */
@@ -38,6 +50,12 @@ export interface PackViewProps {
   /** Why the last tapped row didn't reach the queue. */
   sendFailure: string | null;
   onPick: (rowId: string) => void;
+  /** Toggles per-recipe privacy when viewing the household book. */
+  onTogglePrivate?: (rowId: string, isPrivate: boolean) => void;
+  /** Copies a share link for a non-private household book recipe (sign-in mode). */
+  onCopyShareLink?: (docRecipeId: string) => Promise<boolean> | boolean;
+  /** Owner-only switches for sharing an owned pack with circle kitchens (sign-in mode). */
+  circleSharing?: CircleShareControl;
   /** The chapter the URL names (`#baking`); the view opens there if it has it. */
   initialAnchor?: string | null;
   /** The URL follows the chapter a choice in the menu goes to. */
@@ -205,14 +223,55 @@ function PackRow({
   row,
   chapter,
   sendingId,
+  copiedShareId,
   onPick,
+  onTogglePrivate,
+  onCopyShareLink,
 }: {
   row: PackRowView;
   chapter?: string | null;
   sendingId: string | null;
+  copiedShareId?: string | null;
   onPick: (id: string) => void;
+  onTogglePrivate?: (rowId: string, isPrivate: boolean) => void;
+  onCopyShareLink?: (docRecipeId: string) => void;
 }) {
   const fact = rowFact(row, chapter).join(" ");
+  const isPrivate = Boolean(row.isPrivate);
+  const canShare = Boolean(
+    onCopyShareLink && row.missing === null && !isPrivate && row.docRecipeId,
+  );
+  const copied = canShare && copiedShareId === row.docRecipeId;
+  const shareButton = canShare ? (
+    <button
+      type="button"
+      data-share-link={row.docRecipeId}
+      aria-label={`Copy share link: ${row.title}`}
+      onClick={() => onCopyShareLink!(row.docRecipeId!)}
+      className={`z-10 -my-[calc(18*var(--cpx))] ${ACTION} ${copied ? ACTION_IN_FORCE : ACTION_AT_REST}`}
+    >
+      {copied ? "Copied" : "Copy share link"}
+    </button>
+  ) : undefined;
+  const privateToggle = onTogglePrivate ? (
+    <button
+      type="button"
+      data-private-toggle={row.id}
+      aria-pressed={isPrivate}
+      aria-label={`Private: ${row.title}`}
+      onClick={() => onTogglePrivate(row.id, !isPrivate)}
+      className={`z-10 -my-[calc(18*var(--cpx))] ${ACTION} ${isPrivate ? ACTION_IN_FORCE : ACTION_AT_REST}`}
+    >
+      Private
+    </button>
+  ) : undefined;
+  const trailing =
+    shareButton || privateToggle ? (
+      <span className="z-10 flex items-center gap-[calc(8*var(--cpx))]">
+        {shareButton}
+        {privateToggle}
+      </span>
+    ) : undefined;
   if (row.missing !== null) {
     // Not a button and no chevron: the title in ink-soft, why in ink.
     return (
@@ -223,6 +282,7 @@ function PackRow({
           </span>
         }
         slot={<span className="text-ink">{fact}</span>}
+        trailing={trailing}
       />
     );
   }
@@ -245,6 +305,7 @@ function PackRow({
         </button>
       }
       slot={sending ? COOKPACKS_COPY.sending : fact || undefined}
+      trailing={trailing}
       go
     />
   );
@@ -262,6 +323,11 @@ function TitlePage({ view }: { view: PackPageView }) {
   return (
     <div data-title-page className="pt-[calc(14*var(--cpx))] pb-[calc(12*var(--cpx))] text-center">
       <p className="text-[length:var(--type-chip)] leading-[1.3] font-medium text-ink">{view.creator}</p>
+      {view.fromKitchenName && (
+        <p data-from-kitchen className={`mt-[calc(6*var(--cpx))] ${LABEL}`}>
+          {COOKPACKS_COPY.fromKitchen(view.fromKitchenName)}
+        </p>
+      )}
       <div aria-hidden className="mx-auto mt-[calc(12*var(--cpx))] mb-[calc(10*var(--cpx))] h-px w-[calc(64*var(--cpx))] bg-ink/[.3]" />
       <p className={LABEL}>{COOKPACKS_COPY.recipes(view.cookable)}</p>
     </div>
@@ -293,10 +359,32 @@ function chapterAt(scroller: HTMLElement, anchors: string[]): string | undefined
  * opens on a type-only title page. A search, or the "didn't come through"
  * filter, flattens the list, each row's fact leading with its chapter.
  */
-export function PackView({ view, refresh, sendingId, sendFailure, onPick, initialAnchor, onAnchor }: PackViewProps) {
+export function PackView({ view, refresh, sendingId, sendFailure, onPick, onTogglePrivate, onCopyShareLink, circleSharing, initialAnchor, onAnchor }: PackViewProps) {
   const portrait = usePortrait();
   const [query, setQuery] = useState("");
   const [onlyMissing, setOnlyMissing] = useState(false);
+  const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
+  const handleCopyShareLink = useCallback(
+    (docRecipeId: string) => {
+      if (!onCopyShareLink) return;
+      try {
+        const result = onCopyShareLink(docRecipeId);
+        if (typeof result === "boolean") {
+          if (result) setCopiedShareId(docRecipeId);
+          return;
+        }
+        void Promise.resolve(result).then(
+          (copied) => {
+            if (copied) setCopiedShareId(docRecipeId);
+          },
+          () => {},
+        );
+      } catch {
+        // Leave copied state unchanged when clipboard copy fails.
+      }
+    },
+    [onCopyShareLink],
+  );
   const searching = query.trim() !== "";
   const flat = searching || onlyMissing;
 
@@ -438,7 +526,7 @@ export function PackView({ view, refresh, sendingId, sendFailure, onPick, initia
         {view.missing > 0 && (
           <ul aria-label={COOKPACKS_COPY.missingCount(view.missing)} className="mt-[calc(20*var(--cpx))]">
             {missingRows(view.chapters).map(({ row, chapter }) => (
-              <PackRow key={row.id} row={row} chapter={chapter} sendingId={sendingId} onPick={onPick} />
+              <PackRow key={row.id} row={row} chapter={chapter} sendingId={sendingId} copiedShareId={copiedShareId} onPick={onPick} onTogglePrivate={onTogglePrivate} onCopyShareLink={onCopyShareLink ? handleCopyShareLink : undefined} />
             ))}
           </ul>
         )}
@@ -448,7 +536,7 @@ export function PackView({ view, refresh, sendingId, sendFailure, onPick, initia
     body = (
       <ul aria-label={household ? COOKPACKS_COPY.search : view.title} className="mt-[calc(20*var(--cpx))]">
         {flatRows.map(({ row, chapter }) => (
-          <PackRow key={row.id} row={row} chapter={chapter} sendingId={sendingId} onPick={onPick} />
+          <PackRow key={row.id} row={row} chapter={chapter} sendingId={sendingId} copiedShareId={copiedShareId} onPick={onPick} onTogglePrivate={onTogglePrivate} onCopyShareLink={onCopyShareLink ? handleCopyShareLink : undefined} />
         ))}
       </ul>
     );
@@ -463,7 +551,7 @@ export function PackView({ view, refresh, sendingId, sendFailure, onPick, initia
         {chapter.title !== null && <h2 className={`mb-[var(--space-1)] ${CHAPTER_HEAD}`}>{chapter.title}</h2>}
         <ul>
           {chapter.rows.map((row) => (
-            <PackRow key={row.id} row={row} sendingId={sendingId} onPick={onPick} />
+            <PackRow key={row.id} row={row} sendingId={sendingId} copiedShareId={copiedShareId} onPick={onPick} onTogglePrivate={onTogglePrivate} onCopyShareLink={onCopyShareLink ? handleCopyShareLink : undefined} />
           ))}
         </ul>
       </section>
@@ -541,6 +629,41 @@ export function PackView({ view, refresh, sendingId, sendFailure, onPick, initia
             >
               {status.text}
             </p>
+          )}
+          {circleSharing && circleSharing.kitchens.length > 0 && !flat && (
+            <section
+              data-pack-circle-sharing
+              aria-labelledby="share-with-circle-heading"
+              className="mt-[var(--space-4)] border-t border-ink/[.11] pt-[var(--space-4)]"
+            >
+              <h3 id="share-with-circle-heading" className={LABEL}>
+                Share with circle
+              </h3>
+              <ul className="mt-[var(--space-2)]">
+                {circleSharing.kitchens.map((k) => (
+                  <li
+                    key={k.kitchenId}
+                    data-circle-share-kitchen={k.slug}
+                    className="flex min-h-[var(--target)] items-center justify-between gap-[var(--space-4)] border-t border-ink/[.11] py-[calc(10*var(--cpx))]"
+                  >
+                    <span className="text-[length:var(--type-meta)] font-medium text-ink">
+                      {k.name}
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={k.shared}
+                      aria-label={`Share with ${k.name}`}
+                      disabled={circleSharing.pending}
+                      onClick={() => circleSharing.onToggle(k.kitchenId, !k.shared)}
+                      className={`${ACTION} ${k.shared ? ACTION_IN_FORCE : ACTION_AT_REST}`}
+                    >
+                      {k.shared ? "Shared" : "Off"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
           {body}
         </div>

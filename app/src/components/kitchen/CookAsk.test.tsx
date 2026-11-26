@@ -323,3 +323,41 @@ describe("how often the kitchen reads the ask (T follow-up, item 1)", () => {
     }
   });
 });
+
+describe("private note toggle", () => {
+  it("shows Private note checkbox only when note field is open and passes true when checked", () => {
+    const { props } = line();
+    expect(screen.queryByRole("checkbox", { name: ASK_COPY.privateNote })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: ASK_COPY.addNote }));
+    const checkbox = screen.getByRole("checkbox", { name: ASK_COPY.privateNote }) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+    const note = screen.getByRole("textbox", { name: ASK_COPY.note });
+    fireEvent.change(note, { target: { value: "Too much garlic for guests" } });
+    fireEvent.click(rate(4));
+    expect(props.onRate).toHaveBeenCalledWith(4, "Too much garlic for guests", true);
+  });
+});
+
+describe("one-tap hold-back toggle", () => {
+  it("toggles Hold back / Show to friends in one tap and stays ink and ghosts", async () => {
+    const onToggleHeldBack = vi.fn(async () => true);
+    const { container } = line({
+      ask: { queueId: "dal", name: "Indian dal tadka", state: "logged", heldBack: false },
+      onToggleHeldBack,
+    });
+    const btn = screen.getByRole("button", { name: ASK_COPY.holdBack });
+    expect(btn.getAttribute("aria-pressed")).toBe("false");
+    for (const el of container.querySelectorAll("*")) {
+      expect(atRest(el).filter((c) => c.includes("ember"))).toEqual([]);
+      expect(atRest(el)).not.toContain("bg-sand");
+    }
+
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(onToggleHeldBack).toHaveBeenCalledWith(true);
+    expect(screen.getByRole("button", { name: ASK_COPY.showToFriends }).getAttribute("aria-pressed")).toBe("true");
+  });
+});

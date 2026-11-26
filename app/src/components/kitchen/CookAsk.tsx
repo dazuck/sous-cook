@@ -13,6 +13,9 @@ export const ASK_COPY = {
   addNote: "Add a note",
   note: "Note",
   notePlaceholder: "A note to go with your rating",
+  privateNote: "Private note",
+  holdBack: "Hold back",
+  showToFriends: "Show to friends",
   notNow: "Not now",
   notLogged: "Not in the cook log yet.",
   stillNotLogged: "Still not in the cook log.",
@@ -69,10 +72,12 @@ const NOTE_LIMIT = 500;
 
 interface CookAskLineProps {
   ask: CookAsk;
-  /** Rates the cook, with the note ("" for none). */
-  onRate: (rating: number, note: string) => Promise<RateAnswer>;
+  /** Rates the cook, with the note ("" for none) and optional privacy flag. */
+  onRate: (rating: number, note: string, notePrivate?: boolean) => Promise<RateAnswer>;
   onRetry: () => Promise<RetryAnswer>;
   onDismiss: () => void;
+  /** One-tap hold-back / show toggle in sign-in mode when the cook log row exists. */
+  onToggleHeldBack?: (heldBack: boolean) => Promise<boolean>;
 }
 
 /**
@@ -98,23 +103,49 @@ const RATE_WORDS: Partial<Record<RateAnswer | RetryAnswer, string>> = {
  */
 const RATE = `relative isolate inline-flex size-[var(--target)] cursor-pointer items-center justify-center disabled:cursor-default ${RING} before:inset-[calc(12*var(--cpx))] before:rounded-full`;
 
-function AskLine({ ask, onRate, onRetry, onDismiss }: CookAskLineProps) {
+function AskLine({ ask, onRate, onRetry, onDismiss, onToggleHeldBack }: CookAskLineProps) {
   const ids = useId();
   const [rating, setRating] = useState<number | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryFailed, setRetryFailed] = useState(false);
   const [say, setSay] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [notePrivate, setNotePrivate] = useState(false);
+  const [togglingHeldBack, setTogglingHeldBack] = useState(false);
+  const [heldBackOverride, setHeldBackOverride] = useState<{
+    value: boolean;
+    baseline: boolean;
+  } | null>(null);
   // One call at a time, double taps included: state lags a render behind.
   const busy = useRef(false);
   const noteRef = useRef<HTMLInputElement>(null);
+  const serverHeldBack = ask.heldBack ?? false;
+  const heldBack =
+    heldBackOverride && heldBackOverride.baseline === serverHeldBack
+      ? heldBackOverride.value
+      : serverHeldBack;
+
+  const toggleHeldBack = async () => {
+    if (!onToggleHeldBack || togglingHeldBack || busy.current) return;
+    const next = !heldBack;
+    setTogglingHeldBack(true);
+    setSay(null);
+    setHeldBackOverride({ value: next, baseline: serverHeldBack });
+    const ok = await onToggleHeldBack(next);
+    setTogglingHeldBack(false);
+    if (!ok) {
+      setHeldBackOverride(null);
+      setSay(ASK_COPY.error);
+    }
+  };
 
   const rate = async (n: number) => {
     if (busy.current) return;
     busy.current = true;
     setRating(n);
     setSay(null);
-    const answer = await onRate(n, note?.trim() ?? "");
+    const trimmed = note?.trim() ?? "";
+    const answer = notePrivate ? await onRate(n, trimmed, true) : await onRate(n, trimmed);
     if (answer === "rated" || answer === "gone") return; // held until the kitchen redraws
     busy.current = false;
     setRating(null);
@@ -199,30 +230,53 @@ function AskLine({ ask, onRate, onRetry, onDismiss }: CookAskLineProps) {
               </span>
             </button>
           )}
+          {rateable && onToggleHeldBack && ask.heldBack !== undefined && (
+            <button
+              type="button"
+              data-ask-hold-back
+              aria-pressed={heldBack}
+              disabled={togglingHeldBack || rating !== null}
+              onClick={toggleHeldBack}
+              className={`${ACTION} ${heldBack ? ACTION_IN_FORCE : ACTION_AT_REST}`}
+            >
+              {heldBack ? ASK_COPY.showToFriends : ASK_COPY.holdBack}
+            </button>
+          )}
           <button type="button" onClick={onDismiss} className={`${ACTION} ${ACTION_AT_REST}`}>
             {ASK_COPY.notNow}
           </button>
         </div>
       </div>
       {rateable && note !== null && (
-        <input
-          // Asked for, so the keyboard comes with it.
-          autoFocus
-          ref={noteRef}
-          id={`${ids}-note`}
-          type="text"
-          aria-label={ASK_COPY.note}
-          placeholder={ASK_COPY.notePlaceholder}
-          maxLength={NOTE_LIMIT}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          // Unboxed, as the reports panel's notes: a 1 px ink ring on focus,
-          // a hairline's weight, not the controls' 3 px (DS §5, P47). It is
-          // drawn inside the field, the column's full width, so it closes on
-          // the column's edge, never past it; the padding keeps the words
-          // off it (critic round 1, gap 4).
-          className="mt-[calc(8*var(--cpx))] h-[var(--target)] w-full rounded-[var(--radius-2)] bg-transparent px-[calc(16*var(--cpx))] text-[length:var(--type-meta)] font-medium text-ink placeholder:text-ink-soft focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ink"
-        />
+        <div>
+          <input
+            // Asked for, so the keyboard comes with it.
+            autoFocus
+            ref={noteRef}
+            id={`${ids}-note`}
+            type="text"
+            aria-label={ASK_COPY.note}
+            placeholder={ASK_COPY.notePlaceholder}
+            maxLength={NOTE_LIMIT}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            // Unboxed, as the reports panel's notes: a 1 px ink ring on focus,
+            // a hairline's weight, not the controls' 3 px (DS §5, P47). It is
+            // drawn inside the field, the column's full width, so it closes on
+            // the column's edge, never past it; the padding keeps the words
+            // off it (critic round 1, gap 4).
+            className="mt-[calc(8*var(--cpx))] h-[var(--target)] w-full rounded-[var(--radius-2)] bg-transparent px-[calc(16*var(--cpx))] text-[length:var(--type-meta)] font-medium text-ink placeholder:text-ink-soft focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ink"
+          />
+          <label className="mt-[calc(4*var(--cpx))] inline-flex min-h-[var(--target)] cursor-pointer items-center gap-[calc(10*var(--cpx))] px-[calc(4*var(--cpx))] text-[length:var(--type-meta)] font-medium text-ink-soft select-none">
+            <input
+              type="checkbox"
+              checked={notePrivate}
+              onChange={(e) => setNotePrivate(e.target.checked)}
+              className="size-[calc(22*var(--cpx))] accent-ink"
+            />
+            <span>{ASK_COPY.privateNote}</span>
+          </label>
+        </div>
       )}
       {/* What went wrong, last: under the taps and the field, so a line
           that comes after a tap moves nothing the cook is reaching for

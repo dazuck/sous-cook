@@ -32,7 +32,7 @@ Configure these in the hosting project's own Production environment (separate fr
   - `GOOGLE_CLIENT_SECRET`: non-empty Google OAuth client secret.
   - `SOUS_AI_KITCHEN_CAP_USD`: non-empty, plain non-negative dollar amount with at most two decimals (for example `2`, `0.25`, or `0`).
   - `SOUS_AI_TOTAL_CAP_USD`: non-empty, plain non-negative dollar amount with at most two decimals (for example `10`, `2.5`, or `0`).
-  In sign-in mode, all household hook flags in `app/src/lib/hooks/connected.ts` must remain `false`, and every configured AI model (`AI_TEXT_MODEL`, `AI_COOK_CHAT_MODEL`, `AI_VISION_MODEL`, or their defaults) must have a price entry in `app/src/lib/ai/prices.ts`.
+  In sign-in mode, every enabled hook in `app/src/lib/hooks/registry.ts` must be a per-kitchen `(kitchenId) => ...` factory (the six built-in database-backed hooks satisfy this; static single-kitchen hook objects are refused at start-up), and every configured AI model (`AI_TEXT_MODEL`, `AI_COOK_CHAT_MODEL`, `AI_VISION_MODEL`, or their defaults) must have a price entry in `app/src/lib/ai/prices.ts`.
 - **Single-kitchen mode:** Set `SOUS_SIGN_IN=off` instead of the sign-in variables above. (`SOUS_AI_KITCHEN_CAP_USD` and `SOUS_AI_TOTAL_CAP_USD` are optional in single-kitchen mode; if either is set, it must follow the same dollar format and every configured model must have a price entry.)
 - **Do not set `SOUS_RELEASE_COMMIT` by hand** in the host project.
 
@@ -55,8 +55,9 @@ Export these variables in the shell that runs `scripts/deploy.sh` (or keep them 
 | `SOUS_HOST_LINK_FILE` | Always | none | Path to the host's project link JSON file (for example `$HOME/.config/sous/vercel-project.json`). Copied into `.vercel/project.json` inside the temporary deploy worktree before staging. |
 | `SOUS_RELEASE_REMOTE` | No | `origin` | Git remote fetched before deploy to confirm the target commit is on the shared release branch. |
 | `SOUS_RELEASE_BRANCH` | No | `main` | Git branch on `SOUS_RELEASE_REMOTE` that the target commit must be on before deploy. |
-| `SOUS_DEPLOY_ENV_FILE` | When migrations are pending | none | Path to a mode-600 `KEY=VALUE` file holding `DATABASE_URL` for the production database (for example `$HOME/.config/sous/deploy.env`). Read as plain text without executing it; only `DATABASE_URL` is extracted, and only its host is ever printed. Must use a direct connection or a session-mode pooler (never a transaction-mode pooler), with the host's TLS parameter (for example `sslmode=require`) when the host requires TLS. `scripts/deploy.sh` passes only host, port, user, password, database name, and `sslmode` from `DATABASE_URL` to `pg_dump` (as `PG*` variables); other URL parameters (such as `sslrootcert` or `channel_binding`) reach `db:migrate`, which receives the full URL, but not `pg_dump`. |
-| `SOUS_BACKUP_DIR` | When migrations are pending | none | Directory where `pg_dump` writes pre-migration backups (for example `$HOME/.local/share/sous/backups`). Created with mode `700`. |
+| `SOUS_DEPLOY_ENV_FILE` | When migrations are pending, and always for `scripts/backup.sh` | none | Path to a mode-600 `KEY=VALUE` file holding `DATABASE_URL` for the production database (for example `$HOME/.config/sous/deploy.env`). Read as plain text without executing it; only `DATABASE_URL` is extracted, and only its host is ever printed. Must use a direct connection or a session-mode pooler (never a transaction-mode pooler), with the host's TLS parameter (for example `sslmode=require`) when the host requires TLS. Both `scripts/deploy.sh` and `scripts/backup.sh` pass only host, port, user, password, database name, and `sslmode` from `DATABASE_URL` to `pg_dump` (as `PG*` variables); other URL parameters (such as `sslrootcert` or `channel_binding`) reach `db:migrate`, which receives the full URL, but not `pg_dump`. |
+| `SOUS_BACKUP_DIR` | When migrations are pending, and always for `scripts/backup.sh` | none | Directory where `pg_dump` writes pre-migration and scheduled backups (for example `$HOME/.local/share/sous/backups`). Created with mode `700`. |
+| `SOUS_BACKUP_KEEP_DAYS` | No | `14` | Positive integer number of days `scripts/backup.sh` keeps `sous-*.dump` files in `SOUS_BACKUP_DIR` before deleting them. Older files are pruned only after a successful non-empty dump. |
 | `SOUS_RELEASE_STATE_DIR` | No | `$HOME/.local/state/sous` | Local state directory holding `release-passes.log`, `releases.log`, and the temporary `deploy.lock` folder. Created with mode `700`. |
 | `SMOKE_BYPASS_HEADER` | No | none | Optional HTTP header name sent to `/api/version` requests (through a mode-600 temporary file) and passed to `pnpm --dir app e2e:smoke` when deployment protection requires a bypass header (for example `x-vercel-protection-bypass`). Must be paired with `SMOKE_BYPASS_VALUE`. |
 | `SMOKE_BYPASS_VALUE` | No | none | Optional secret value for `SMOKE_BYPASS_HEADER`. Never printed by `scripts/deploy.sh` and never passed on a command line. |
@@ -155,13 +156,40 @@ If `pg_dump` fails or writes an empty file, the deploy stops before running any 
 
 The `DATABASE_URL` in `SOUS_DEPLOY_ENV_FILE` must use a direct connection or a connection pooler in session mode, never a transaction-mode pooler, because `pg_dump` and Drizzle migrations rely on session state. Include the host's TLS parameter (for example `sslmode=require`) when the host requires TLS. Note that `scripts/deploy.sh` passes only host, port, user, password, database name, and `sslmode` from `DATABASE_URL` to `pg_dump` (as `PG*` variables); other connection parameters in the URL (for example `sslrootcert` or `channel_binding`) reach `db:migrate`, which gets the full URL, but not `pg_dump`. The local `pg_dump` binary's major version must also be the same as or newer than the database server's major version, or `pg_dump` will refuse to dump the database.
 
-Dumps in `SOUS_BACKUP_DIR` are full plaintext copies of user data. Keep the directory private (mode `700`) and delete old dumps once they are no longer needed.
+Dumps in `SOUS_BACKUP_DIR` are full plaintext copies of user data. Keep the directory private (mode `700`).
+
+### Scheduled backups (`scripts/backup.sh`)
+
+For nightly or manual backups outside of a deploy, run `scripts/backup.sh`. It does not require a git checkout and takes the same `pg_dump -Fc --no-owner -n public -n drizzle` custom-format dump as `scripts/deploy.sh`, writing `$SOUS_BACKUP_DIR/sous-backup-<UTC timestamp>.dump`:
+
+```sh
+SOUS_DEPLOY_ENV_FILE="$HOME/.config/sous/deploy.env" \
+SOUS_BACKUP_DIR="$HOME/.local/share/sous/backups" \
+scripts/backup.sh --dry-run
+```
+
+`--dry-run` validates `SOUS_DEPLOY_ENV_FILE`, `DATABASE_URL`, and `SOUS_BACKUP_KEEP_DAYS`, prints the database host, target dump path, `pg_dump` command summary, and any expired `sous-*.dump` files that would be pruned, without creating `SOUS_BACKUP_DIR` or running `pg_dump`.
+
+Example nightly cron job (keeping 14 days of backups, the default when `SOUS_BACKUP_KEEP_DAYS` is unset):
+
+```cron
+15 3 * * * SOUS_DEPLOY_ENV_FILE="$HOME/.config/sous/deploy.env" SOUS_BACKUP_DIR="$HOME/.local/share/sous/backups" SOUS_BACKUP_KEEP_DAYS=14 /path/to/sous/scripts/backup.sh >> "$HOME/.local/state/sous/backup.log" 2>&1
+```
+
+Retention pruning runs only after `pg_dump` exits `0` and writes a non-empty file:
+
+- If `pg_dump` fails or produces a 0-byte file, `scripts/backup.sh` deletes any partial dump, exits with status `1`, and leaves all existing backups untouched.
+- After a successful non-empty dump, it deletes regular files at the top level of `SOUS_BACKUP_DIR` matching `sous-*.dump` whose modification time is older than `SOUS_BACKUP_KEEP_DAYS` days (excluding the dump just created, subdirectories, symlinks, and unrelated files).
+
+### Restoring a dump
 
 Restoring a dump requires a PostgreSQL server you can reach (a local PostgreSQL server or a scratch database created at your database host). Always restore into a **scratch database** first and check its contents before touching production:
 
 ```sh
-pg_restore --clean --if-exists --no-owner --no-privileges -d "<scratch-database-url-or-name>" "$SOUS_BACKUP_DIR/sous-<sha short>-<UTC timestamp>.dump"
+pg_restore --clean --if-exists --no-owner --no-privileges -d "<scratch-database-url-or-name>" "$SOUS_BACKUP_DIR/sous-backup-<UTC timestamp>.dump"
 ```
+
+(Pre-migration dumps created by `scripts/deploy.sh` are named `sous-<sha short>-<UTC timestamp>.dump` and restore the same way.)
 
 Because the dump selects `-n public`, it includes both `CREATE SCHEMA public;` and `COMMENT ON SCHEMA public IS 'standard public schema';`, while `public` already exists in a fresh PostgreSQL database:
 
@@ -170,8 +198,6 @@ Because the dump selects `-n public`, it includes both `CREATE SCHEMA public;` a
 - **As a role that does not own `public` (granted `USAGE, CREATE` on `public` and `CREATE` on the database):** omitting `--clean --if-exists` reports 2 ignored errors (`ERROR: schema "public" already exists` on `CREATE SCHEMA public;` and `ERROR: must be owner of schema public` on `COMMENT ON SCHEMA public IS 'standard public schema';`) and exits `1`. Keeping `--clean --if-exists` adds a third error (`ERROR: must be owner of schema public` on `DROP SCHEMA IF EXISTS public;`, 3 ignored errors total, exit `1`). In both cases all `public` tables, rows, and the `drizzle` migration record still restore.
 
 After verifying the scratch copy, recover production by restoring the dump into a **new database** at the host and pointing the app's `DATABASE_URL` at that new database (keeping the damaged database intact for inspection), or by using the host's own point-in-time recovery if it provides one. Never run `pg_restore` over the live database.
-
-Note that scheduled nightly backups are not part of this release process yet; configure automated backups separately through your PostgreSQL host.
 
 ## Release numbers
 

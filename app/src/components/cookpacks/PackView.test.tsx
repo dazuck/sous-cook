@@ -324,4 +324,140 @@ describe("a creator's view", () => {
     pack(FANNIE);
     expect(document.querySelector("[data-binding='walnut']")).not.toBeNull();
   });
+
+  it("toggles per-recipe privacy without picking the row when onTogglePrivate is provided", () => {
+    const onPick = vi.fn();
+    const onTogglePrivate = vi.fn();
+    render(
+      <PackView
+        view={{
+          ...HOUSEHOLD,
+          chapters: [
+            {
+              anchor: "indian",
+              title: "indian",
+              rows: [row("Dal and rice", { isPrivate: false }), row("Lentil stew", { isPrivate: true })],
+            },
+          ],
+        }}
+        sendingId={null}
+        sendFailure={null}
+        onPick={onPick}
+        onTogglePrivate={onTogglePrivate}
+      />,
+    );
+    const dalToggle = screen.getByRole("button", { name: "Private: Dal and rice" });
+    const stewToggle = screen.getByRole("button", { name: "Private: Lentil stew" });
+    expect(dalToggle.getAttribute("aria-pressed")).toBe("false");
+    expect(stewToggle.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(dalToggle);
+    expect(onTogglePrivate).toHaveBeenCalledWith("dal-and-rice", true);
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("shows From <kitchen name> on a shared pack's title page and omits it on owned packs", () => {
+    pack({
+      ...FANNIE,
+      id: "shared-pack",
+      isOwned: false,
+      fromKitchenName: "North Kitchen",
+    });
+    const sharedPage = document.querySelector<HTMLElement>("[data-title-page]")!;
+    expect(sharedPage.querySelector("[data-from-kitchen]")?.textContent).toBe("From North Kitchen");
+    cleanup();
+
+    pack({
+      ...FANNIE,
+      id: "owned-pack",
+      isOwned: true,
+    });
+    const ownedPage = document.querySelector<HTMLElement>("[data-title-page]")!;
+    expect(ownedPage.querySelector("[data-from-kitchen]")).toBeNull();
+  });
+
+  it("shows Copy share link only on non-private cookable household rows and shows Share with circle switches for owners", () => {
+    const onPick = vi.fn();
+    const onCopyShareLink = vi.fn(() => true);
+    render(
+      <PackView
+        view={{
+          ...HOUSEHOLD,
+          chapters: [
+            {
+              anchor: "indian",
+              title: "indian",
+              rows: [
+                row("Dal and rice", { isPrivate: false, docRecipeId: "doc-1" }),
+                row("Lentil stew", { isPrivate: true, docRecipeId: "doc-2" }),
+                row("Lamb biryani", { missing: "refused", isPrivate: false, docRecipeId: "doc-3" }),
+              ],
+            },
+          ],
+        }}
+        sendingId={null}
+        sendFailure={null}
+        onPick={onPick}
+        onCopyShareLink={onCopyShareLink}
+      />,
+    );
+
+    const copyBtn = screen.getByRole("button", { name: "Copy share link: Dal and rice" });
+    fireEvent.click(copyBtn);
+    expect(onCopyShareLink).toHaveBeenCalledWith("doc-1");
+    expect(copyBtn.textContent).toBe("Copied");
+    expect(onPick).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Copy share link: Lentil stew" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Copy share link: Lamb biryani" })).toBeNull();
+
+    cleanup();
+    const onCopyFail = vi.fn(async () => false);
+    render(
+      <PackView
+        view={{
+          ...HOUSEHOLD,
+          chapters: [
+            {
+              anchor: "indian",
+              title: "indian",
+              rows: [row("Dal and rice", { isPrivate: false, docRecipeId: "doc-1" })],
+            },
+          ],
+        }}
+        sendingId={null}
+        sendFailure={null}
+        onPick={onPick}
+        onCopyShareLink={onCopyFail}
+      />,
+    );
+    const failedCopyBtn = screen.getByRole("button", { name: "Copy share link: Dal and rice" });
+    fireEvent.click(failedCopyBtn);
+    expect(onCopyFail).toHaveBeenCalledWith("doc-1");
+    expect(failedCopyBtn.textContent).toBe("Copy share link");
+
+    cleanup();
+    const onToggle = vi.fn();
+    render(
+      <PackView
+        view={{ ...FANNIE, id: "owned-pack", isOwned: true }}
+        sendingId={null}
+        sendFailure={null}
+        onPick={onPick}
+        circleSharing={{
+          kitchens: [
+            { kitchenId: "k-b", slug: "cedar", name: "Cedar Kitchen", shared: false },
+            { kitchenId: "k-c", slug: "birch", name: "Birch Kitchen", shared: true },
+          ],
+          pending: false,
+          onToggle,
+        }}
+      />,
+    );
+
+    const cedarSwitch = screen.getByRole("switch", { name: "Share with Cedar Kitchen" });
+    const birchSwitch = screen.getByRole("switch", { name: "Share with Birch Kitchen" });
+    expect(cedarSwitch.getAttribute("aria-checked")).toBe("false");
+    expect(birchSwitch.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(cedarSwitch);
+    expect(onToggle).toHaveBeenCalledWith("k-b", true);
+  });
 });

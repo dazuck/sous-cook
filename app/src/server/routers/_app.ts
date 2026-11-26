@@ -1,12 +1,23 @@
 import { after } from "next/server";
 import { TRPCError } from "@trpc/server";
-import { router, publicProcedure, kitchenProcedure } from "../trpc";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { router, publicProcedure, kitchenProcedure, type MemberContext } from "../trpc";
+import type { DeploymentMode } from "../../lib/kitchens/deployment";
+import {
+  WEBHOOK_TOKEN_LABEL_MAX_LENGTH,
+  WebhookTokenError,
+  listKitchenWebhookTokens,
+  mintKitchenWebhookToken,
+  revokeKitchenWebhookToken,
+} from "../../lib/kitchens/webhook-tokens";
 import { requireOwnedQueueItem } from "../kitchen-access";
 import { z } from "zod";
+import { docRecipes, kitchenCookLog, kitchenQueue, kitchens } from "../../lib/db";
 import {
   syncRecipesFromDoc,
   getDocRecipeBySlug,
   docRecipeToQueueData,
+  slugify,
 } from "../../lib/recipe-sync";
 import { cachedIdeasCount, getRecipeIdeas, saveRecipeIdea } from "../../lib/recipe-ideas";
 import { HOUSEHOLD_PACK, PACK_FILE_SOURCES } from "../../lib/shelf/registry";
@@ -48,13 +59,27 @@ import {
 } from "../../lib/kitchen-queue";
 import {
   CookLogConflict,
+  CookLogEntryNotFound,
   CookLogItemNotFound,
   dismissCookAsk,
+  getCookAskHeldBack,
+  listCookLogEntries,
   logCookInBackground,
   openCookAsk,
   rateCook,
   retryCookLog,
+  setCookLogHeldBack,
+  updateCookLogEntry,
 } from "../../lib/kitchen-cook-log";
+import {
+  CircleNotAvailableError,
+  PackCircleShareError,
+  getCircleDishesForKitchen,
+  getPackCircleSharesForOwner,
+  resolveAccessibleCircleDish,
+  resolveSharedRecipe,
+  setPackCircleShareForOwner,
+} from "../../lib/circle-dishes";
 import {
   autoFinishCook,
   finishLeftCooks,
@@ -149,7 +174,10 @@ function omitKitchenId<T extends { kitchenId?: unknown }>(item: T): Omit<T, "kit
  */
 async function readForCook(stored: KitchenQueueItem) {
   const item = withCookRecipe(stored);
-  const files = parsePackSource(item.recipeData?.source) === null ? null : await loadAppPackFiles();
+  const files =
+    parsePackSource(item.recipeData?.source) === null
+      ? null
+      : await loadAppPackFiles({ kitchenId: stored.kitchenId });
   const { log, ...reading } = readQueueItem(item, files);
   if (reading.conversionError !== null) {
     console.error(`[queue] item ${item.id}: can't read its recipe as a pack recipe: ${reading.conversionError}`);
@@ -242,7 +270,12 @@ async function servesEstimateFor(
  */
 async function queueWithStoredPlan(
   kitchenId: string,
-  input: { recipeData: KitchenQueueRecipeData; servesEstimate?: ServesEstimateInput },
+  input: {
+    recipeData: KitchenQueueRecipeData;
+    servesEstimate?: ServesEstimateInput;
+    isPrivate?: boolean;
+    sourceKitchenPackId?: string | null;
+  },
   stored: StoredPlan | null,
   label: string,
 ): Promise<{ id: string }> {
@@ -291,6 +324,8 @@ const RateCookSchema = z.object({
       message: `A note is at most ${NOTE_LIMIT} characters`,
     })
     .optional(),
+  notePrivate: z.boolean().optional(),
+  heldBack: z.boolean().optional(),
 });
 
 /**
@@ -326,6 +361,29 @@ function touchOf(interactedAt: number, now: number): Date {
     });
   }
   return new Date(interactedAt);
+}
+
+function assertKitchenOwner(ctx: {
+  mode: DeploymentMode;
+  member: MemberContext | null;
+}): void {
+  if (ctx.mode !== "sign-in" || ctx.member?.role !== "owner") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Only a kitchen owner can manage sending tokens.",
+    });
+  }
+}
+
+function mapWebhookTokenError(err: unknown): unknown {
+  if (!(err instanceof WebhookTokenError)) return err;
+  const code =
+    err.code === "invalid-label" || err.code === "invalid-id"
+      ? "BAD_REQUEST"
+      : err.code === "not-found"
+        ? "NOT_FOUND"
+        : "CONFLICT";
+  return new TRPCError({ code, message: err.message, cause: err });
 }
 
 export const appRouter = router({
@@ -475,11 +533,20 @@ export const appRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
-      const { completed, started } = await updateQueueStatus(
-        ctx.kitchen.id,
-        input.queueId,
-        input.status as "pending" | "cooking" | "completed" | "cancelled",
-      );
+      const nextStatus = input.status as "pending" | "cooking" | "completed" | "cancelled";
+      const memberId = ctx.member?.id ?? null;
+      const { completed, started } =
+        nextStatus === "completed" && memberId !== null
+          ? await updateQueueStatus(ctx.kitchen.id, input.queueId, nextStatus, {
+              by: "pressed",
+              memberId,
+            })
+          : nextStatus === "cooking" && memberId !== null
+            ? await updateQueueStatus(ctx.kitchen.id, input.queueId, nextStatus, {
+                by: "start",
+                memberId,
+              })
+            : await updateQueueStatus(ctx.kitchen.id, input.queueId, nextStatus);
       const logs = connected["cook-log"];
       if (completed && logs) {
         after(() => logCookInBackground(ctx.kitchen.id, input.queueId));
@@ -487,6 +554,7 @@ export const appRouter = router({
       // A start finishes any cook left on its last screen: a real transition,
       // not a repeat of a start already made (a retry after a lost answer),
       // which could take a cook that only just reached its last screen.
+      // Never stamp the next cook starter's memberId onto someone else's idle cook.
       if (started) {
         const left = await finishLeftCooks(ctx.kitchen.id, input.queueId);
         if (logs) {
@@ -545,12 +613,11 @@ export const appRouter = router({
       const now = Date.now();
       const touched = touchOf(input.interactedAt, now);
       const at = new Date(now - input.idleForMs);
-      const { finished, autoFinished } = await autoFinishCook(
-        ctx.kitchen.id,
-        input.queueId,
-        at,
-        touched,
-      );
+      const memberId = ctx.member?.id ?? null;
+      const { finished, autoFinished } =
+        memberId !== null
+          ? await autoFinishCook(ctx.kitchen.id, input.queueId, at, touched, memberId)
+          : await autoFinishCook(ctx.kitchen.id, input.queueId, at, touched);
       if (finished && connected["cook-log"]) {
         after(() => logCookInBackground(ctx.kitchen.id, input.queueId));
       }
@@ -597,7 +664,57 @@ export const appRouter = router({
     .input(z.object({}))
     .query(async ({ ctx }) => {
       if (!connected["cook-log"]) return null;
-      return openCookAsk(ctx.kitchen.id);
+      const ask = await openCookAsk(ctx.kitchen.id);
+      if (!ask) return null;
+      if (ctx.mode === "sign-in") {
+        const heldBack = await getCookAskHeldBack(ctx.kitchen.id, ask.queueId);
+        if (heldBack !== undefined) {
+          return { ...ask, heldBack };
+        }
+      }
+      return ask;
+    }),
+
+  // Toggle hold-back directly on the "How was it?" surface (sign-in mode).
+  setCookLogHeldBack: kitchenProcedure
+    .input(
+      z.object({
+        queueId: z.string().uuid(),
+        heldBack: z.boolean(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.mode !== "sign-in") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Circles are not available in single-kitchen mode.",
+        });
+      }
+      await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
+      if (!connected["cook-log"]) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Cook log entry not found.",
+        });
+      }
+      try {
+        return await setCookLogHeldBack(
+          ctx.kitchen.id,
+          input.queueId,
+          input.heldBack,
+        );
+      } catch (err) {
+        if (err instanceof CookLogConflict) {
+          throw new TRPCError({ code: "CONFLICT", message: err.reason, cause: err });
+        }
+        if (
+          err instanceof CookLogItemNotFound ||
+          err instanceof CookLogEntryNotFound
+        ) {
+          throw new TRPCError({ code: "NOT_FOUND", message: err.message, cause: err });
+        }
+        throw err;
+      }
     }),
 
   // "Not now": close a finished cook's ask unanswered.
@@ -608,6 +725,291 @@ export const appRouter = router({
       if (!connected["cook-log"]) return { success: true };
       await answeringConflicts(() => dismissCookAsk(ctx.kitchen.id, input.queueId));
       return { success: true };
+    }),
+
+  // List the kitchen's own cook log entries, newest first.
+  getCookLog: kitchenProcedure.query(async ({ ctx }) => {
+    if (!connected["cook-log"]) return [];
+    return listCookLogEntries(ctx.kitchen.id);
+  }),
+
+  // Update a cook log entry owned by this kitchen (rating, note, privacy, hold-back).
+  updateCookLogEntry: kitchenProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        rating: z.number().int().min(1).max(5).nullable().optional(),
+        notes: z
+          .string()
+          .trim()
+          .refine((note) => [...note].length <= NOTE_LIMIT, {
+            message: `A note is at most ${NOTE_LIMIT} characters`,
+          })
+          .optional(),
+        notePrivate: z.boolean().optional(),
+        heldBack: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.mode !== "sign-in" && input.heldBack !== undefined) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Circles are not available in single-kitchen mode.",
+        });
+      }
+      try {
+        return await updateCookLogEntry(ctx.kitchen.id, input);
+      } catch (err) {
+        if (err instanceof CookLogEntryNotFound) {
+          throw new TRPCError({ code: "NOT_FOUND", message: err.message, cause: err });
+        }
+        throw err;
+      }
+    }),
+
+  // ==========================================================================
+  // Kitchen Settings & About My Kitchen (Package 1)
+  // ==========================================================================
+
+  getKitchenSettings: kitchenProcedure.query(async ({ ctx }) => {
+    const [row] = await ctx.db
+      .select({
+        about: kitchens.about,
+        slug: kitchens.slug,
+        name: kitchens.name,
+      })
+      .from(kitchens)
+      .where(eq(kitchens.id, ctx.kitchen.id))
+      .limit(1);
+    if (!row) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Kitchen not found" });
+    }
+    return {
+      about: row.about,
+      slug: row.slug,
+      name: row.name,
+      memberRole: ctx.member?.role ?? null,
+    };
+  }),
+
+  updateKitchenAbout: kitchenProcedure
+    .input(
+      z.object({
+        about: z.string().max(2000),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [updated] = await ctx.db
+        .update(kitchens)
+        .set({ about: input.about })
+        .where(eq(kitchens.id, ctx.kitchen.id))
+        .returning({ about: kitchens.about });
+      if (!updated) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Kitchen not found" });
+      }
+      return updated;
+    }),
+
+  // ==========================================================================
+  // Owner Webhook Tokens (Package 2)
+  // ==========================================================================
+
+  listKitchenWebhookTokens: kitchenProcedure.query(async ({ ctx }) => {
+    assertKitchenOwner(ctx);
+    const rows = await listKitchenWebhookTokens(
+      { kitchenId: ctx.kitchen.id, includeRevoked: false },
+      ctx.db,
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      createdAt: row.createdAt.toISOString(),
+      lastUsedAt: row.lastUsedAt ? row.lastUsedAt.toISOString() : null,
+    }));
+  }),
+
+  createKitchenWebhookToken: kitchenProcedure
+    .input(
+      z.object({
+        label: z
+          .string()
+          .trim()
+          .min(1, "Token label is required.")
+          .max(
+            WEBHOOK_TOKEN_LABEL_MAX_LENGTH,
+            `Token label must be ${WEBHOOK_TOKEN_LABEL_MAX_LENGTH} characters or fewer.`,
+          ),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      assertKitchenOwner(ctx);
+      try {
+        const minted = await mintKitchenWebhookToken(
+          { kitchenId: ctx.kitchen.id, label: input.label },
+          ctx.db,
+        );
+        return {
+          id: minted.id,
+          label: minted.label,
+          createdAt: minted.createdAt.toISOString(),
+          token: minted.token,
+        };
+      } catch (err) {
+        throw mapWebhookTokenError(err);
+      }
+    }),
+
+  revokeKitchenWebhookToken: kitchenProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      assertKitchenOwner(ctx);
+      try {
+        const revoked = await revokeKitchenWebhookToken(
+          { id: input.id, kitchenId: ctx.kitchen.id },
+          ctx.db,
+        );
+        return {
+          id: revoked.id,
+          label: revoked.label,
+          revokedAt: revoked.revokedAt.toISOString(),
+        };
+      } catch (err) {
+        throw mapWebhookTokenError(err);
+      }
+    }),
+
+  // ==========================================================================
+  // Recipe Privacy (Package 1)
+  // ==========================================================================
+
+  setDocRecipePrivate: kitchenProcedure
+    .input(
+      z
+        .object({
+          id: z.string().uuid().optional(),
+          docSlug: z.string().min(1).optional(),
+          isPrivate: z.boolean(),
+        })
+        .refine((v) => v.id !== undefined || v.docSlug !== undefined, {
+          message: "Either id or docSlug is required",
+        }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.transaction(async (tx) => {
+        const condition =
+          input.id !== undefined
+            ? and(eq(docRecipes.kitchenId, ctx.kitchen.id), eq(docRecipes.id, input.id))
+            : and(eq(docRecipes.kitchenId, ctx.kitchen.id), eq(docRecipes.docSlug, input.docSlug!));
+        const [updated] = await tx
+          .update(docRecipes)
+          .set({ isPrivate: input.isPrivate })
+          .where(condition)
+          .returning({
+            id: docRecipes.id,
+            docSlug: docRecipes.docSlug,
+            name: docRecipes.name,
+            isPrivate: docRecipes.isPrivate,
+          });
+        if (!updated) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Recipe not found" });
+        }
+
+        const logMatch = or(
+          eq(kitchenCookLog.docRecipeId, updated.id),
+          and(
+            isNull(kitchenCookLog.docRecipeId),
+            sql`${kitchenCookLog.recipeSnapshot}->>'source' = 'library'`,
+            sql`lower(${kitchenCookLog.recipeTitle}) = lower(${updated.name})`,
+          ),
+        );
+
+        if (input.isPrivate) {
+          await tx
+            .update(kitchenCookLog)
+            .set({ recipeIsPrivate: true })
+            .where(and(eq(kitchenCookLog.kitchenId, ctx.kitchen.id), logMatch));
+        } else {
+          await tx
+            .update(kitchenCookLog)
+            .set({
+              recipeIsPrivate: sql`coalesce((select q.is_private from ${kitchenQueue} q where q.id = ${kitchenCookLog.queueId} and q.kitchen_id = ${ctx.kitchen.id}), false)`,
+            })
+            .where(and(eq(kitchenCookLog.kitchenId, ctx.kitchen.id), logMatch));
+        }
+
+        return {
+          id: updated.id,
+          docSlug: updated.docSlug,
+          isPrivate: updated.isPrivate,
+        };
+      });
+    }),
+
+  setQueueRecipePrivate: kitchenProcedure
+    .input(
+      z.object({
+        queueId: z.string().uuid(),
+        isPrivate: z.boolean(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await requireOwnedQueueItem(ctx.kitchen.id, input.queueId);
+      return ctx.db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(kitchenQueue)
+          .set({ isPrivate: input.isPrivate })
+          .where(
+            and(
+              eq(kitchenQueue.kitchenId, ctx.kitchen.id),
+              eq(kitchenQueue.id, input.queueId),
+            ),
+          )
+          .returning({
+            id: kitchenQueue.id,
+            isPrivate: kitchenQueue.isPrivate,
+            recipeData: kitchenQueue.recipeData,
+          });
+        if (!updated) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Queue item not found" });
+        }
+
+        let docIsPrivate = false;
+        if (!input.isPrivate && updated.recipeData?.source === "library" && updated.recipeData?.name) {
+          const slug = slugify(updated.recipeData.name);
+          const matchingDocs = await tx
+            .select({ isPrivate: docRecipes.isPrivate })
+            .from(docRecipes)
+            .where(
+              and(
+                eq(docRecipes.kitchenId, ctx.kitchen.id),
+                or(
+                  ...(slug ? [eq(docRecipes.docSlug, slug)] : []),
+                  sql`lower(${docRecipes.name}) = lower(${updated.recipeData.name})`,
+                ),
+              ),
+            );
+          docIsPrivate = matchingDocs.some((d) => d.isPrivate);
+        }
+
+        await tx
+          .update(kitchenCookLog)
+          .set({ recipeIsPrivate: input.isPrivate || docIsPrivate })
+          .where(
+            and(
+              eq(kitchenCookLog.kitchenId, ctx.kitchen.id),
+              eq(kitchenCookLog.queueId, input.queueId),
+            ),
+          );
+
+        return {
+          id: updated.id,
+          isPrivate: updated.isPrivate,
+        };
+      });
     }),
 
   // Remove a recipe from the queue
@@ -765,6 +1167,8 @@ export const appRouter = router({
       let recipeData: KitchenQueueRecipeData;
       let servesEstimate: ServesEstimateInput | undefined;
       let stored: StoredPlan | null = null;
+      let isPrivate: boolean | undefined;
+      let sourceKitchenPackId: string | null = null;
       if (input.packId === HOUSEHOLD_PACK.id) {
         if (!connected["recipe-library"]) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Pack not found" });
@@ -779,6 +1183,7 @@ export const appRouter = router({
             message: `Recipe "${recipe.name}" didn't come through on the last Refresh and has no cookable steps.`,
           });
         }
+        isPrivate = recipe.isPrivate;
         recipeData = docRecipeToQueueData(recipe);
         // The library row's estimate travels with it; a send never estimates.
         servesEstimate = await servesEstimateFor(recipeData, {
@@ -797,11 +1202,13 @@ export const appRouter = router({
           ctx.kitchen.id,
           connected["recipe-library"] ? undefined : { sources: PACK_FILE_SOURCES },
         );
-        const pack = shelf.packs.find((p) => p.pack.id === input.packId)?.pack;
+        const shelfPack = shelf.packs.find((p) => p.pack.id === input.packId);
+        const pack = shelfPack?.pack;
         const recipe = pack?.recipes.find((r) => r.id === input.recipeId);
         if (!pack || !recipe) {
           throw new TRPCError({ code: "NOT_FOUND", message: `No recipe ${input.recipeId} in pack ${input.packId}` });
         }
+        sourceKitchenPackId = shelfPack?.kitchenPackId ?? null;
         const projected = packRecipeToQueueData(recipe, pack.id);
         if (!projected.ok) {
           console.error(`[queue] ${pack.id}/${recipe.id} doesn't round-trip, not queued:`, projected.differences);
@@ -829,7 +1236,12 @@ export const appRouter = router({
       refuseUnreadable(recipeData, servesEstimate);
       return queueWithStoredPlan(
         ctx.kitchen.id,
-        { recipeData, servesEstimate },
+        {
+          recipeData,
+          servesEstimate,
+          ...(isPrivate !== undefined ? { isPrivate } : {}),
+          sourceKitchenPackId,
+        },
         stored,
         `${input.packId}/${input.recipeId}`,
       );
@@ -846,11 +1258,11 @@ export const appRouter = router({
   // Append a recipe idea to the ideas list ("save as inspiration")
   saveRecipeIdea: kitchenProcedure
     .input(z.object({ text: z.string().min(1) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       if (!connected.ideas) {
         return { success: false };
       }
-      await saveRecipeIdea(input.text);
+      await saveRecipeIdea(ctx.kitchen.id, input.text);
       return { success: true };
     }),
 
@@ -896,6 +1308,15 @@ export const appRouter = router({
   // Grocery Intake & Pantry Reconciliation
   // ==========================================================================
 
+  // Read the kitchen's pantry sections
+  getPantry: kitchenProcedure.query(async ({ ctx }) => {
+    if (!connected.pantry) {
+      return { sections: [] };
+    }
+    const sections = await hook("pantry", ctx.kitchen.id).readSections();
+    return { sections };
+  }),
+
   // Parse groceries from photo, pasted text, or voice transcript
   parseGroceryInput: kitchenProcedure
     .input(
@@ -929,11 +1350,11 @@ export const appRouter = router({
           .min(1),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       if (!connected.pantry) {
         return { success: true, count: 0 };
       }
-      const result = await hook("pantry").addItems(input.items);
+      const result = await hook("pantry", ctx.kitchen.id).addItems(input.items);
       return { success: true, count: result.added };
     }),
 
@@ -948,7 +1369,7 @@ export const appRouter = router({
       // The lines the cook cooked from: intake's cut when there is one.
       const item = withCookRecipe(stored);
       try {
-        const docSections = await hook("pantry").readSections();
+        const docSections = await hook("pantry", ctx.kitchen.id).readSections();
         const recipeIngredients = item.recipeData?.ingredients ?? [];
         const candidates = await reconcileRecipeIngredients(
           {
@@ -992,7 +1413,7 @@ export const appRouter = router({
       if (!connected.pantry) {
         return { success: true, updated: 0 };
       }
-      const result = await hook("pantry").applyUpdates(input.actions);
+      const result = await hook("pantry", ctx.kitchen.id).applyUpdates(input.actions);
       return { success: true, updated: result.updated };
     }),
 
@@ -1000,11 +1421,11 @@ export const appRouter = router({
   // Shopping List
   // ==========================================================================
 
-  getShoppingList: kitchenProcedure.query(async () => {
+  getShoppingList: kitchenProcedure.query(async ({ ctx }) => {
     if (!connected["shopping-list"]) {
       return { items: [], syncedAt: new Date(0) };
     }
-    return hook("shopping-list").list();
+    return hook("shopping-list", ctx.kitchen.id).list();
   }),
 
   addShoppingListItems: kitchenProcedure
@@ -1026,11 +1447,11 @@ export const appRouter = router({
           .max(50),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       if (!connected["shopping-list"]) {
         return { added: [] };
       }
-      return hook("shopping-list").add(input.items);
+      return hook("shopping-list", ctx.kitchen.id).add(input.items);
     }),
 
   removeShoppingListItem: kitchenProcedure
@@ -1044,19 +1465,196 @@ export const appRouter = router({
           .pipe(z.string().min(1)),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       if (!connected["shopping-list"]) {
         return { removed: false };
       }
-      return hook("shopping-list").remove(input.rawOrKey);
+      return hook("shopping-list", ctx.kitchen.id).remove(input.rawOrKey);
     }),
 
-  clearShoppingList: kitchenProcedure.mutation(async () => {
+  clearShoppingList: kitchenProcedure.mutation(async ({ ctx }) => {
     if (!connected["shopping-list"]) {
       return { cleared: 0 };
     }
-    return hook("shopping-list").clear();
+    return hook("shopping-list", ctx.kitchen.id).clear();
   }),
+
+  // ==========================================================================
+  // Circles & Shared Recipes (Package 6 + Package 4 circle sharing switch)
+  // ==========================================================================
+
+  getCircleDishes: kitchenProcedure.query(async ({ ctx }) => {
+    if (ctx.mode !== "sign-in") return [];
+    return getCircleDishesForKitchen(ctx.kitchen.id, ctx.db);
+  }),
+
+  getCircleDish: kitchenProcedure
+    .input(z.object({ logId: z.string().min(1).max(200) }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.mode !== "sign-in") {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Not available" });
+      }
+      try {
+        return await resolveAccessibleCircleDish(
+          ctx.kitchen.id,
+          input.logId,
+          ctx.db,
+        );
+      } catch (err) {
+        if (err instanceof CircleNotAvailableError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Not available" });
+        }
+        throw err;
+      }
+    }),
+
+  queueCircleDish: kitchenProcedure
+    .input(z.object({ logId: z.string().min(1).max(200) }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.mode !== "sign-in") {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Not available" });
+      }
+      let dish: Awaited<ReturnType<typeof resolveAccessibleCircleDish>>;
+      try {
+        dish = await resolveAccessibleCircleDish(
+          ctx.kitchen.id,
+          input.logId,
+          ctx.db,
+        );
+      } catch (err) {
+        if (err instanceof CircleNotAvailableError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Not available" });
+        }
+        throw err;
+      }
+      const servesEstimate = await servesEstimateFor(dish.recipe, {
+        mayEstimate: true,
+        meter: kitchenMeter(
+          ctx.kitchen.id,
+          ctx.member?.id ?? null,
+          "serves-estimate",
+        ),
+      });
+      refuseUnreadable(dish.recipe, servesEstimate);
+      const item = await addToKitchenQueue(ctx.kitchen.id, {
+        recipeData: dish.recipe,
+        servesEstimate,
+        isPrivate: false,
+        sourceKitchenPackId: dish.sourceKitchenPackId,
+      });
+      after(() => prepareQueueItemInBackground(ctx.kitchen.id, item.id));
+      return item;
+    }),
+
+  getSharedRecipe: kitchenProcedure
+    .input(z.object({ recipeId: z.string().min(1).max(200) }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.mode !== "sign-in") {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Not available" });
+      }
+      try {
+        return await resolveSharedRecipe(
+          ctx.kitchen.id,
+          input.recipeId,
+          ctx.db,
+        );
+      } catch (err) {
+        if (err instanceof CircleNotAvailableError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Not available" });
+        }
+        throw err;
+      }
+    }),
+
+  queueSharedRecipe: kitchenProcedure
+    .input(z.object({ recipeId: z.string().min(1).max(200) }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.mode !== "sign-in") {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Not available" });
+      }
+      let shared: Awaited<ReturnType<typeof resolveSharedRecipe>>;
+      try {
+        shared = await resolveSharedRecipe(
+          ctx.kitchen.id,
+          input.recipeId,
+          ctx.db,
+        );
+      } catch (err) {
+        if (err instanceof CircleNotAvailableError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Not available" });
+        }
+        throw err;
+      }
+      const servesEstimate = await servesEstimateFor(shared.recipe, {
+        mayEstimate: true,
+        meter: kitchenMeter(
+          ctx.kitchen.id,
+          ctx.member?.id ?? null,
+          "serves-estimate",
+        ),
+      });
+      refuseUnreadable(shared.recipe, servesEstimate);
+      const item = await addToKitchenQueue(ctx.kitchen.id, {
+        recipeData: shared.recipe,
+        servesEstimate,
+        isPrivate: false,
+      });
+      after(() => prepareQueueItemInBackground(ctx.kitchen.id, item.id));
+      return item;
+    }),
+
+  getPackCircleShares: kitchenProcedure
+    .input(z.object({ packId: z.string().min(1).max(200) }))
+    .query(async ({ ctx, input }) => {
+      if (ctx.mode !== "sign-in" || ctx.member?.role !== "owner") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only a kitchen owner can manage pack sharing.",
+        });
+      }
+      try {
+        return await getPackCircleSharesForOwner(
+          ctx.kitchen.id,
+          input.packId,
+          ctx.db,
+        );
+      } catch (err) {
+        if (err instanceof PackCircleShareError) {
+          throw new TRPCError({ code: err.code, message: err.message });
+        }
+        throw err;
+      }
+    }),
+
+  setPackCircleShare: kitchenProcedure
+    .input(
+      z.object({
+        packId: z.string().min(1).max(200),
+        targetKitchenId: z.string().uuid(),
+        shared: z.boolean(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.mode !== "sign-in" || ctx.member?.role !== "owner") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only a kitchen owner can manage pack sharing.",
+        });
+      }
+      try {
+        return await setPackCircleShareForOwner(
+          ctx.kitchen.id,
+          ctx.kitchen.slug,
+          input,
+          ctx.db,
+        );
+      } catch (err) {
+        if (err instanceof PackCircleShareError) {
+          throw new TRPCError({ code: err.code, message: err.message });
+        }
+        throw err;
+      }
+    }),
 });
 
 export type AppRouter = typeof appRouter;

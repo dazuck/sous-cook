@@ -105,7 +105,7 @@ Each spec is written so that a coding agent can implement the hook from it.
 
 ## The agent webhook
 
-Another program can send a recipe to a kitchen with one HTTP call, which is how the kitchen agent I text recipes to queues dinner. Every call requires a per-kitchen bearer token created with `pnpm --dir app kitchens token create`. The contract is in [docs/webhook.md](docs/webhook.md).
+Another program can send a recipe to a kitchen with one HTTP call, which is how the kitchen agent I text recipes to queues dinner. Every call requires a per-kitchen bearer token (created on the Settings screen by a kitchen owner in sign-in mode, or with `pnpm --dir app kitchens token create` in single-kitchen mode). For an owner guide, the `send-recipe.mjs` script, and the assistant skill, see [docs/send-recipes.md](docs/send-recipes.md). The full HTTP contract is in [docs/webhook.md](docs/webhook.md).
 
 ## Safety
 

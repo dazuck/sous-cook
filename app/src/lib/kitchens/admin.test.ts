@@ -206,6 +206,30 @@ describe("Webhook token admin commands", () => {
     expect(created.label).toBe("home-agent");
     expect(created.token).toMatch(/^sous_[A-Za-z0-9_-]+$/);
   });
+
+  it("enforces at most 10 live tokens per kitchen and allows minting after revocation", async () => {
+    await seedKitchen(db, { slug: "capped", name: "Capped Kitchen" });
+    const ids: string[] = [];
+    for (let i = 1; i <= 10; i++) {
+      const created = await createWebhookToken(
+        { kitchenSlug: "capped", label: `token-${i}` },
+        db,
+      );
+      ids.push(created.id);
+    }
+
+    await expectKitchenAdminError(
+      createWebhookToken({ kitchenSlug: "capped", label: "token-11" }, db),
+      /10 live tokens/,
+    );
+
+    await revokeWebhookToken({ id: ids[0]! }, db);
+    const replacement = await createWebhookToken(
+      { kitchenSlug: "capped", label: "token-11" },
+      db,
+    );
+    expect(replacement.label).toBe("token-11");
+  });
 });
 
 describe("Kitchen, invite, and member admin commands", () => {

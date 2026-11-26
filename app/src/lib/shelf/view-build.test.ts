@@ -187,4 +187,38 @@ describe("packView", () => {
     const shelf: Shelf = { packs: [], errors: [], household: { state: "unreadable", syncedAt: null, chapters: [] } };
     expect(packView(shelf, "household-book")).toMatchObject({ state: "unreadable", chapters: [] });
   });
+
+  it("carries isOwned and fromKitchenName on owned and shared packs", () => {
+    const shelf: Shelf = {
+      packs: [
+        {
+          sourceId: "owned:1",
+          pack: fannie({ id: "owned-pack", title: "Owned Pack" }),
+          isOwned: true,
+          fromKitchenName: null,
+        },
+        {
+          sourceId: "shared:2",
+          pack: fannie({ id: "shared-pack", title: "Shared Pack" }),
+          isOwned: false,
+          fromKitchenName: "Kitchen A",
+        },
+      ],
+      errors: [],
+    };
+    const sv = shelfView(shelf, null);
+    expect(sv.creators).toMatchObject([
+      { id: "owned-pack", isOwned: true },
+      { id: "shared-pack", isOwned: false, fromKitchenName: "Kitchen A" },
+    ]);
+    expect(sv.creators[0]!.fromKitchenName).toBeUndefined();
+
+    expect(packView(shelf, "owned-pack")).toMatchObject({ id: "owned-pack", isOwned: true });
+    expect(packView(shelf, "owned-pack")!.fromKitchenName).toBeUndefined();
+    expect(packView(shelf, "shared-pack")).toMatchObject({
+      id: "shared-pack",
+      isOwned: false,
+      fromKitchenName: "Kitchen A",
+    });
+  });
 });

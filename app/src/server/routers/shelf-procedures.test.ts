@@ -36,6 +36,10 @@ vi.mock("../../lib/recipe-sync", async (importOriginal) => ({
   syncRecipesFromDoc: vi.fn(),
 }));
 
+vi.mock("../../lib/kitchens/packs", () => ({
+  readVisibleKitchenPacks: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("../../lib/recipe-ideas", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/recipe-ideas")>()),
   cachedIdeasCount: vi.fn(),
@@ -95,6 +99,7 @@ function docRow(slug: string, over: Partial<DocRecipeRow> = {}): DocRecipeRow {
     cookPlanError: null,
     cookPlanSourceHash: null,
     cookPlanStamp: null,
+    isPrivate: false,
     ...over,
   };
 }

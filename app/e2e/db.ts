@@ -31,6 +31,9 @@ export async function closeDb(): Promise<void> {
 
 export async function restoreSeed(): Promise<void> {
   await getClient().unsafe(restoreSql());
+  await getClient()`
+    UPDATE public.kitchens SET about = '' WHERE slug = 'home'
+  `;
 }
 
 export interface QueueRowSummary {
@@ -172,4 +175,89 @@ export async function setQueueRowStatus(
   if (updated.length === 0) {
     throw new Error(`No kitchen_queue row found with recipe name "${name}"`);
   }
+}
+
+export async function seedDocRecipeRow(
+  kitchenId: string,
+  recipe: {
+    docSlug: string;
+    name: string;
+    category: string;
+    categoryTitle: string;
+    docPosition: number;
+    ingredients: Array<{ item: string; amount?: string; unit?: string }>;
+    steps: string[];
+    serves: number;
+    rawDocText: string;
+  },
+): Promise<void> {
+  await getClient()`
+    INSERT INTO public.doc_recipes (
+      kitchen_id,
+      doc_slug,
+      name,
+      category,
+      category_title,
+      doc_position,
+      ingredients,
+      steps,
+      serves,
+      raw_doc_text
+    )
+    VALUES (
+      ${kitchenId}::uuid,
+      ${recipe.docSlug},
+      ${recipe.name},
+      ${recipe.category},
+      ${recipe.categoryTitle},
+      ${recipe.docPosition},
+      ${JSON.stringify(recipe.ingredients)}::jsonb,
+      ${JSON.stringify(recipe.steps)}::jsonb,
+      ${recipe.serves},
+      ${recipe.rawDocText}
+    )
+  `;
+}
+
+export async function readDocRecipePrivate(
+  kitchenId: string,
+  docSlug: string,
+): Promise<boolean | null> {
+  const rows = await getClient()<{ is_private: boolean }[]>`
+    SELECT is_private
+    FROM public.doc_recipes
+    WHERE kitchen_id = ${kitchenId}::uuid AND doc_slug = ${docSlug}
+    LIMIT 1
+  `;
+  return rows[0]?.is_private ?? null;
+}
+
+export async function readQueueRecipePrivate(
+  queueId: string,
+): Promise<boolean | null> {
+  const rows = await getClient()<{ is_private: boolean }[]>`
+    SELECT is_private
+    FROM public.kitchen_queue
+    WHERE id = ${queueId}::uuid
+    LIMIT 1
+  `;
+  return rows[0]?.is_private ?? null;
+}
+
+export async function readLatestUserConversationContext(
+  kitchenId: string,
+): Promise<string | null> {
+  const rows = await getClient()<{ context: unknown }[]>`
+    SELECT context
+    FROM public.conversation_logs
+    WHERE kitchen_id = ${kitchenId}::uuid AND role = 'user'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  if (!rows[0] || rows[0].context === null || rows[0].context === undefined) {
+    return null;
+  }
+  return typeof rows[0].context === "string"
+    ? rows[0].context
+    : JSON.stringify(rows[0].context);
 }

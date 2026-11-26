@@ -34,11 +34,13 @@ vi.mock("@/lib/hooks/connected", async () => {
     connected: Object.fromEntries(HOOK_NAMES.map((name) => [name, true])),
   };
 });
-vi.mock("@/lib/hooks/registry", async () => {
+vi.mock("@/lib/hooks/registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/hooks/registry")>();
   const { scriptedCookLog } = await import(
     "../../lib/__tests__/scripted-cook-log"
   );
   return {
+    ...actual,
     hook: (name: string) => {
       if (name === "recipe-library") return { readTabs: mockReadTabs };
       if (name === "ideas") return { readText: mockReadIdeasText, append: vi.fn() };

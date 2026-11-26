@@ -6,9 +6,21 @@ import { AddIngredientsModal } from "./AddIngredientsModal";
 
 const mockParseMutateAsync = vi.fn();
 const mockAddMutateAsync = vi.fn();
+const mockPantryRefetch = vi.fn();
+let mockPantryState: {
+  data: { sections: Array<{ heading: string; rawHeading: string; items: string[] }> } | undefined;
+  isLoading: boolean;
+  error: Error | null;
+};
 
 vi.mock("@/lib/trpc", () => ({
   trpc: {
+    getPantry: {
+      useQuery: () => ({
+        ...mockPantryState,
+        refetch: mockPantryRefetch,
+      }),
+    },
     parseGroceryInput: {
       useMutation: () => ({
         mutateAsync: mockParseMutateAsync,
@@ -44,6 +56,11 @@ afterEach(cleanup);
 describe("AddIngredientsModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPantryState = {
+      data: { sections: [] },
+      isLoading: false,
+      error: null,
+    };
     mockParseMutateAsync.mockResolvedValue({
       items: [
         { text: "honeycrisp apples", suggestedSection: "Produce" },
@@ -52,7 +69,7 @@ describe("AddIngredientsModal", () => {
     });
     mockAddMutateAsync.mockResolvedValue({
       success: true,
-      addedCount: 2,
+      count: 2,
     });
   });
 
@@ -217,5 +234,61 @@ describe("AddIngredientsModal", () => {
 
     await screen.findByText("Extraction failed. Check your network connection or enter text.");
     logged.mockRestore();
+  });
+
+  it("shows the pantry empty state when all sections are empty and lists items when present", () => {
+    mockPantryState = {
+      data: {
+        sections: [{ heading: "fridge", rawHeading: "Fridge", items: [] }],
+      },
+      isLoading: false,
+      error: null,
+    };
+    const { rerender } = render(
+      <AddIngredientsModal isOpen={true} onClose={vi.fn()} />,
+    );
+    expect(screen.getByText("Nothing in the pantry yet.")).toBeTruthy();
+
+    mockPantryState = {
+      data: {
+        sections: [
+          { heading: "fridge", rawHeading: "Fridge", items: ["2 avocados"] },
+          { heading: "freezer", rawHeading: "Freezer", items: ["frozen peas"] },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    };
+    rerender(<AddIngredientsModal isOpen={true} onClose={vi.fn()} />);
+    expect(screen.queryByText("Nothing in the pantry yet.")).toBeNull();
+    expect(screen.getByText("Fridge")).toBeTruthy();
+    expect(screen.getByText("2 avocados")).toBeTruthy();
+    expect(screen.getByText("Freezer")).toBeTruthy();
+    expect(screen.getByText("frozen peas")).toBeTruthy();
+  });
+
+  it("allows adding items by hand without calling parseGroceryInput", async () => {
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+    render(
+      <AddIngredientsModal isOpen={true} onClose={onClose} onSuccess={onSuccess} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add items by hand" }));
+    expect(screen.getByText("Review ingredients")).toBeTruthy();
+
+    const input = screen.getByPlaceholderText("Ingredient name and quantity");
+    fireEvent.change(input, { target: { value: "2 avocados" } });
+    fireEvent.click(screen.getByRole("button", { name: /Add 1 item to pantry/ }));
+
+    await waitFor(() => {
+      expect(mockParseMutateAsync).not.toHaveBeenCalled();
+      expect(mockAddMutateAsync).toHaveBeenCalledWith({
+        items: [{ text: "2 avocados", section: "Fridge" }],
+      });
+      expect(mockPantryRefetch).toHaveBeenCalledTimes(1);
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
   });
 });
