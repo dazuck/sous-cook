@@ -20,8 +20,18 @@ import {
   slugify,
 } from "../../lib/recipe-sync";
 import { cachedIdeasCount, getRecipeIdeas, saveRecipeIdea } from "../../lib/recipe-ideas";
-import { HOUSEHOLD_PACK, PACK_FILE_SOURCES } from "../../lib/shelf/registry";
-import { PACK_PLANS_DIR, loadAppPackFiles, loadAppShelf } from "../../lib/shelf/load";
+import { HOUSEHOLD_PACK, PACK_FILE_SOURCES, loadLibraries } from "../../lib/shelf/registry";
+import { PACK_PLANS_DIR, PACKS_DIR, loadAppPackFiles, loadAppShelf } from "../../lib/shelf/load";
+import {
+  KitchenPackError,
+  MAX_KITCHEN_PACKS_PER_KITCHEN,
+  RESERVED_PACK_IDS,
+  getOwnedKitchenPackRaw,
+  listOwnedKitchenPacksForKitchen,
+  removeOwnedKitchenPack,
+  upsertKitchenPackByKitchenId,
+} from "../../lib/kitchens/packs";
+import { MAX_COLLECTION_BYTES } from "../../lib/cookpacks/authoring";
 import { packPlanFor, readPackPlanFile } from "../../lib/pack-cook-plans";
 import { libraryPlanReport } from "../../lib/library-cook-plans";
 import { packView, shelfView } from "../../lib/shelf/view-build";
@@ -384,6 +394,18 @@ function mapWebhookTokenError(err: unknown): unknown {
         ? "NOT_FOUND"
         : "CONFLICT";
   return new TRPCError({ code, message: err.message, cause: err });
+}
+
+function assertCanManageCollections(ctx: {
+  mode: DeploymentMode;
+  member: MemberContext | null;
+}) {
+  if (ctx.mode === "sign-in" && ctx.member?.role !== "owner") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Only a kitchen owner can manage collections.",
+    });
+  }
 }
 
 export const appRouter = router({
@@ -1654,6 +1676,99 @@ export const appRouter = router({
         }
         throw err;
       }
+    }),
+
+  getCollectionAuthoringInfo: kitchenProcedure.query(async ({ ctx }) => {
+    assertCanManageCollections(ctx);
+    const libraries = await loadLibraries(PACKS_DIR);
+    if (!libraries.ok) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Shared recipe libraries could not be read.",
+      });
+    }
+    const ownedCollections = await listOwnedKitchenPacksForKitchen(
+      ctx.kitchen.id,
+      ctx.db,
+    );
+    return {
+      commons: libraries.libraries.commons.map((c) => ({
+        id: c.id,
+        name: c.name,
+        description: c.description,
+      })),
+      states: libraries.libraries.states.map((s) => ({
+        id: s.id,
+        name: s.name,
+        sensory_notes: s.sensory_notes,
+      })),
+      reservedPackIds: [...RESERVED_PACK_IDS],
+      ownedCollections,
+      maxCollections: MAX_KITCHEN_PACKS_PER_KITCHEN,
+    };
+  }),
+
+  getOwnedCollectionRaw: kitchenProcedure
+    .input(z.object({ packId: z.string().min(1).max(120) }))
+    .query(async ({ ctx, input }) => {
+      assertCanManageCollections(ctx);
+      const found = await getOwnedKitchenPackRaw(
+        ctx.kitchen.id,
+        input.packId,
+        ctx.db,
+      );
+      if (!found) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Collection not found in this kitchen.",
+        });
+      }
+      return {
+        id: found.id,
+        packId: found.packId,
+        packJson: found.packJson,
+        jsonText: JSON.stringify(found.packJson, null, 2),
+      };
+    }),
+
+  saveOwnedCollection: kitchenProcedure
+    .input(
+      z.object({
+        packJsonText: z.string().min(1).max(MAX_COLLECTION_BYTES + 65_536),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      assertCanManageCollections(ctx);
+      try {
+        return await upsertKitchenPackByKitchenId(
+          ctx.kitchen.id,
+          { rawBytes: input.packJsonText, packsDir: PACKS_DIR },
+          ctx.db,
+        );
+      } catch (err) {
+        if (err instanceof KitchenPackError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: err.message });
+        }
+        throw err;
+      }
+    }),
+
+  removeOwnedCollection: kitchenProcedure
+    .input(z.object({ packId: z.string().min(1).max(120) }))
+    .mutation(async ({ ctx, input }) => {
+      assertCanManageCollections(ctx);
+      const removed = await removeOwnedKitchenPack(
+        ctx.kitchen.id,
+        input.packId,
+        ctx.db,
+      );
+      if (!removed.removed) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Collection not found in this kitchen.",
+        });
+      }
+      return removed;
     }),
 });
 

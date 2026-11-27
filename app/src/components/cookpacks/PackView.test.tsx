@@ -460,4 +460,33 @@ describe("a creator's view", () => {
     fireEvent.click(cedarSwitch);
     expect(onToggle).toHaveBeenCalledWith("k-b", true);
   });
+
+  it("renders Update collection and requires two taps for Remove from shelf", () => {
+    const onPick = vi.fn();
+    const onRemove = vi.fn();
+    render(
+      <PackView
+        view={{ ...FANNIE, id: "owned-pack", isOwned: true }}
+        sendingId={null}
+        sendFailure={null}
+        onPick={onPick}
+        ownerActions={{
+          editHref: "/kitchen/cookpacks/new?edit=owned-pack",
+          removing: false,
+          onRemove,
+        }}
+      />,
+    );
+
+    const updateLink = screen.getByRole("link", { name: "Update collection" });
+    expect(updateLink.getAttribute("href")).toBe("/kitchen/cookpacks/new?edit=owned-pack");
+
+    const removeBtn = screen.getByRole("button", { name: "Remove from shelf" });
+    fireEvent.click(removeBtn);
+    expect(onRemove).not.toHaveBeenCalled();
+    expect(removeBtn.textContent).toBe("Tap again to remove");
+
+    fireEvent.click(removeBtn);
+    expect(onRemove).toHaveBeenCalledTimes(1);
+  });
 });

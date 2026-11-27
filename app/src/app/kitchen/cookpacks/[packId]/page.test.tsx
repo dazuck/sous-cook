@@ -52,6 +52,7 @@ vi.mock("@/lib/trpc", () => ({
       libraryPlanReport: { invalidate: mockInvalidatePlanReport },
       getPackCircleShares: { invalidate: mockInvalidatePackCircleShares },
       getCircleDishes: { invalidate: mockInvalidateCircleDishes },
+      getCollectionAuthoringInfo: { invalidate: vi.fn(() => Promise.resolve()) },
     }),
     getPack: {
       useQuery: () => ({ data: currentView, error: null }),
@@ -80,6 +81,12 @@ vi.mock("@/lib/trpc", () => ({
       useMutation: () => ({
         isPending: false,
         mutate: (input: unknown) => mockSetCircleShareMutate(input),
+      }),
+    },
+    removeOwnedCollection: {
+      useMutation: () => ({
+        isPending: false,
+        mutate: vi.fn(),
       }),
     },
     libraryPlanReport: {

@@ -11,6 +11,7 @@ import {
   loadLibraries,
   type KitchenPackRecord,
 } from "../shelf/registry";
+import { packRecipeToQueueData } from "../pack-convert/to-queue";
 import { KitchenAdminError } from "./admin";
 import { getDeploymentMode } from "./mode";
 
@@ -21,6 +22,7 @@ export const MAX_KITCHEN_PACKS_PER_KITCHEN = 20;
 
 export const RESERVED_PACK_IDS: ReadonlySet<string> = new Set([
   HOUSEHOLD_PACK.id,
+  "new",
   ...PACK_FILE_SOURCES.map((source) => source.id),
 ]);
 
@@ -156,23 +158,22 @@ async function bundledJsonPackIds(packsDir: string): Promise<Set<string>> {
   return ids;
 }
 
-/**
- * Validates and stores an owned pack for a kitchen, enforcing:
- * - byte size <= 2 MB (2,097,152 bytes)
- * - valid JSON, Pack Format v0 schema (`parsePack`), and library refs (`verifyPackRefs`)
- * - non-reserved pack id and kind !== "household"
- * - at most 20 owned packs per kitchen and unique pack id per kitchen
- */
-export async function addKitchenPack(
-  input: AddKitchenPackInput,
-  database: PacksDb = db,
-): Promise<AddedKitchenPack> {
-  const normalizedSlug = input.kitchenSlug.trim();
-  if (!normalizedSlug) {
-    throw new KitchenPackError("Kitchen slug is required.");
-  }
+export interface ValidatedKitchenPack {
+  pack: Pack;
+  sizeBytes: number;
+}
 
-  const buffer = await readPackBuffer(input);
+/**
+ * Validates raw pack JSON bytes against size limits, Pack Format v0 schema,
+ * shared library references, reserved/safe IDs, media-ref restrictions, and
+ * the cook-mode queue round-trip guard.
+ */
+export async function validateKitchenPackBytes(
+  rawBytes: Buffer | string,
+  packsDir: string = DEFAULT_PACKS_DIR,
+): Promise<ValidatedKitchenPack> {
+  const buffer =
+    typeof rawBytes === "string" ? Buffer.from(rawBytes, "utf8") : rawBytes;
   const sizeBytes = buffer.byteLength;
   if (sizeBytes === 0) {
     throw new KitchenPackError("Pack file is empty.");
@@ -191,7 +192,6 @@ export async function addKitchenPack(
     throw new KitchenPackError(`Invalid JSON in pack file: ${message}`);
   }
 
-  const packsDir = input.packsDir ?? DEFAULT_PACKS_DIR;
   const libraries = await loadLibraries(packsDir);
   if (!libraries.ok) {
     const first = libraries.issues[0];
@@ -236,6 +236,49 @@ export async function addKitchenPack(
     );
   }
 
+  if (
+    parsed.value.cover_ref != null ||
+    parsed.value.recipes.some((r) => r.steps.some((s) => s.media_ref != null))
+  ) {
+    throw new KitchenPackError(
+      "Kitchen collections cannot set cover_ref or step media_ref; use null.",
+    );
+  }
+
+  for (const recipe of parsed.value.recipes) {
+    const projected = packRecipeToQueueData(recipe, parsed.value.id);
+    if (!projected.ok) {
+      throw new KitchenPackError(
+        `Invalid recipe "${recipe.title}" (${recipe.id}): ${projected.differences.join("; ")}`,
+      );
+    }
+  }
+
+  return { pack: parsed.value, sizeBytes };
+}
+
+/**
+ * Validates and stores an owned pack for a kitchen, enforcing:
+ * - byte size <= 2 MB (2,097,152 bytes)
+ * - valid JSON, Pack Format v0 schema (`parsePack`), and library refs (`verifyPackRefs`)
+ * - non-reserved pack id and kind !== "household"
+ * - at most 20 owned packs per kitchen and unique pack id per kitchen
+ */
+export async function addKitchenPack(
+  input: AddKitchenPackInput,
+  database: PacksDb = db,
+): Promise<AddedKitchenPack> {
+  const normalizedSlug = input.kitchenSlug.trim();
+  if (!normalizedSlug) {
+    throw new KitchenPackError("Kitchen slug is required.");
+  }
+
+  const buffer = await readPackBuffer(input);
+  const { pack, sizeBytes } = await validateKitchenPackBytes(
+    buffer,
+    input.packsDir ?? DEFAULT_PACKS_DIR,
+  );
+
   return database.transaction(async (tx) => {
     const [kitchen] = await tx
       .select({ id: kitchens.id, slug: kitchens.slug, name: kitchens.name })
@@ -253,9 +296,9 @@ export async function addKitchenPack(
       .from(kitchenPacks)
       .where(eq(kitchenPacks.kitchenId, kitchen.id));
 
-    if (existing.some((row) => row.packId === parsed.value.id)) {
+    if (existing.some((row) => row.packId === pack.id)) {
       throw new KitchenPackError(
-        `Kitchen "${kitchen.slug}" already owns a pack with id "${parsed.value.id}".`,
+        `Kitchen "${kitchen.slug}" already owns a pack with id "${pack.id}".`,
       );
     }
 
@@ -269,8 +312,8 @@ export async function addKitchenPack(
       .insert(kitchenPacks)
       .values({
         kitchenId: kitchen.id,
-        packId: parsed.value.id,
-        packJson: parsed.value,
+        packId: pack.id,
+        packJson: pack,
         sizeBytes,
       })
       .returning();
@@ -281,7 +324,7 @@ export async function addKitchenPack(
       kitchenSlug: kitchen.slug,
       kitchenName: kitchen.name,
       packId: inserted!.packId,
-      title: parsed.value.title,
+      title: pack.title,
       sizeBytes: inserted!.sizeBytes,
       createdAt: inserted!.createdAt,
     };
@@ -577,4 +620,200 @@ export async function readVisibleKitchenPacks(
   }
 
   return records;
+}
+
+export interface UpsertKitchenPackResult {
+  id: string;
+  packId: string;
+  title: string;
+  recipes: number;
+  sizeBytes: number;
+  updated: boolean;
+}
+
+export interface OwnedKitchenPackSummary {
+  id: string;
+  packId: string;
+  title: string;
+  creator: string;
+  recipes: number;
+  sizeBytes: number;
+}
+
+/**
+ * Validates and saves (creates or updates in place) an owned collection for a
+ * kitchen. Updating an existing packId keeps its row UUID and circle shares.
+ */
+export async function upsertKitchenPackByKitchenId(
+  kitchenId: string,
+  input: { rawBytes: Buffer | string; packsDir?: string },
+  database: PacksDb = db,
+): Promise<UpsertKitchenPackResult> {
+  const { pack, sizeBytes } = await validateKitchenPackBytes(
+    input.rawBytes,
+    input.packsDir ?? DEFAULT_PACKS_DIR,
+  );
+
+  return database.transaction(async (tx) => {
+    const [kitchen] = await tx
+      .select({ id: kitchens.id, slug: kitchens.slug })
+      .from(kitchens)
+      .where(eq(kitchens.id, kitchenId))
+      .for("update")
+      .limit(1);
+
+    if (!kitchen) {
+      throw new KitchenPackError("Kitchen not found.");
+    }
+
+    const existing = await tx
+      .select({ id: kitchenPacks.id, packId: kitchenPacks.packId })
+      .from(kitchenPacks)
+      .where(eq(kitchenPacks.kitchenId, kitchenId));
+
+    const match = existing.find((row) => row.packId === pack.id);
+    if (match) {
+      await tx
+        .update(kitchenPacks)
+        .set({
+          packJson: pack,
+          sizeBytes,
+        })
+        .where(
+          and(
+            eq(kitchenPacks.id, match.id),
+            eq(kitchenPacks.kitchenId, kitchenId),
+          ),
+        );
+      return {
+        id: match.id,
+        packId: pack.id,
+        title: pack.title,
+        recipes: pack.recipes.length,
+        sizeBytes,
+        updated: true,
+      };
+    }
+
+    if (existing.length >= MAX_KITCHEN_PACKS_PER_KITCHEN) {
+      throw new KitchenPackError(
+        `Kitchen "${kitchen.slug}" already owns ${MAX_KITCHEN_PACKS_PER_KITCHEN} packs (maximum reached).`,
+      );
+    }
+
+    const [inserted] = await tx
+      .insert(kitchenPacks)
+      .values({
+        kitchenId,
+        packId: pack.id,
+        packJson: pack,
+        sizeBytes,
+      })
+      .returning();
+
+    return {
+      id: inserted!.id,
+      packId: inserted!.packId,
+      title: pack.title,
+      recipes: pack.recipes.length,
+      sizeBytes: inserted!.sizeBytes,
+      updated: false,
+    };
+  });
+}
+
+/**
+ * Reads one owned collection in full for editing by its kitchen owner.
+ */
+export async function getOwnedKitchenPackRaw(
+  kitchenId: string,
+  packId: string,
+  database: PacksDb = db,
+): Promise<{
+  id: string;
+  packId: string;
+  packJson: Pack;
+  sizeBytes: number;
+  createdAt: Date;
+} | null> {
+  const [row] = await database
+    .select({
+      id: kitchenPacks.id,
+      packId: kitchenPacks.packId,
+      packJson: kitchenPacks.packJson,
+      sizeBytes: kitchenPacks.sizeBytes,
+      createdAt: kitchenPacks.createdAt,
+    })
+    .from(kitchenPacks)
+    .where(
+      and(
+        eq(kitchenPacks.kitchenId, kitchenId),
+        eq(kitchenPacks.packId, packId),
+      ),
+    )
+    .limit(1);
+
+  if (!row) return null;
+  return {
+    id: row.id,
+    packId: row.packId,
+    packJson: row.packJson as Pack,
+    sizeBytes: row.sizeBytes,
+    createdAt: row.createdAt,
+  };
+}
+
+/**
+ * Lists summaries of collections owned by a single kitchen.
+ */
+export async function listOwnedKitchenPacksForKitchen(
+  kitchenId: string,
+  database: PacksDb = db,
+): Promise<OwnedKitchenPackSummary[]> {
+  const rows = await database
+    .select({
+      id: kitchenPacks.id,
+      packId: kitchenPacks.packId,
+      packJson: kitchenPacks.packJson,
+      sizeBytes: kitchenPacks.sizeBytes,
+    })
+    .from(kitchenPacks)
+    .where(eq(kitchenPacks.kitchenId, kitchenId))
+    .orderBy(asc(kitchenPacks.createdAt), asc(kitchenPacks.packId));
+
+  return rows.map((row) => {
+    const pack = row.packJson as Pack;
+    return {
+      id: row.id,
+      packId: row.packId,
+      title: pack.title,
+      creator: pack.creator.name,
+      recipes: pack.recipes.length,
+      sizeBytes: row.sizeBytes,
+    };
+  });
+}
+
+/**
+ * Removes an owned collection scoped to a single kitchen.
+ */
+export async function removeOwnedKitchenPack(
+  kitchenId: string,
+  packId: string,
+  database: PacksDb = db,
+): Promise<{ removed: boolean; packId: string }> {
+  const deleted = await database
+    .delete(kitchenPacks)
+    .where(
+      and(
+        eq(kitchenPacks.kitchenId, kitchenId),
+        eq(kitchenPacks.packId, packId),
+      ),
+    )
+    .returning({ id: kitchenPacks.id, packId: kitchenPacks.packId });
+
+  return {
+    removed: deleted.length > 0,
+    packId,
+  };
 }

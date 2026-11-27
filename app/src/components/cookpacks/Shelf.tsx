@@ -243,11 +243,14 @@ export function Shelf({
   view,
   onOpenSaved,
   oneRow = false,
+  addCollectionHref,
 }: {
   view: ShelfView;
   onOpenSaved: () => void;
   /** The idle home's shelf: one centred row of as many books as fit (F14). */
   oneRow?: boolean;
+  /** Owner-only link at the end of the Cookpacks shelf to build or upload a collection. */
+  addCollectionHref?: string;
 }) {
   const { household } = view;
   const showHousehold =
@@ -256,6 +259,7 @@ export function Shelf({
       household.missing > 0 ||
       household.syncedAt !== null ||
       (view.ideas !== null && view.ideas > 0));
+  const showAddCollection = Boolean(addCollectionHref) && !oneRow;
   const host = useRef<HTMLDivElement>(null);
   const row = useRef<HTMLDivElement>(null);
   const count = useOneRow(host, row, view.creators.length, oneRow, showHousehold);
@@ -281,6 +285,23 @@ export function Shelf({
           {creators.map((pack) => (
             <CreatorBook key={pack.id} pack={pack} />
           ))}
+          {showAddCollection && addCollectionHref && (
+            <Link
+              href={addCollectionHref}
+              data-add-collection
+              data-return-focus="add-collection"
+              className={`${BOOK_TAP} shrink-0`}
+            >
+              <span className="flex h-[calc(248*var(--cpx))] w-[calc(198*var(--cpx))] flex-col items-center justify-center rounded-[var(--radius-1)] border border-dashed border-ink/[.26] px-[var(--space-4)] text-center transition-colors duration-[320ms] ease-[var(--ease)] hover:border-ink/[.45]">
+                <span aria-hidden className="mb-[var(--space-2)] font-[family-name:var(--font-display)] text-[length:var(--type-chip)] leading-none text-ink-soft">
+                  +
+                </span>
+                <span className="text-[length:var(--type-meta)] leading-[1.3] font-semibold text-ink">
+                  {COOKPACKS_COPY.addCollection}
+                </span>
+              </span>
+            </Link>
+          )}
         </div>
 
         {/* Shelf board hairline */}
@@ -298,6 +319,11 @@ export function Shelf({
           {creators.map((pack) => (
             <CreatorLabel key={pack.id} pack={pack} />
           ))}
+          {showAddCollection && (
+            <div className="w-[calc(198*var(--cpx))] shrink-0">
+              <p className={`${LABEL} leading-[1.3]`}>Paste, photo, or chat app</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

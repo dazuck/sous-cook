@@ -235,4 +235,30 @@ describe("owned and shared packs on the shelf", () => {
       "Weeknight Suppers, Kitchen Owner, 3 recipes",
     );
   });
+
+  it("shows Add a collection at the end of the shelf when provided and never on oneRow Home", () => {
+    render(
+      <Shelf
+        view={VIEW}
+        onOpenSaved={vi.fn()}
+        addCollectionHref="/kitchen/cookpacks/new"
+      />,
+    );
+    const addLink = document.querySelector<HTMLAnchorElement>("[data-add-collection]");
+    expect(addLink).toBeTruthy();
+    expect(addLink?.getAttribute("href")).toBe("/kitchen/cookpacks/new");
+    expect(addLink?.textContent).toContain("Add a collection");
+    expect(document.querySelectorAll("[data-creator-book]")).toHaveLength(1);
+
+    cleanup();
+    render(
+      <Shelf
+        view={VIEW}
+        onOpenSaved={vi.fn()}
+        oneRow
+        addCollectionHref="/kitchen/cookpacks/new"
+      />,
+    );
+    expect(document.querySelector("[data-add-collection]")).toBeNull();
+  });
 });

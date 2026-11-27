@@ -31,7 +31,7 @@ vi.mock("@/lib/db", async () =>
 );
 
 import * as dbModule from "@/lib/db";
-import { aiUsage, db, kitchenQueue } from "@/lib/db";
+import { aiUsage, authUser, db, kitchenQueue, members } from "@/lib/db";
 import {
   callerFor,
   mintToken,
@@ -527,5 +527,85 @@ describe("ISO-PACK-4: collision precedence and single-kitchen mode", () => {
     });
     const homeItem = await homeCaller.getKitchenQueueItem({ queueId: homeQueued.id });
     expect(homeItem?.reading).toBe("native");
+  });
+});
+
+describe("ISO-PACK-5: owner-only collection authoring isolation and zero AI spend", () => {
+  it("allows owners to save, update in place, read raw, and remove collections without writing ai_usage; isolates kitchens and blocks cooks", async () => {
+    const info = await callerA.getCollectionAuthoringInfo();
+    expect(info.commons.some((c) => c.id.startsWith("commons:"))).toBe(true);
+    expect(info.states.some((s) => s.id.startsWith("state:"))).toBe(true);
+    expect(info.reservedPackIds).toContain("new");
+
+    const saved = await callerA.saveOwnedCollection({
+      packJsonText: JSON.stringify(makeOwnedPack("owner-book", "Owner Book v1")),
+    });
+    expect(saved.updated).toBe(false);
+    expect(saved.packId).toBe("owner-book");
+
+    // Kitchen B cannot read, update, or remove Kitchen A's collection
+    await expect(
+      callerB.getOwnedCollectionRaw({ packId: "owner-book" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      callerB.removeOwnedCollection({ packId: "owner-book" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    // Share A -> B, update in place, verify share remains intact
+    await shareKitchenPack(
+      { pack: "owner-book", kitchenSlug: "kitchen-a", withKitchenSlug: "kitchen-b" },
+      db,
+    );
+    const updated = await callerA.saveOwnedCollection({
+      packJsonText: JSON.stringify(makeOwnedPack("owner-book", "Owner Book v2")),
+    });
+    expect(updated.updated).toBe(true);
+    expect(updated.id).toBe(saved.id);
+
+    const raw = await callerA.getOwnedCollectionRaw({ packId: "owner-book" });
+    expect(raw.packJson.title).toBe("Owner Book v2");
+    expect((await callerB.getPack({ packId: "owner-book" }))?.title).toBe(
+      "Owner Book v2",
+    );
+
+    // Zero ai_usage rows created across all authoring operations
+    expect(await db.select().from(aiUsage)).toEqual([]);
+
+    // Non-owner cook in Kitchen A receives FORBIDDEN on all 4 procedures
+    const cookUserId = "user_cook_a_test";
+    await db.insert(authUser).values({
+      id: cookUserId,
+      name: "Cook A",
+      email: "cook-a@example.com",
+      emailVerified: true,
+    });
+    const [cookMember] = await db
+      .insert(members)
+      .values({
+        kitchenId: kitchenA.id,
+        userId: cookUserId,
+        role: "cook",
+      })
+      .returning();
+    const cookCaller = callerFor(kitchenA, cookMember!);
+    await expect(cookCaller.getCollectionAuthoringInfo()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(
+      cookCaller.getOwnedCollectionRaw({ packId: "owner-book" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      cookCaller.saveOwnedCollection({
+        packJsonText: JSON.stringify(makeOwnedPack("cook-attempt", "No")),
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      cookCaller.removeOwnedCollection({ packId: "owner-book" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    // Owner removes collection cleanly
+    const removed = await callerA.removeOwnedCollection({ packId: "owner-book" });
+    expect(removed).toEqual({ removed: true, packId: "owner-book" });
+    expect(await callerA.getPack({ packId: "owner-book" })).toBeNull();
   });
 });

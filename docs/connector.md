@@ -50,6 +50,8 @@ Example JSON configuration for clients that take a server URL and headers:
 | `get_kitchen_context` | Returns the kitchen's name and its "About my kitchen" household note from Settings. | None |
 | `read_cook_log` | Returns the kitchen's recent cook log entries, newest first. | `limit` (optional integer, 1 to 100, default 20) |
 | `queue_recipe` | Queues a recipe into the token's kitchen using the same validation as `POST /api/kitchen-queue`. | Either `{ "packId", "recipeId" }` (or `{ "pack": "<packId>/<recipeId>" }`) or `{ "recipeData": { "name", ... } }` |
+| `get_pack_authoring_guide` | Returns the Pack Format v0.7 specification, allowed `commons:`/`state:` reference ids, reserved pack ids, and owned collection count. | None |
+| `save_pack` | Creates or updates an owned recipe collection on the kitchen's shelf (validates schema, refs, and cook-mode compatibility). | `{ "pack": { "id", "title", "version", "creator", "recipes": [...] } }` |
 
 Notes on `queue_recipe`:
 

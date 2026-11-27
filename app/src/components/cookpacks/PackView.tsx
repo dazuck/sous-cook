@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { EDGE_X } from "@/components/kitchen/cook-edge";
 import { MENU_PANEL, useMenuDismiss } from "@/components/kitchen/CookMenu";
@@ -41,6 +42,12 @@ export interface CircleShareControl {
   onToggle: (kitchenId: string, shared: boolean) => void;
 }
 
+export interface CollectionOwnerActions {
+  editHref: string;
+  removing: boolean;
+  onRemove: () => void;
+}
+
 export interface PackViewProps {
   view: PackPageView;
   /** The household pack's Refresh; absent for a creator pack. */
@@ -56,6 +63,8 @@ export interface PackViewProps {
   onCopyShareLink?: (docRecipeId: string) => Promise<boolean> | boolean;
   /** Owner-only switches for sharing an owned pack with circle kitchens (sign-in mode). */
   circleSharing?: CircleShareControl;
+  /** Owner-only actions for updating or removing an owned collection. */
+  ownerActions?: CollectionOwnerActions;
   /** The chapter the URL names (`#baking`); the view opens there if it has it. */
   initialAnchor?: string | null;
   /** The URL follows the chapter a choice in the menu goes to. */
@@ -359,10 +368,16 @@ function chapterAt(scroller: HTMLElement, anchors: string[]): string | undefined
  * opens on a type-only title page. A search, or the "didn't come through"
  * filter, flattens the list, each row's fact leading with its chapter.
  */
-export function PackView({ view, refresh, sendingId, sendFailure, onPick, onTogglePrivate, onCopyShareLink, circleSharing, initialAnchor, onAnchor }: PackViewProps) {
+export function PackView({ view, refresh, sendingId, sendFailure, onPick, onTogglePrivate, onCopyShareLink, circleSharing, ownerActions, initialAnchor, onAnchor }: PackViewProps) {
   const portrait = usePortrait();
   const [query, setQuery] = useState("");
   const [onlyMissing, setOnlyMissing] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  useEffect(() => {
+    if (!confirmingRemove || ownerActions?.removing) return;
+    const timer = setTimeout(() => setConfirmingRemove(false), 5000);
+    return () => clearTimeout(timer);
+  }, [confirmingRemove, ownerActions?.removing]);
   const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
   const handleCopyShareLink = useCallback(
     (docRecipeId: string) => {
@@ -629,6 +644,40 @@ export function PackView({ view, refresh, sendingId, sendFailure, onPick, onTogg
             >
               {status.text}
             </p>
+          )}
+          {ownerActions && !flat && (
+            <div
+              data-pack-owner-actions
+              className="mt-[var(--space-2)] flex flex-wrap items-center gap-[var(--space-3)]"
+            >
+              <Link
+                href={ownerActions.editHref}
+                data-update-collection
+                className={`${ACTION} ${ACTION_AT_REST}`}
+              >
+                {COOKPACKS_COPY.updateCollection}
+              </Link>
+              <button
+                type="button"
+                data-remove-collection
+                disabled={ownerActions.removing}
+                onClick={() => {
+                  if (!confirmingRemove) {
+                    setConfirmingRemove(true);
+                    return;
+                  }
+                  setConfirmingRemove(false);
+                  ownerActions.onRemove();
+                }}
+                className={`${ACTION} ${confirmingRemove ? ACTION_IN_FORCE : ACTION_AT_REST}`}
+              >
+                {ownerActions.removing
+                  ? COOKPACKS_COPY.removingCollection
+                  : confirmingRemove
+                    ? COOKPACKS_COPY.confirmRemoveCollection
+                    : COOKPACKS_COPY.removeCollection}
+              </button>
+            </div>
           )}
           {circleSharing && circleSharing.kitchens.length > 0 && !flat && (
             <section

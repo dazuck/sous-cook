@@ -5,7 +5,16 @@ import { authenticateWebhookRequest } from "@/lib/kitchens/webhook-tokens";
 import { checkWebhookRateLimit } from "@/lib/kitchens/webhook-rate-limit";
 import { queueRecipeForKitchen } from "@/lib/kitchens/webhook-queue";
 import { buildPackDigest } from "@/lib/kitchens/pack-digest";
-import { loadAppPackFiles } from "@/lib/shelf/load";
+import {
+  KitchenPackError,
+  MAX_KITCHEN_PACKS_PER_KITCHEN,
+  RESERVED_PACK_IDS,
+  listOwnedKitchenPacksForKitchen,
+  upsertKitchenPackByKitchenId,
+} from "@/lib/kitchens/packs";
+import { formatAuthoringRulesText } from "@/lib/cookpacks/authoring";
+import { PACKS_DIR, loadAppPackFiles } from "@/lib/shelf/load";
+import { loadLibraries } from "@/lib/shelf/registry";
 
 /**
  * Matches `/api/kitchen-queue` so `queue_recipe` has time for background
@@ -120,6 +129,31 @@ const MCP_TOOLS: readonly McpToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {},
+    },
+  },
+  {
+    name: "get_pack_authoring_guide",
+    description:
+      "Return the exact Pack Format v0.7 specification, allowed technique/state ids, and reserved pack ids for building a collection to pass to save_pack.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "save_pack",
+    description:
+      "Create or update an owned recipe collection on this kitchen's shelf (validates Pack Format v0 schema, library refs, and cook-mode compatibility).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pack: {
+          type: "object",
+          description:
+            "Complete flat Pack Format v0 JSON object (see get_pack_authoring_guide).",
+        },
+      },
+      required: ["pack"],
     },
   },
 ];
@@ -396,6 +430,58 @@ async function handleToolCall(
       return mcpToolSuccess(id, {
         packs: buildPackDigest(files),
       });
+    }
+
+    case "get_pack_authoring_guide": {
+      const libraries = await loadLibraries(PACKS_DIR);
+      if (!libraries.ok) {
+        return mcpToolError(id, {
+          error: "Shared recipe libraries could not be read.",
+        });
+      }
+      const owned = await listOwnedKitchenPacksForKitchen(kitchenId);
+      const commons = libraries.libraries.commons.map((c) => ({
+        id: c.id,
+        name: c.name,
+        description: c.description,
+      }));
+      const states = libraries.libraries.states.map((s) => ({
+        id: s.id,
+        name: s.name,
+        sensory_notes: s.sensory_notes,
+      }));
+      return mcpToolSuccess(id, {
+        rules: formatAuthoringRulesText({ commons, states }),
+        commons,
+        states,
+        reservedPackIds: [...RESERVED_PACK_IDS],
+        ownedCollectionsCount: owned.length,
+        maxCollections: MAX_KITCHEN_PACKS_PER_KITCHEN,
+      });
+    }
+
+    case "save_pack": {
+      if (!isPlainObject(args.pack)) {
+        return mcpToolError(id, {
+          error: "invalid_pack",
+          message: "pack must be a JSON object matching Pack Format v0.",
+        });
+      }
+      try {
+        const saved = await upsertKitchenPackByKitchenId(kitchenId, {
+          rawBytes: JSON.stringify(args.pack),
+          packsDir: PACKS_DIR,
+        });
+        return mcpToolSuccess(id, { ok: true, ...saved });
+      } catch (err) {
+        if (err instanceof KitchenPackError) {
+          return mcpToolError(id, {
+            error: "invalid_pack",
+            message: err.message,
+          });
+        }
+        throw err;
+      }
     }
 
     default:

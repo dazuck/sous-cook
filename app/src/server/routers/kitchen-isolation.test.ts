@@ -1620,7 +1620,7 @@ describe("ISO-37: clearShoppingList", () => {
 });
 
 describe("STRUCT-1: router procedure inventory", () => {
-  it("exposes exactly the 55 documented procedures", () => {
+  it("exposes exactly the 59 documented procedures", () => {
     const expected = [
       "health",
       "chatCooking",
@@ -1677,8 +1677,12 @@ describe("STRUCT-1: router procedure inventory", () => {
       "queueSharedRecipe",
       "getPackCircleShares",
       "setPackCircleShare",
+      "getCollectionAuthoringInfo",
+      "getOwnedCollectionRaw",
+      "saveOwnedCollection",
+      "removeOwnedCollection",
     ];
-    expect(expected).toHaveLength(55);
+    expect(expected).toHaveLength(59);
     expect(Object.keys(appRouter._def.procedures).sort()).toEqual(
       [...expected].sort(),
     );
@@ -1743,7 +1747,7 @@ describe("STRUCT-2 (SLUG-1): router input schemas never accept kitchen, member, 
 describe("AUTH-1: every procedure except health requires a session and kitchen membership", () => {
   const SAMPLE_UUID = "00000000-0000-4000-8000-000000000001";
 
-  it("answers UNAUTHORIZED for all 54 non-health procedures when called without a session", async () => {
+  it("answers UNAUTHORIZED for all 58 non-health procedures when called without a session", async () => {
     const anon = await unauthenticatedSignInCaller();
 
     const calls: Record<string, () => Promise<unknown>> = {
@@ -1856,6 +1860,13 @@ describe("AUTH-1: every procedure except health requires a session and kitchen m
           targetKitchenId: SAMPLE_UUID,
           shared: true,
         }),
+      getCollectionAuthoringInfo: () => anon.getCollectionAuthoringInfo(),
+      getOwnedCollectionRaw: () =>
+        anon.getOwnedCollectionRaw({ packId: "my-pack" }),
+      saveOwnedCollection: () =>
+        anon.saveOwnedCollection({ packJsonText: "{}" }),
+      removeOwnedCollection: () =>
+        anon.removeOwnedCollection({ packId: "my-pack" }),
     };
 
     const nonHealthProcedures = Object.keys(appRouter._def.procedures)

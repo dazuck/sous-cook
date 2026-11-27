@@ -6,6 +6,8 @@ Send a recipe to a Sous kitchen queue using `skills/sous-kitchen/send-recipe.mjs
 
 Use this skill when a cook gives you a recipe (pasted text, notes, a link they already shared, or a dish from a bundled pack) and asks you to send or queue it into their Sous kitchen.
 
+When using Sous over the `/api/mcp` connector and a cook asks to create or update a recipe collection (cookpack) on their shelf rather than queueing a single dish, call `get_pack_authoring_guide` first for the exact Pack Format v0.7 rules and allowed `commons:`/`state:` reference ids, then submit the flat pack object via `save_pack`. If `save_pack` reports validation errors, fix the named fields and re-submit.
+
 ## Environment requirements
 
 `send-recipe.mjs` reads two environment variables:

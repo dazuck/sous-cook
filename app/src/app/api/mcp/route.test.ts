@@ -301,6 +301,8 @@ describe("MCP protocol and auth", () => {
       "read_cook_log",
       "get_kitchen_context",
       "list_shelf",
+      "get_pack_authoring_guide",
+      "save_pack",
     ]);
 
     const unknownMethod = await mcpPost(mcpRpc("resources/list", {}, tokenA, 3));
@@ -690,6 +692,93 @@ describe("MCP tools read_cook_log, get_kitchen_context, and list_shelf isolation
     expect(idsB).toContain("beta-private");
     expect(idsB).toContain("beta-shared");
     expect(idsB).not.toContain("alpha-private");
+  });
+
+  it("get_pack_authoring_guide returns Pack Format v0.7 rules and save_pack creates, updates, and rejects invalid packs per kitchen", async () => {
+    const guideRes = await mcpPost(
+      mcpRpc("tools/call", { name: "get_pack_authoring_guide", arguments: {} }, tokenA, 60),
+    );
+    expect(guideRes.status).toBe(200);
+    const guideBody = await guideRes.json();
+    expect(guideBody.result.isError).toBeUndefined();
+    const guide = parseMcpTextJson<{
+      rules: string;
+      commons: Array<{ id: string }>;
+      states: Array<{ id: string }>;
+      reservedPackIds: string[];
+    }>(guideBody);
+    expect(guide.rules).toContain("PACK FORMAT v0.7 RULES");
+    expect(guide.commons.some((c) => c.id.startsWith("commons:"))).toBe(true);
+    expect(guide.states.some((s) => s.id.startsWith("state:"))).toBe(true);
+    expect(guide.reservedPackIds).toContain("new");
+
+    // Invalid pack returns structured error
+    const badRes = await mcpPost(
+      mcpRpc(
+        "tools/call",
+        {
+          name: "save_pack",
+          arguments: { pack: { id: "new", title: "Bad" } },
+        },
+        tokenA,
+        61,
+      ),
+    );
+    const badBody = await badRes.json();
+    expect(badBody.result.isError).toBe(true);
+    expect(parseMcpTextJson<{ error: string }>(badBody).error).toBe("invalid_pack");
+
+    // Save valid pack for kitchen A
+    const createRes = await mcpPost(
+      mcpRpc(
+        "tools/call",
+        {
+          name: "save_pack",
+          arguments: { pack: makeOwnedPack("mcp-tacos", "Taco Night", "t1", "Bean Tacos") },
+        },
+        tokenA,
+        62,
+      ),
+    );
+    const created = parseMcpTextJson<{ ok: boolean; updated: boolean; packId: string }>(
+      await createRes.json(),
+    );
+    expect(created).toMatchObject({ ok: true, updated: false, packId: "mcp-tacos" });
+
+    // Share with B, then update via save_pack and ensure share persists while B's own shelf is separate
+    await shareKitchenPack(
+      { pack: "mcp-tacos", kitchenSlug: "kitchen-a", withKitchenSlug: "kitchen-b" },
+      db,
+    );
+    const updateRes = await mcpPost(
+      mcpRpc(
+        "tools/call",
+        {
+          name: "save_pack",
+          arguments: { pack: makeOwnedPack("mcp-tacos", "Taco Night Rev 2", "t1", "Bean Tacos") },
+        },
+        tokenA,
+        63,
+      ),
+    );
+    const updated = parseMcpTextJson<{ ok: boolean; updated: boolean; title: string }>(
+      await updateRes.json(),
+    );
+    expect(updated).toMatchObject({
+      ok: true,
+      updated: true,
+      title: "Taco Night Rev 2",
+    });
+
+    const shelfBRes = await mcpPost(
+      mcpRpc("tools/call", { name: "list_shelf", arguments: {} }, tokenB, 64),
+    );
+    const shelfB = parseMcpTextJson<{
+      packs: Array<{ id: string; title: string }>;
+    }>(await shelfBRes.json());
+    expect(shelfB.packs.find((p) => p.id === "mcp-tacos")?.title).toBe(
+      "Taco Night Rev 2",
+    );
   });
 });
 

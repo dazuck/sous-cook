@@ -34,6 +34,7 @@ const nextConfig: NextConfig = {
     "/api/trpc/[trpc]": ["../packs/**/*.json", "./pack-plans/**/*.json"],
     "/api/packs": ["../packs/**/*.json"],
     "/api/kitchen-queue": ["../packs/**/*.json", "./pack-plans/**/*.json"],
+    "/api/mcp": ["../packs/**/*.json", "./pack-plans/**/*.json"],
   },
   generateBuildId: () => buildId,
   env: { SOUS_BUILD_ID: buildId, SOUS_SUE_CLIPS: sueClips },

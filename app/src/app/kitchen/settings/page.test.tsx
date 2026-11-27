@@ -34,6 +34,7 @@ vi.mock("@/lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
       getKitchenSettings: { invalidate: vi.fn() },
+      getCollectionAuthoringInfo: { invalidate: vi.fn() },
       listKitchenWebhookTokens: {
         invalidate: () => {
           rerenderTrigger?.();
@@ -41,6 +42,18 @@ vi.mock("@/lib/trpc", () => ({
         },
       },
     }),
+    getCollectionAuthoringInfo: {
+      useQuery: () => ({
+        data: {
+          commons: [],
+          states: [],
+          reservedPackIds: ["household-book", "fannie-farmer-1896", "new"],
+          ownedCollections: [],
+          maxCollections: 20,
+        },
+        error: null,
+      }),
+    },
     getKitchenSettings: {
       useQuery: () => ({
         data: {
@@ -164,16 +177,18 @@ describe("KitchenSettingsPage owner webhook token UI", () => {
 
     expect(screen.getByLabelText("About my kitchen")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Sending tokens" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Collections" })).toBeTruthy();
     expect(state.listCalls).toBe(0);
   });
 
-  it("hides sending tokens and does not query tokens for a cook in sign-in mode", () => {
+  it("hides sending tokens and collections and does not query tokens for a cook in sign-in mode", () => {
     state.memberRole = "cook";
     setSignInCookie(true);
     renderSettings();
 
     expect(screen.getByLabelText("About my kitchen")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Sending tokens" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Collections" })).toBeNull();
     expect(state.listCalls).toBe(0);
   });
 

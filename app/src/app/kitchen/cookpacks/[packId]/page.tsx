@@ -134,6 +134,22 @@ export default function PackPage({ params }: PageProps) {
     },
   });
 
+  const removeCollection = trpc.removeOwnedCollection.useMutation({
+    onSuccess: () => {
+      setActionError(null);
+      void utils.getShelf.invalidate();
+      void utils.getCollectionAuthoringInfo.invalidate();
+      router.push("/kitchen/cookpacks");
+    },
+    onError: (err) => {
+      setActionError(err.message || "Could not remove this collection.");
+    },
+  });
+
+  const canManageOwnedCollection =
+    Boolean(view?.isOwned) &&
+    (!signInMode || settings.data?.memberRole === "owner");
+
   const onPick = (recipeId: string) => {
     if (starting.current) return;
     starting.current = true;
@@ -203,6 +219,15 @@ export default function PackPage({ params }: PageProps) {
                     pending: setCircleShare.isPending,
                     onToggle: (targetKitchenId, shared) =>
                       setCircleShare.mutate({ packId, targetKitchenId, shared }),
+                  }
+                : undefined
+            }
+            ownerActions={
+              canManageOwnedCollection
+                ? {
+                    editHref: `/kitchen/cookpacks/new?edit=${encodeURIComponent(packId)}`,
+                    removing: removeCollection.isPending,
+                    onRemove: () => removeCollection.mutate({ packId }),
                   }
                 : undefined
             }

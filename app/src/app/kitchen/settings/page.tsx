@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useId, useState } from "react";
 import { BorrowedPage } from "@/components/kitchen/BorrowedPage";
 import { EDGE_X } from "@/components/kitchen/cook-edge";
@@ -276,10 +277,82 @@ function SendingTokensSection() {
   );
 }
 
+function CollectionsSection() {
+  const authoring = trpc.getCollectionAuthoringInfo.useQuery();
+  const owned = authoring.data?.ownedCollections ?? [];
+
+  return (
+    <section
+      aria-labelledby="collections-heading"
+      className="mt-[var(--space-8)] border-t border-ink/[.11] pt-[var(--space-6)]"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-[var(--space-3)]">
+        <h2
+          id="collections-heading"
+          className="font-[family-name:var(--font-display)] text-[length:var(--type-chip)] leading-tight font-normal text-ink [font-synthesis:none]"
+        >
+          Collections
+        </h2>
+        <Link
+          href="/kitchen/cookpacks/new"
+          data-settings-add-collection
+          className={`${ACTION} ${ACTION_AT_REST}`}
+        >
+          Add a collection
+        </Link>
+      </div>
+      <p className={`mt-[var(--space-2)] ${LABEL} leading-[1.35]`}>
+        Turn your own recipes into cookpacks with your own model key, local Ollama, or chat app.
+      </p>
+
+      <div className="mt-[var(--space-4)]">
+        {authoring.error ? (
+          <p role="status" className={LABEL}>
+            Could not load collections just now.
+          </p>
+        ) : !authoring.data ? (
+          <p role="status" className={LABEL}>
+            Loading collections…
+          </p>
+        ) : owned.length === 0 ? (
+          <p className={LABEL}>No custom collections yet.</p>
+        ) : (
+          <ul aria-label="Owned collections">
+            {owned.map((c) => (
+              <li
+                key={c.packId}
+                className="flex flex-wrap items-center justify-between gap-[var(--space-3)] border-t border-ink/[.11] py-[var(--space-4)]"
+              >
+                <div>
+                  <Link
+                    href={`/kitchen/cookpacks/${encodeURIComponent(c.packId)}`}
+                    className="text-[length:var(--type-meta)] font-semibold text-ink underline decoration-ink/[.25] underline-offset-4"
+                  >
+                    {c.title}
+                  </Link>
+                  <p className={`mt-[var(--space-1)] ${LABEL}`}>
+                    {c.creator} · {c.recipes} {c.recipes === 1 ? "recipe" : "recipes"}
+                  </p>
+                </div>
+                <Link
+                  href={`/kitchen/cookpacks/new?edit=${encodeURIComponent(c.packId)}`}
+                  className={`${ACTION} ${ACTION_AT_REST}`}
+                >
+                  Update
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
 /**
  * Kitchen settings page (`/kitchen/settings`), reached from the home rail's
- * names panel. Holds the per-kitchen "About my kitchen" text sent to Ask Sous
- * and, for kitchen owners in sign-in mode, webhook sending tokens.
+ * names panel. Holds the per-kitchen "About my kitchen" text sent to Ask Sous,
+ * kitchen collections, and, for kitchen owners in sign-in mode, webhook tokens.
  */
 export default function KitchenSettingsPage() {
   const fieldId = useId();
@@ -308,6 +381,8 @@ export default function KitchenSettingsPage() {
   const overLimit = charCount > ABOUT_LIMIT;
   const canManageTokens =
     signInMode && settings.data?.memberRole === "owner";
+  const canManageCollections =
+    !signInMode || settings.data?.memberRole === "owner";
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -393,6 +468,7 @@ export default function KitchenSettingsPage() {
                   )}
                 </form>
 
+                {canManageCollections && <CollectionsSection />}
                 {canManageTokens && <SendingTokensSection />}
               </>
             )}

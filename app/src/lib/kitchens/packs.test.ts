@@ -17,11 +17,15 @@ import {
   MAX_KITCHEN_PACKS_PER_KITCHEN,
   MAX_KITCHEN_PACK_BYTES,
   addKitchenPack,
+  getOwnedKitchenPackRaw,
   listKitchenPacks,
+  listOwnedKitchenPacksForKitchen,
   readVisibleKitchenPacks,
   removeKitchenPack,
+  removeOwnedKitchenPack,
   shareKitchenPack,
   unshareKitchenPack,
+  upsertKitchenPackByKitchenId,
 } from "./packs";
 
 const client = (dbModule as unknown as { client: PGlite }).client;
@@ -400,5 +404,87 @@ describe("kitchen packs management", () => {
     expect(await readVisibleKitchenPacks(kitchenB.id, db)).toHaveLength(1);
     stubSignInEnv({ SOUS_SIGN_IN: "off" });
     expect(await readVisibleKitchenPacks(kitchenB.id, db)).toEqual([]);
+  });
+
+  it("upserts in place preserving row UUID and circle shares, blocks reserved 'new' and media refs, and enforces queue round-trip", async () => {
+    await expectPackError(
+      upsertKitchenPackByKitchenId(
+        kitchenA.id,
+        { rawBytes: JSON.stringify(validPackJson("new")) },
+        db,
+      ),
+      /reserved/,
+    );
+
+    await expectPackError(
+      upsertKitchenPackByKitchenId(
+        kitchenA.id,
+        {
+          rawBytes: JSON.stringify(
+            validPackJson("with-cover", { cover_ref: "/packs/media/x.jpg" }),
+          ),
+        },
+        db,
+      ),
+      /cover_ref or step media_ref/,
+    );
+
+    const blankStepPack = validPackJson("uncookable");
+    blankStepPack.recipes[0]!.steps[0]!.text = "   ";
+    await expectPackError(
+      upsertKitchenPackByKitchenId(
+        kitchenA.id,
+        { rawBytes: JSON.stringify(blankStepPack) },
+        db,
+      ),
+      /Invalid recipe/,
+    );
+
+    const created = await upsertKitchenPackByKitchenId(
+      kitchenA.id,
+      { rawBytes: JSON.stringify(validPackJson("weeknight-pot", { title: "First Edition" })) },
+      db,
+    );
+    expect(created.updated).toBe(false);
+    expect(created.title).toBe("First Edition");
+
+    await shareKitchenPack(
+      { pack: "weeknight-pot", kitchenSlug: "kitchen-a", withKitchenSlug: "kitchen-b" },
+      db,
+    );
+
+    const updated = await upsertKitchenPackByKitchenId(
+      kitchenA.id,
+      { rawBytes: JSON.stringify(validPackJson("weeknight-pot", { title: "Second Edition" })) },
+      db,
+    );
+    expect(updated.updated).toBe(true);
+    expect(updated.id).toBe(created.id);
+    expect(updated.title).toBe("Second Edition");
+
+    const listed = await listOwnedKitchenPacksForKitchen(kitchenA.id, db);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.title).toBe("Second Edition");
+
+    const raw = await getOwnedKitchenPackRaw(kitchenA.id, "weeknight-pot", db);
+    expect(raw?.packJson.title).toBe("Second Edition");
+    expect(await getOwnedKitchenPackRaw(kitchenB.id, "weeknight-pot", db)).toBeNull();
+
+    // Share survived the in-place update
+    const visibleB = await readVisibleKitchenPacks(kitchenB.id, db);
+    expect(visibleB).toHaveLength(1);
+    expect((visibleB[0]?.packJson as { title: string } | undefined)?.title).toBe(
+      "Second Edition",
+    );
+
+    // Cross-kitchen remove fails cleanly, owner remove succeeds
+    expect(await removeOwnedKitchenPack(kitchenB.id, "weeknight-pot", db)).toEqual({
+      removed: false,
+      packId: "weeknight-pot",
+    });
+    expect(await removeOwnedKitchenPack(kitchenA.id, "weeknight-pot", db)).toEqual({
+      removed: true,
+      packId: "weeknight-pot",
+    });
   });
 });

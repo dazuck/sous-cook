@@ -65,6 +65,13 @@ export const COOKPACKS_COPY = {
   /** The household pack when its library can't be read. */
   unreadableView: "Couldn't read your household book just now. Try again in a minute.",
 
+  // --- Adding, updating, and removing kitchen collections ---
+  addCollection: "Add a collection",
+  updateCollection: "Update collection",
+  removeCollection: "Remove from shelf",
+  confirmRemoveCollection: "Tap again to remove",
+  removingCollection: "Removing…",
+
   // --- Refresh's one status line (S-D13) ---
   refreshRunning:
     "Reading your recipe library. It takes a minute or two; the recipes below stay as they are until it's done.",
