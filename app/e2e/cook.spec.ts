@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { test, expect } from "./fixtures";
 import { parseCookPlan } from "../src/lib/kitchen/cook-plan";
 import { liveNowLine } from "./cook-helpers";
@@ -520,8 +519,7 @@ test.describe("Cook mode", () => {
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    const dir = dirname(fileURLToPath(import.meta.url));
-    const fixturesDir = join(dir, "../src/lib/kitchen/__tests__/fixtures/cook-plan");
+    const fixturesDir = join(__dirname, "../src/lib/kitchen/__tests__/fixtures/cook-plan");
     const rawFixture = JSON.parse(readFileSync(join(fixturesDir, "chewy-oat-cookies.json"), "utf8")) as {
       recipe: { ingredients: Array<{ item: string; amount?: string; unit?: string }>; steps: string[] };
     };
