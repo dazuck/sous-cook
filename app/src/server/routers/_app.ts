@@ -83,9 +83,12 @@ import {
 } from "../../lib/kitchen-cook-log";
 import {
   CircleNotAvailableError,
+  KitchenCircleError,
   PackCircleShareError,
   getCircleDishesForKitchen,
+  getCircleOverviewForKitchen,
   getPackCircleSharesForOwner,
+  leaveCircleForOwner,
   resolveAccessibleCircleDish,
   resolveSharedRecipe,
   setPackCircleShareForOwner,
@@ -1508,6 +1511,30 @@ export const appRouter = router({
   getCircleDishes: kitchenProcedure.query(async ({ ctx }) => {
     if (ctx.mode !== "sign-in") return [];
     return getCircleDishesForKitchen(ctx.kitchen.id, ctx.db);
+  }),
+
+  getCircleOverview: kitchenProcedure.query(async ({ ctx }) => {
+    if (ctx.mode !== "sign-in") {
+      return { inCircle: false, circleName: null, members: [] };
+    }
+    return getCircleOverviewForKitchen(ctx.kitchen.id, ctx.db);
+  }),
+
+  leaveCircle: kitchenProcedure.mutation(async ({ ctx }) => {
+    if (ctx.mode !== "sign-in" || ctx.member?.role !== "owner") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Only a kitchen owner can leave a circle.",
+      });
+    }
+    try {
+      return await leaveCircleForOwner(ctx.kitchen.slug, ctx.db);
+    } catch (err) {
+      if (err instanceof KitchenCircleError) {
+        throw new TRPCError({ code: "NOT_FOUND", message: err.message });
+      }
+      throw err;
+    }
   }),
 
   getCircleDish: kitchenProcedure

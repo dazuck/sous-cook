@@ -16,6 +16,8 @@ export const ASK_COPY = {
   privateNote: "Private note",
   holdBack: "Hold back",
   showToFriends: "Show to friends",
+  circleShown: "Shared with your circle without your rating.",
+  circleHeldBack: "Held back from your circle.",
   notNow: "Not now",
   notLogged: "Not in the cook log yet.",
   stillNotLogged: "Still not in the cook log.",
@@ -247,6 +249,11 @@ function AskLine({ ask, onRate, onRetry, onDismiss, onToggleHeldBack }: CookAskL
           </button>
         </div>
       </div>
+      {rateable && onToggleHeldBack && ask.heldBack !== undefined && (
+        <p data-ask-circle-visibility className={`mt-[calc(4*var(--cpx))] ${LABEL}`}>
+          {heldBack ? ASK_COPY.circleHeldBack : ASK_COPY.circleShown}
+        </p>
+      )}
       {rateable && note !== null && (
         <div>
           <input

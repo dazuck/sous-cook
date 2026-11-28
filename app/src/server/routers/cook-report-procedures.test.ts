@@ -108,12 +108,13 @@ describe("submitCookReport", () => {
     expect(JSON.stringify(vi.mocked(storeCookReport).mock.calls[0]?.[1])).not.toContain("secret");
   });
 
-  it("takes the deploy check's screen, and refuses a screen it doesn't know", async () => {
+  it("takes page screens and the deploy check's screen, and refuses a screen it doesn't know", async () => {
+    await caller.submitCookReport({ ...report(), screen: "kitchen" } as never);
     await caller.submitCookReport({ ...report(), screen: "deploy-check" } as never);
-    expect(storeCookReport).toHaveBeenCalledTimes(1);
-    expect(await codeOf(caller.submitCookReport({ ...report(), screen: "home" } as never))).toBe(
-      "BAD_REQUEST",
-    );
+    expect(storeCookReport).toHaveBeenCalledTimes(2);
+    expect(
+      await codeOf(caller.submitCookReport({ ...report(), screen: "unknown-screen" } as never)),
+    ).toBe("BAD_REQUEST");
   });
 
   it("refuses an id that is not a uuid", async () => {

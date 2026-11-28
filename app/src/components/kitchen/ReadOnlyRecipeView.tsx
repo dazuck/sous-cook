@@ -1,6 +1,7 @@
 "use client";
 
 import type { KitchenQueueRecipeData } from "../../../drizzle/schema";
+import { formatCircleDay } from "@/lib/kitchen/circle-format";
 import { EDGE_X } from "./cook-edge";
 import { FOOT_FILL, FOOT_FILL_WAITS } from "./control-style";
 import { LABEL } from "./KitchenHome";
@@ -9,7 +10,6 @@ interface ReadOnlyRecipeViewProps {
   title: string;
   kitchenName: string;
   cookedDay?: string;
-  rating?: number | null;
   note?: string | null;
   recipe: KitchenQueueRecipeData;
   queuing: boolean;
@@ -46,7 +46,6 @@ export function ReadOnlyRecipeView({
   title,
   kitchenName,
   cookedDay,
-  rating,
   note,
   recipe,
   queuing,
@@ -58,8 +57,7 @@ export function ReadOnlyRecipeView({
   const steps = recipe.steps ?? [];
 
   const metaParts: string[] = [`From ${kitchenName}`];
-  if (cookedDay) metaParts.push(cookedDay);
-  if (rating !== undefined && rating !== null) metaParts.push(`${rating} of 5`);
+  if (cookedDay) metaParts.push(formatCircleDay(cookedDay));
 
   const detailParts: string[] = [];
   if (recipe.serves) detailParts.push(`Serves ${recipe.serves}`);
@@ -98,7 +96,7 @@ export function ReadOnlyRecipeView({
               queuing ? FOOT_FILL_WAITS : "bg-ember text-paper"
             }`}
           >
-            {queuing ? "Adding…" : "Add to my queue"}
+            {queuing ? "Adding…" : "Add to Up next"}
           </button>
           {queueError && (
             <p role="status" className="text-[length:var(--type-meta)] font-medium text-ink">

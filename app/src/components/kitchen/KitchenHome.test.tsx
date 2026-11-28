@@ -428,57 +428,105 @@ describe("reads that haven't answered (item 2)", () => {
 });
 
 describe("circle dishes on home", () => {
-  it("renders one quiet line per circle kitchen, linking only openable dishes and omitting nothing when empty", () => {
+  it("renders up to three quiet rows when idle or queued, never shows ratings, and links to Friends' kitchens", () => {
     home({ circleDishes: [] });
     expect(document.querySelector("[data-circle-dishes]")).toBeNull();
     cleanup();
 
-    home({
-      circleDishes: [
-        {
-          logId: "log-open",
-          recipeTitle: "Lemon Pasta",
-          kitchenName: "Maple Kitchen",
-          cookedDay: "2026-11-24",
-          rating: 5,
-          note: "Extra zest",
-          canOpenRecipe: true,
-          packBlocked: false,
-        },
-        {
-          logId: "log-private",
-          recipeTitle: "Family Broth",
-          kitchenName: "Cedar Kitchen",
-          cookedDay: "2026-11-23",
-          rating: 4,
-          note: null,
-          canOpenRecipe: false,
-          packBlocked: false,
-        },
-        {
-          logId: "log-pack-blocked",
-          recipeTitle: "Hidden Pack Stew",
-          kitchenName: "Birch Kitchen",
-          cookedDay: "2026-11-22",
-          rating: null,
-          note: null,
-          canOpenRecipe: false,
-          packBlocked: true,
-        },
-      ],
-    });
+    const today = new Date().toISOString().slice(0, 10);
+    const dishes = [
+      {
+        logId: "log-open",
+        recipeTitle: "Lemon Pasta",
+        kitchenName: "Maple Kitchen",
+        cookedDay: today,
+        note: "Extra zest",
+        canOpenRecipe: true,
+        packBlocked: false,
+      },
+      {
+        logId: "log-private",
+        recipeTitle: "Family Broth",
+        kitchenName: "Cedar Kitchen",
+        cookedDay: "2026-11-23",
+        note: null,
+        canOpenRecipe: false,
+        packBlocked: false,
+      },
+      {
+        logId: "log-pack-blocked",
+        recipeTitle: "Hidden Pack Stew",
+        kitchenName: "Birch Kitchen",
+        cookedDay: "2026-11-22",
+        note: null,
+        canOpenRecipe: false,
+        packBlocked: true,
+      },
+      {
+        logId: "log-fourth",
+        recipeTitle: "Fourth Dish",
+        kitchenName: "Oak Kitchen",
+        cookedDay: "2026-11-21",
+        note: null,
+        canOpenRecipe: true,
+        packBlocked: false,
+      },
+    ];
+
+    home({ circleDishes: dishes, inCircle: true });
 
     const section = document.querySelector("[data-circle-dishes]")!;
     expect(section).toBeTruthy();
+    const headerLink = within(section as HTMLElement).getByRole("link", { name: "Friends' kitchens" });
+    expect(headerLink.getAttribute("href")).toBe("/kitchen/circle");
+    const seeAllLink = within(section as HTMLElement).getByRole("link", { name: "See all (4)" });
+    expect(seeAllLink.getAttribute("href")).toBe("/kitchen/circle");
+
     const openLink = within(section as HTMLElement).getByRole("link", { name: "Lemon Pasta" });
     expect(openLink.getAttribute("href")).toBe("/kitchen/circle/dish/log-open");
     expect(section.textContent).toContain("Maple Kitchen");
-    expect(section.textContent).toContain("5 of 5");
+    expect(section.textContent).toContain("today");
+    expect(section.textContent).not.toContain("of 5");
     expect(section.textContent).toContain("Extra zest");
 
     expect(within(section as HTMLElement).queryByRole("link", { name: "Family Broth" })).toBeNull();
     expect(section.textContent).toContain("Family Broth");
     expect(within(section as HTMLElement).queryByRole("link", { name: "Hidden Pack Stew" })).toBeNull();
     expect(section.textContent).toContain("Hidden Pack Stew");
+    expect(section.textContent).not.toContain("Fourth Dish");
+    cleanup();
+
+    // Hidden when actively cooking or when How was it? is asking
+    home({
+      circleDishes: dishes,
+      cooking: [{ id: "c1", recipeData: { name: "Roast Chicken", steps: ["Roast."] } } as never],
+    });
+    expect(document.querySelector("[data-circle-dishes]")).toBeNull();
+    cleanup();
+
+    home({
+      circleDishes: dishes,
+      ask: <div data-testid="mock-ask">How was it?</div>,
+    });
+    expect(document.querySelector("[data-circle-dishes]")).toBeNull();
+  });
+
+  it("renders firstRunPrompt only when idle or queued, never while cooking or asking", () => {
+    home({ firstRunPrompt: <div data-testid="about-card">About card</div> });
+    expect(screen.getByTestId("about-card")).toBeTruthy();
+    cleanup();
+
+    home({
+      firstRunPrompt: <div data-testid="about-card">About card</div>,
+      cooking: [{ id: "c1", recipeData: { name: "Roast Chicken", steps: ["Roast."] } } as never],
+    });
+    expect(screen.queryByTestId("about-card")).toBeNull();
+    cleanup();
+
+    home({
+      firstRunPrompt: <div data-testid="about-card">About card</div>,
+      ask: <div data-testid="mock-ask">How was it?</div>,
+    });
+    expect(screen.queryByTestId("about-card")).toBeNull();
   });
 });

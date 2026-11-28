@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useId, useState } from "react";
 import { BorrowedPage } from "@/components/kitchen/BorrowedPage";
+import { FeedbackTrigger } from "@/components/kitchen/FeedbackDialog";
 import { EDGE_X } from "@/components/kitchen/cook-edge";
 import {
   ACTION,
@@ -349,6 +350,106 @@ function CollectionsSection() {
   );
 }
 
+function CircleSection({
+  circleName,
+  members,
+  isOwner,
+}: {
+  circleName: string | null;
+  members: Array<{ kitchenId: string; name: string; isSelf: boolean }>;
+  isOwner: boolean;
+}) {
+  const utils = trpc.useUtils();
+  const [confirming, setConfirming] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
+
+  const leave = trpc.leaveCircle.useMutation({
+    onSuccess: () => {
+      setConfirming(false);
+      setErrorText(null);
+      void utils.getCircleOverview.invalidate();
+      void utils.getCircleDishes.invalidate();
+    },
+    onError: (err) => {
+      setErrorText(err.message || "Could not leave the circle just now.");
+    },
+  });
+
+  return (
+    <section
+      data-circle-settings
+      aria-labelledby="circle-settings-heading"
+      className="mt-[var(--space-7)] border-t border-ink/[.11] pt-[var(--space-6)]"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-[var(--space-3)]">
+        <h2
+          id="circle-settings-heading"
+          className="font-[family-name:var(--font-display)] text-[length:var(--type-chip)] leading-tight font-normal text-ink [font-synthesis:none]"
+        >
+          Circle
+        </h2>
+        <Link href="/kitchen/circle" className={`${ACTION} ${ACTION_AT_REST}`}>
+          Friends&apos; kitchens
+        </Link>
+      </div>
+      <p className="mt-[var(--space-2)] text-[length:var(--type-meta)] font-medium text-ink">
+        {circleName ?? "Your circle"}
+      </p>
+      <p className={`mt-[var(--space-1)] ${LABEL} leading-[1.35]`}>
+        {members
+          .map((m) => (m.isSelf ? `${m.name} (this kitchen)` : m.name))
+          .join(" · ")}
+      </p>
+
+      {isOwner && (
+        <div className="mt-[var(--space-4)]">
+          {!confirming ? (
+            <button
+              type="button"
+              data-leave-circle
+              onClick={() => {
+                setConfirming(true);
+                setErrorText(null);
+              }}
+              className={`${ACTION} ${ACTION_AT_REST}`}
+            >
+              Leave circle
+            </button>
+          ) : (
+            <div className="flex flex-wrap items-center gap-[var(--space-3)]">
+              <p className={LABEL}>
+                Leave {circleName ?? "this circle"}? Friends in this circle will stop seeing your recent dishes.
+              </p>
+              <button
+                type="button"
+                data-confirm-leave-circle
+                disabled={leave.isPending}
+                onClick={() => leave.mutate()}
+                className={`${ACTION} ${ACTION_AT_REST}`}
+              >
+                {leave.isPending ? "Leaving…" : "Confirm leave"}
+              </button>
+              <button
+                type="button"
+                disabled={leave.isPending}
+                onClick={() => setConfirming(false)}
+                className={`${ACTION} ${ACTION_AT_REST}`}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          {errorText && (
+            <p role="status" className="mt-[var(--space-2)] text-[length:var(--type-meta)] font-medium text-ink">
+              {errorText}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /**
  * Kitchen settings page (`/kitchen/settings`), reached from the home rail's
  * names panel. Holds the per-kitchen "About my kitchen" text sent to Ask Sous,
@@ -374,6 +475,9 @@ export default function KitchenSettingsPage() {
       setStatusText(err.message || "Could not save settings.");
       setIsError(true);
     },
+  });
+  const circleOverview = trpc.getCircleOverview.useQuery(undefined, {
+    enabled: signInMode,
   });
 
   const about = draft ?? settings.data?.about ?? "";
@@ -410,7 +514,7 @@ export default function KitchenSettingsPage() {
               </p>
             ) : (
               <>
-                <form onSubmit={onSubmit} className="flex flex-col gap-[var(--space-4)]">
+                <form id="about" onSubmit={onSubmit} className="flex flex-col gap-[var(--space-4)]">
                   <div>
                     <label
                       htmlFor={fieldId}
@@ -468,8 +572,33 @@ export default function KitchenSettingsPage() {
                   )}
                 </form>
 
+                {signInMode && circleOverview.data?.inCircle && (
+                  <CircleSection
+                    circleName={circleOverview.data.circleName}
+                    members={circleOverview.data.members}
+                    isOwner={settings.data?.memberRole === "owner"}
+                  />
+                )}
                 {canManageCollections && <CollectionsSection />}
                 {canManageTokens && <SendingTokensSection />}
+                <section
+                  data-settings-feedback
+                  aria-labelledby="settings-feedback-heading"
+                  className="mt-[var(--space-7)] border-t border-ink/[.11] pt-[var(--space-6)]"
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-[var(--space-3)]">
+                    <h2
+                      id="settings-feedback-heading"
+                      className="font-[family-name:var(--font-display)] text-[length:var(--type-chip)] leading-tight font-normal text-ink [font-synthesis:none]"
+                    >
+                      Feedback
+                    </h2>
+                    <FeedbackTrigger screen="settings" label="Send feedback" />
+                  </div>
+                  <p className={`mt-[var(--space-2)] ${LABEL} leading-[1.35]`}>
+                    Let us know if something felt off or didn&apos;t work as expected.
+                  </p>
+                </section>
               </>
             )}
           </div>

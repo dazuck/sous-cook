@@ -4,6 +4,11 @@ import { useEffect, useRef, useState, Suspense } from "react";
 import { useOnline } from "@/hooks/useOnline";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LoadingScreen } from "@/components/kitchen/LoadingScreen";
+import { FeedbackDialog } from "@/components/kitchen/FeedbackDialog";
+import {
+  FirstRunAboutCard,
+  useAboutPromptDismissed,
+} from "@/components/kitchen/FirstRunAboutCard";
 import { FlaggedEntry } from "@/components/kitchen/ReportsPanel";
 import { KitchenHome, type KitchenItem } from "@/components/kitchen/KitchenHome";
 import {
@@ -69,6 +74,8 @@ function KitchenPageContent() {
   );
   const [isAddIngredientsModalOpen, setIsAddIngredientsModalOpen] = useState(false);
   const [isAskOpen, setIsAskOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [aboutPromptDismissed, dismissAboutPrompt] = useAboutPromptDismissed();
   // Cookpacks shelf data, for rendering directly on the home screen when idle
   const shelfQuery = trpc.getShelf.useQuery();
   const shelf = shelfQuery.data;
@@ -114,6 +121,13 @@ function KitchenPageContent() {
     enabled: signInMode,
     refetchInterval: 30_000,
   });
+  const circleOverviewQuery = trpc.getCircleOverview.useQuery(undefined, {
+    enabled: signInMode,
+    refetchInterval: 30_000,
+  });
+  const settingsQuery = trpc.getKitchenSettings.useQuery(undefined, {
+    enabled: signInMode,
+  });
   // Not now hides the line at once; a dismiss the server refused brings it back.
   const [dismissed, setDismissed] = useState<string | null>(null);
   const rateCook = trpc.rateCook.useMutation();
@@ -134,6 +148,7 @@ function KitchenPageContent() {
     refetchAsk();
     if (signInMode) {
       void utils.getCircleDishes.invalidate();
+      void utils.getCircleOverview.invalidate();
     }
   };
 
@@ -342,6 +357,16 @@ function KitchenPageContent() {
           )
         }
         circleDishes={signInMode ? (circleDishesQuery.data ?? []) : undefined}
+        inCircle={signInMode ? Boolean(circleOverviewQuery.data?.inCircle) : false}
+        firstRunPrompt={
+          signInMode &&
+          !aboutPromptDismissed &&
+          settingsQuery.data !== undefined &&
+          settingsQuery.data.about.trim() === "" ? (
+            <FirstRunAboutCard onDismiss={dismissAboutPrompt} />
+          ) : undefined
+        }
+        onOpenFeedback={() => setFeedbackOpen(true)}
         onStart={handleStartFromQueue}
         onRemove={handleRemoveFromQueue}
         onMarkDone={(queueId) =>
@@ -442,6 +467,12 @@ function KitchenPageContent() {
           onClose={() => setIsSavedOpen(false)}
         />
       )}
+
+      <FeedbackDialog
+        open={feedbackOpen}
+        screen="kitchen"
+        onClose={() => setFeedbackOpen(false)}
+      />
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
 import { markReturn, takeReturn } from "@/lib/kitchen/return-focus";
 import { KindLine } from "./BorrowedScreen";
+import { FeedbackTrigger } from "./FeedbackDialog";
+import { useSignInMode } from "./SignInMode";
 import { topLayer } from "./layers";
 
 interface BorrowedPageProps {
@@ -34,6 +36,7 @@ interface BorrowedPageProps {
  */
 export function BorrowedPage({ kind, back, returnKey, ready = true, children }: BorrowedPageProps) {
   const router = useRouter();
+  const signInMode = useSignInMode();
   const rootRef = useRef<HTMLDivElement>(null);
   const leave = useRef(() => {});
   useEffect(() => {
@@ -81,6 +84,7 @@ export function BorrowedPage({ kind, back, returnKey, ready = true, children }: 
             if (returnKey !== undefined) markReturn(returnKey);
           },
         }}
+        trailing={signInMode ? <FeedbackTrigger /> : undefined}
       />
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>
     </div>

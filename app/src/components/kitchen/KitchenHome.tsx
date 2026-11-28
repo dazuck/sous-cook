@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { takeReturn } from "@/lib/kitchen/return-focus";
+import { formatCircleDay } from "@/lib/kitchen/circle-format";
 import type { CircleDishSummary } from "@/lib/circle-dishes";
 import type { ShelfView } from "@/lib/shelf/view";
 import {
@@ -80,6 +81,9 @@ interface KitchenHomeProps {
   onTogglePrivate?: (id: string, isPrivate: boolean) => void;
   onCopyShareLink?: (id: string) => Promise<boolean> | boolean;
   circleDishes?: CircleDishSummary[];
+  inCircle?: boolean;
+  firstRunPrompt?: ReactNode;
+  onOpenFeedback?: () => void;
   onOpenImport: () => void;
   onOpenAddIngredients?: () => void;
   onOpenShoppingList?: () => void;
@@ -296,6 +300,9 @@ export function KitchenHome({
   onTogglePrivate,
   onCopyShareLink,
   circleDishes,
+  inCircle = false,
+  firstRunPrompt,
+  onOpenFeedback,
   onOpenImport,
   onOpenAddIngredients,
   onOpenShoppingList,
@@ -304,6 +311,11 @@ export function KitchenHome({
   const [queueOpen, setQueueOpen] = useState(false);
   const [lead, ...others] = cooking;
   const subject = subjectOf({ cooking: cooking.length, queued: queue.length, asking: Boolean(ask) });
+  const isHomeAtRest = subject === "idle" || subject === "queue";
+  const showCircleDishes =
+    isHomeAtRest && Boolean(circleDishes && circleDishes.length > 0);
+  const showFirstRunPrompt = isHomeAtRest && Boolean(firstRunPrompt);
+  const hasSecondaryBand = showCircleDishes || showFirstRunPrompt;
   const clock = useHouseholdClock();
   const { timers, expired, dismiss, soundLocked, allowSound } = useKitchenTimers();
   const now = useNow(timers.length > 0);
@@ -344,7 +356,7 @@ export function KitchenHome({
           className={`absolute inset-0 overflow-y-auto pr-[calc(96*var(--cpx))] pl-[var(--edge)]`}
         >
           {ready && (
-            <div className={`flex ${circleDishes && circleDishes.length > 0 ? "min-h-full py-[var(--space-5)]" : "h-full"} flex-col items-center justify-center`}>
+            <div className={`flex ${hasSecondaryBand ? "min-h-full py-[var(--space-5)]" : "h-full"} flex-col items-center justify-center`}>
               <div
                 data-subject
                 className={`${subject === "ask" ? "mt-[var(--space-6)] mb-auto" : "my-auto"} flex w-full max-w-[calc(880*var(--cpx))] shrink-0 flex-col items-center gap-y-[var(--space-3)]`}
@@ -544,14 +556,32 @@ export function KitchenHome({
                   </section>
                 )}
 
-                {circleDishes && circleDishes.length > 0 && (
+                {showFirstRunPrompt && firstRunPrompt}
+
+                {showCircleDishes && circleDishes && (
                   <section
                     data-circle-dishes
-                    aria-label="In your circle"
+                    aria-label="Friends' kitchens"
                     className="mt-[var(--space-4)] w-full max-w-[calc(760*var(--cpx))] border-t border-ink/[.11] pt-[var(--space-3)]"
                   >
+                    <div className="mb-[var(--space-2)] flex items-baseline justify-between gap-[var(--space-3)]">
+                      <Link
+                        href="/kitchen/circle"
+                        className={`text-[length:var(--type-meta)] font-medium text-ink-soft hover:text-ink ${FOCUS}`}
+                      >
+                        Friends&apos; kitchens
+                      </Link>
+                      {circleDishes.length > 3 && (
+                        <Link
+                          href="/kitchen/circle"
+                          className={`text-[length:var(--type-meta)] font-medium text-ink-soft ${WORD_TEXT} hover:text-ink ${FOCUS}`}
+                        >
+                          See all ({circleDishes.length})
+                        </Link>
+                      )}
+                    </div>
                     <ul className="flex flex-col gap-y-[calc(4*var(--cpx))]">
-                      {circleDishes.map((dish) => (
+                      {circleDishes.slice(0, 3).map((dish) => (
                         <li
                           key={dish.logId}
                           data-circle-dish={dish.logId}
@@ -568,8 +598,7 @@ export function KitchenHome({
                             <span className="font-medium text-ink">{dish.recipeTitle}</span>
                           )}
                           <span>{dish.kitchenName}</span>
-                          <span>{dish.cookedDay}</span>
-                          {dish.rating !== null && <span>{dish.rating} of 5</span>}
+                          <span>{formatCircleDay(dish.cookedDay)}</span>
                           {dish.note && (
                             <span className="max-w-[calc(340*var(--cpx))] truncate">{dish.note}</span>
                           )}
@@ -596,6 +625,8 @@ export function KitchenHome({
         onOpenShoppingList={onOpenShoppingList}
         onOpenSaved={onOpenSaved}
         onOpenAsk={onOpenAsk}
+        inCircle={inCircle}
+        onOpenFeedback={onOpenFeedback}
         addIngredientsLabel={KITCHEN_COPY.addIngredients}
         flagged={flagged}
       />

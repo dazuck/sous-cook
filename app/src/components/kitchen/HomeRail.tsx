@@ -22,6 +22,8 @@ interface HomeRailProps {
   onOpenShoppingList?: () => void;
   onOpenSaved?: () => void;
   onOpenAsk?: () => void;
+  inCircle?: boolean;
+  onOpenFeedback?: () => void;
   addIngredientsLabel: string;
   flagged?: ReactNode;
 }
@@ -68,6 +70,8 @@ export function HomeRail({
   onOpenShoppingList,
   onOpenSaved,
   onOpenAsk,
+  inCircle = false,
+  onOpenFeedback,
   addIngredientsLabel,
   flagged,
 }: HomeRailProps) {
@@ -313,6 +317,20 @@ export function HomeRail({
                 <span className="flex-1">Cook log</span>
                 <span className={ICON_CELL}>{draw("cookLog")}</span>
               </Link>
+
+              {inCircle && (
+                <Link href="/kitchen/circle" role="menuitem" onClick={() => setOpenState(false)} className={TAB_ROW}>
+                  <span className="flex-1">Friends&apos; kitchens</span>
+                  <span className={ICON_CELL}>{draw("circle")}</span>
+                </Link>
+              )}
+
+              {onOpenFeedback && (
+                <button type="button" role="menuitem" onClick={choose(onOpenFeedback)} className={TAB_ROW}>
+                  <span className="flex-1">Send feedback</span>
+                  <span className={ICON_CELL}>{draw("feedback")}</span>
+                </button>
+              )}
 
               <Link href="/kitchen/settings" role="menuitem" onClick={() => setOpenState(false)} className={TAB_ROW}>
                 <span className="flex-1">Settings</span>

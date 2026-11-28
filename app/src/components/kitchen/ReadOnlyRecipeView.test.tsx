@@ -12,7 +12,6 @@ const state = {
       title: string;
       kitchenName: string;
       cookedDay: string;
-      rating: number | null;
       note: string | null;
       recipe: {
         name: string;
@@ -102,7 +101,6 @@ describe("CircleDishPage and SharedRecipePage", () => {
         title: "Ginger Sesame Noodles",
         kitchenName: "Maple Kitchen",
         cookedDay: "2026-11-24",
-        rating: 5,
         note: "Used extra scallions",
         recipe: {
           name: "Ginger Sesame Noodles",
@@ -126,12 +124,13 @@ describe("CircleDishPage and SharedRecipePage", () => {
     });
 
     expect(screen.getByRole("heading", { name: "Ginger Sesame Noodles" })).toBeTruthy();
-    expect(screen.getByText(/Maple Kitchen · 2026-11-24 · 5 of 5/)).toBeTruthy();
+    expect(screen.getByText(/From Maple Kitchen · /)).toBeTruthy();
+    expect(document.body.textContent).not.toContain("of 5");
     expect(screen.getByText("Used extra scallions")).toBeTruthy();
     expect(screen.getByText("8 oz noodles")).toBeTruthy();
     expect(screen.getByText("Boil noodles.")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add to my queue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to Up next" }));
     expect(pushMock).toHaveBeenCalledWith(`/kitchen/queue/${state.queuedId}`);
   });
 
@@ -200,7 +199,7 @@ describe("CircleDishPage and SharedRecipePage", () => {
     expect(screen.getByText("1 cup cornmeal")).toBeTruthy();
     expect(screen.getByText("Bake at 425F for 20 minutes.")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add to my queue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to Up next" }));
     expect(pushMock).toHaveBeenCalledWith(`/kitchen/queue/${state.queuedId}`);
   });
 });

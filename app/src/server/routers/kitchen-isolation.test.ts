@@ -1671,6 +1671,8 @@ describe("STRUCT-1: router procedure inventory", () => {
       "removeShoppingListItem",
       "clearShoppingList",
       "getCircleDishes",
+      "getCircleOverview",
+      "leaveCircle",
       "getCircleDish",
       "queueCircleDish",
       "getSharedRecipe",
@@ -1682,7 +1684,7 @@ describe("STRUCT-1: router procedure inventory", () => {
       "saveOwnedCollection",
       "removeOwnedCollection",
     ];
-    expect(expected).toHaveLength(59);
+    expect(expected).toHaveLength(61);
     expect(Object.keys(appRouter._def.procedures).sort()).toEqual(
       [...expected].sort(),
     );
@@ -1848,6 +1850,8 @@ describe("AUTH-1: every procedure except health requires a session and kitchen m
         anon.removeShoppingListItem({ rawOrKey: "Milk" }),
       clearShoppingList: () => anon.clearShoppingList(),
       getCircleDishes: () => anon.getCircleDishes(),
+      getCircleOverview: () => anon.getCircleOverview(),
+      leaveCircle: () => anon.leaveCircle(),
       getCircleDish: () => anon.getCircleDish({ logId: SAMPLE_UUID }),
       queueCircleDish: () => anon.queueCircleDish({ logId: SAMPLE_UUID }),
       getSharedRecipe: () => anon.getSharedRecipe({ recipeId: SAMPLE_UUID }),
@@ -2353,10 +2357,12 @@ describe("ISO-44: getCircleDishes, getCircleDish, and queueCircleDish", () => {
       kitchenName: "Kitchen A",
       canOpenRecipe: true,
     });
+    expect("rating" in dishesB[0]!).toBe(false);
 
     const readDish = await callerB.getCircleDish({ logId: logA!.id });
     expect(readDish.title).toBe(SECRET_RECIPE_A.name);
     expect(readDish.recipe.steps).toEqual(SECRET_RECIPE_A.steps);
+    expect("rating" in readDish).toBe(false);
 
     const queuedCopy = await callerB.queueCircleDish({ logId: logA!.id });
     const storedCopy = await snapshotRow(db, kitchenQueue, queuedCopy.id);
@@ -2554,5 +2560,72 @@ describe("ISO-46: getPackCircleShares and setPackCircleShare", () => {
     expect(
       await callerB.getPack({ packId: "owner-circle-pack" }),
     ).toBeNull();
+  });
+});
+
+describe("ISO-47: getCircleOverview and leaveCircle", () => {
+  it("scopes circle overview to the caller's circle and limits leaveCircle to owners", async () => {
+    expect(await callerA.getCircleOverview()).toEqual({
+      inCircle: false,
+      circleName: null,
+      members: [],
+    });
+
+    const circle = await createCircle({ name: "Sunday Suppers" }, db);
+    await addKitchenToCircle({ circleId: circle.id, kitchenSlug: "kitchen-a" }, db);
+    await addKitchenToCircle({ circleId: circle.id, kitchenSlug: "kitchen-b" }, db);
+
+    const overviewA = await callerA.getCircleOverview();
+    expect(overviewA).toEqual({
+      inCircle: true,
+      circleName: "Sunday Suppers",
+      members: [
+        { kitchenId: kitchenA.id, name: "Kitchen A", isSelf: true },
+        { kitchenId: kitchenB.id, name: "Kitchen B", isSelf: false },
+      ],
+    });
+
+    // Non-owner cook in A cannot leave the circle
+    const [cookUser] = await db
+      .insert(authUser)
+      .values({
+        id: "user-cook-circle-leave",
+        name: "Cook A",
+        email: "cook-circle-leave@example.com",
+        emailVerified: true,
+      })
+      .returning();
+    const [cookMember] = await db
+      .insert(members)
+      .values({
+        kitchenId: kitchenA.id,
+        userId: cookUser!.id,
+        role: "cook",
+      })
+      .returning();
+    const cookCallerA = callerFor(kitchenA, {
+      id: cookMember!.id,
+      role: "cook",
+    });
+
+    await expect(cookCallerA.leaveCircle()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+
+    // Owner of A can leave cleanly; B sees only itself and A is out of the circle
+    await callerA.leaveCircle();
+    expect(await callerA.getCircleOverview()).toEqual({
+      inCircle: false,
+      circleName: null,
+      members: [],
+    });
+    expect(await callerB.getCircleOverview()).toEqual({
+      inCircle: true,
+      circleName: "Sunday Suppers",
+      members: [{ kitchenId: kitchenB.id, name: "Kitchen B", isSelf: true }],
+    });
+    await expect(callerA.leaveCircle()).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
   });
 });

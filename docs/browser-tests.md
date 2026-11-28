@@ -201,7 +201,8 @@ All rows belong to the `home` kitchen with timestamps fixed relative to `SEED_NO
 | Single-kitchen mode: `/` redirect, `/api/auth/get-session` 404, no sign-in/out controls | `app/e2e/single-kitchen.spec.ts` (SINGLE-1) |
 | Version endpoint: `/api/version` answers 200 with only `commit` and matches `SOUS_RELEASE_COMMIT` when set | `app/e2e/version.spec.ts` (VERSION-2) |
 | Deployed copy smoke check: `/api/version`, `/kitchen` (home screen on the same origin with no redirect when `SMOKE_EXPECT_SIGN_IN=off`; same-origin redirect to `/sign-in` with heading and enabled button plus `GET /api/auth/get-session` returning 200 `null` without following redirects when `SMOKE_EXPECT_SIGN_IN=on`), and `/kitchen/cookpacks` plus a book page when `SMOKE_EXPECT_SIGN_IN=off` (skipped when `on`; read-only) | `app/e2e/smoke.spec.ts` (SMOKE-1, SMOKE-2, SMOKE-3) |
-| Flagging a screen and the reports panel | not covered yet |
+| Opening's Ahead note: folds on the wide tablet when it would leave Get out under two rows, opens in full, cycles Tab to "Missed these?", and folds back (`COOK-9`) | `app/e2e/cook.spec.ts` (COOK-9) |
+| Flagging a screen and the reports panel | `app/e2e/feedback.spec.ts` (FEEDBACK-1, FEEDBACK-2) |
 | What a voice command does beyond the reply (the step moved, the timer set, the screen flagged, Ask by voice) | not covered yet |
 | The whole cook's reading of a stop, and its scrolling lines | not covered yet |
 | The whole recipe view | not covered yet |
@@ -230,7 +231,7 @@ Released as it stands. Nothing at rest. While the sheet is between the peek and 
 4. On the straight pass from rest to the whole cook, and when the travel falls back to a fade, neither set is reachable for most of the change.
 5. "···", the Whole recipe ghost and the time to the table sit outside the part that is switched off.
 6. Keyboard focus inside the whole cook is dropped to the page if the sheet is pulled most of the way down and let spring back.
-7. A set-up that fails because a node is missing is retried every frame.
+7. A set-up that fails because a node is missing is retried every frame (note: resolved in `pull-travel.ts` — the listener bind retries only while the element is absent or detached).
 
 **Where:** `app/src/components/kitchen/CookSheet.tsx` (`pullInert`, `inertly`, the bind retry) and `app/src/components/kitchen/pull-travel.ts`. The switching came in late in the pull's work; before it, both sets were reachable between the levels.
 

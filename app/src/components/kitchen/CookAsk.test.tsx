@@ -349,6 +349,7 @@ describe("one-tap hold-back toggle", () => {
     });
     const btn = screen.getByRole("button", { name: ASK_COPY.holdBack });
     expect(btn.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector("[data-ask-circle-visibility]")?.textContent).toBe(ASK_COPY.circleShown);
     for (const el of container.querySelectorAll("*")) {
       expect(atRest(el).filter((c) => c.includes("ember"))).toEqual([]);
       expect(atRest(el)).not.toContain("bg-sand");
@@ -359,5 +360,6 @@ describe("one-tap hold-back toggle", () => {
     });
     expect(onToggleHeldBack).toHaveBeenCalledWith(true);
     expect(screen.getByRole("button", { name: ASK_COPY.showToFriends }).getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector("[data-ask-circle-visibility]")?.textContent).toBe(ASK_COPY.circleHeldBack);
   });
 });

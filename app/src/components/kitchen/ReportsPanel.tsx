@@ -75,6 +75,18 @@ const SCREEN_NAMES: Record<ReportScreen, string> = {
   ingredients: "Ingredients",
   info: MORE_COPY.info,
   "whole-cook": COOK_COPY.wholeRecipe,
+  kitchen: "Kitchen",
+  queue: "Up next",
+  cookpacks: "Cookpacks",
+  import: "Import",
+  saved: "Saved for later",
+  recipes: "Recipe book",
+  "cook-log": "Cook log",
+  "shopping-list": "Shopping list",
+  pantry: "Pantry",
+  circle: "Friends' kitchens",
+  settings: "Settings",
+  other: "Other",
 };
 
 /**
@@ -172,7 +184,14 @@ function cooksOf(entries: OutboxEntry[], now: Date): Cook[] {
     const key = `${entry.recipeName}\u0000${dayKey(new Date(entry.capturedAt))}`;
     const cook = cooks.get(key);
     if (cook) cook.entries.push(entry);
-    else cooks.set(key, { key, recipeName: entry.recipeName, day: dayOf(entry.capturedAt, now), entries: [entry] });
+    else {
+      cooks.set(key, {
+        key,
+        recipeName: entry.recipeName.trim() || "App feedback",
+        day: dayOf(entry.capturedAt, now),
+        entries: [entry],
+      });
+    }
   }
   return [...cooks.values()];
 }

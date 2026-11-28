@@ -32,7 +32,31 @@ export const REPORT_SCREENS = [
   "ingredients",
   "info",
   "whole-cook",
+  "kitchen",
+  "queue",
+  "cookpacks",
+  "import",
+  "saved",
+  "recipes",
+  "cook-log",
+  "shopping-list",
+  "pantry",
+  "circle",
+  "settings",
+  "other",
 ] as const;
+
+/** Maps a `/kitchen/...` pathname to a `ReportScreen`. */
+export function screenFromPath(pathname: string): ReportScreen {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  if (path === "/kitchen") return "kitchen";
+  if (path === "/kitchen/cookpacks/household-book") return "recipes";
+  if (path.startsWith("/kitchen/cookpacks")) return "cookpacks";
+  if (path.startsWith("/kitchen/cook-log")) return "cook-log";
+  if (path.startsWith("/kitchen/circle") || path.startsWith("/kitchen/shared")) return "circle";
+  if (path.startsWith("/kitchen/settings")) return "settings";
+  return "other";
+}
 
 /** Where the cook was: the screen in hand, or what borrowed it. */
 export type ReportScreen = (typeof REPORT_SCREENS)[number];
@@ -294,6 +318,62 @@ function dataOnly<T>(value: T): T {
 export function buildReport(inputs: CaptureInputs): CookReport {
   const report = assemble(inputs);
   if (jsonBytes(report.plan) > PLAN_MAX_BYTES) report.plan = null;
+  const over = jsonBytes(report) + NOTE_MAX_BYTES - REPORT_INPUT_MAX_BYTES;
+  if (over > 0) {
+    report.dom = cutToJsonBytes(report.dom, Math.max(0, escapedBytes(report.dom) - over)).text;
+    report.domTruncated = true;
+  }
+  return report;
+}
+
+export interface PageCaptureInputs {
+  id: string;
+  now: number;
+  build: string;
+  href: string;
+  screen: ReportScreen;
+  note?: string;
+  viewport: { w: number; h: number; dpr: number };
+  ua: string;
+  online: boolean;
+  events: readonly ReportEvent[];
+  root: Element;
+}
+
+/**
+ * Builds a self-contained feedback report for any non-cook screen (`/kitchen`,
+ * settings, cookpacks, circles, or modal overlays) within the server's caps.
+ */
+export function buildPageReport(inputs: PageCaptureInputs): CookReport {
+  const { dom, truncated } = serializeDom(inputs.root);
+  const note = cutToJsonBytes(inputs.note ?? "", NOTE_MAX_BYTES).text;
+  const report: CookReport = {
+    id: inputs.id,
+    capturedAt: new Date(inputs.now).toISOString(),
+    build: inputs.build,
+    path: new URL(inputs.href).pathname,
+    screen: inputs.screen,
+    queueId: null,
+    recipeName: "",
+    stepKey: null,
+    chapterId: null,
+    planVersion: null,
+    plan: null,
+    state: { mode: "page", pos: 0, ticked: [], passed: [], kept: [] },
+    context: {
+      viewport: { ...inputs.viewport },
+      ua: inputs.ua,
+      online: inputs.online,
+      voice: { mode: null, status: "unsupported" },
+      ask: { sessionId: "", open: false },
+      layers: { pane: false, card: null, more: false },
+      part: null,
+    },
+    events: inputs.events.map((e) => ({ ...e })),
+    dom,
+    domTruncated: truncated,
+    note,
+  };
   const over = jsonBytes(report) + NOTE_MAX_BYTES - REPORT_INPUT_MAX_BYTES;
   if (over > 0) {
     report.dom = cutToJsonBytes(report.dom, Math.max(0, escapedBytes(report.dom) - over)).text;

@@ -2,8 +2,10 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { markReturn, takeReturn } from "@/lib/kitchen/return-focus";
+import { SIGN_IN_MODE_COOKIE } from "@/lib/kitchens/mode";
 import { BorrowedPage } from "./BorrowedPage";
 import { BorrowedScreen } from "./BorrowedScreen";
+import { SignInModeProvider } from "./SignInMode";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
@@ -116,5 +118,31 @@ describe("BorrowedPage", () => {
     expect(document.activeElement?.textContent).toBe("Cookpacks");
     // The mark lasts one hop.
     expect(takeReturn()).toBe(false);
+  });
+
+  it("shows Feedback trigger only in sign-in mode", () => {
+    render(
+      <SignInModeProvider>
+        <BorrowedPage kind="Cookpacks" back={BACK}>
+          <button type="button">a book</button>
+        </BorrowedPage>
+      </SignInModeProvider>,
+    );
+    expect(screen.queryByRole("button", { name: "Feedback" })).toBeNull();
+    cleanup();
+
+    document.cookie = `${SIGN_IN_MODE_COOKIE}=1; path=/`;
+    try {
+      render(
+        <SignInModeProvider>
+          <BorrowedPage kind="Cookpacks" back={BACK}>
+            <button type="button">a book</button>
+          </BorrowedPage>
+        </SignInModeProvider>,
+      );
+      expect(screen.getByRole("button", { name: "Feedback" })).toBeTruthy();
+    } finally {
+      document.cookie = `${SIGN_IN_MODE_COOKIE}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+    }
   });
 });

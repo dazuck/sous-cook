@@ -210,6 +210,33 @@ import { storedIngredientLines } from "@/lib/kitchen/ingredient-display";
 import { legacyToPackRecipe } from "@/lib/pack-convert/convert";
 import { AMOUNT_RULE } from "./MeasurementPopover";
 import { AHEAD_ROW, aheadRowPx, GET_OUT_LINES, Timetable } from "./Timetable";
+import { loadCookPlanFixtures } from "@/lib/kitchen/__tests__/load-cook-plan-fixtures";
+import { COLUMN, COLUMN_GAP, FOLDED_GAP, foldedCount, foldedWidthCpx, headRowCpx, listRowsCpx, noteFoldedCpx, wrapRuns, type NoteRun } from "./get-out-room";
+
+/** A corpus meal's title as the cook page shows it: "sunday-roast-dinner" is "Sunday roast dinner". */
+const titleOf = (name: string) => {
+  const words = name.replace(/^pack:/, "").replace(/-/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+/** A note's words as drawn, run by run: each text with the size and weight it is set in. */
+function drawnRuns(p: HTMLElement, c: number): NoteRun[] {
+  const runs: NoteRun[] = [];
+  const weightOf = (el: HTMLElement) => {
+    const at = el.closest<HTMLElement>(".font-bold, .font-semibold, .font-medium");
+    return at?.classList.contains("font-bold") ? 700 : at?.classList.contains("font-semibold") ? 600 : 500;
+  };
+  const walk = (el: HTMLElement) => {
+    for (const n of el.childNodes) {
+      if (n.nodeType === Node.TEXT_NODE) {
+        const size = el.style.fontSize ? parseFloat(el.style.fontSize) / c : 22;
+        runs.push({ text: n.textContent ?? "", size, weight: weightOf(el) });
+      } else if (n instanceof HTMLElement) walk(n);
+    }
+  };
+  walk(p);
+  return runs;
+}
 
 describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", () => {
   const geo = {
@@ -465,6 +492,12 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
           />,
         );
         const where = `${entry.name} ${shape}`;
+        // Where the note is folded to leave Get out its two rows (DS v1.66), the ask is in it opened.
+        const folded = r.container.querySelector<HTMLElement>("[data-ahead][data-ahead-fold='folded']");
+        if (folded) {
+          expect(shape, where).toBe("wide");
+          fireEvent.click(folded);
+        }
         const ask = r.container.querySelector<HTMLButtonElement>("[data-ask-ahead]");
         if (groups.length === 0) {
           expect(ask, where).toBeNull();
@@ -519,6 +552,219 @@ describe("Timetable: R4 Two-Column Opening & Level 2 Phase Outline (Slice 2B)", 
     }
     expect(withAhead).toBeGreaterThanOrEqual(10);
     expect(without).toBeGreaterThan(0);
+  });
+
+  it("Get out keeps room for two rows: on the wide tablet the Ahead note folds to one line wherever at its full height it would leave the list less, and a note that fits is drawn as ever (DS v1.66)", () => {
+    // Every stored meal with make-ahead work, its own Get out where the corpus keeps its ingredients,
+    // at 1280×800 (the tablet) and 1280×680 (its Chrome tab), the serving stepper as the cook page
+    // draws it there.
+    const recipes = new Map(loadCookPlanFixtures().map((f) => [f.name, f.recipe]));
+    const stepper = { recipe: { serves_base: 4, serves_estimated: true as const }, servings: 4, onChange: () => {} };
+    let folded = 0;
+    let fits = 0;
+    for (const entry of timetableCorpus()) {
+      const firstStrip = strip(entry.plan, initialCookState("first"), null, 0);
+      const goStrip = strip(entry.plan, initialCookState("go"), null, 0);
+      const tFirst = buildTimetable(entry.plan, firstStrip, goStrip, "first")!;
+      const tGo = buildTimetable(entry.plan, firstStrip, goStrip, "go")!;
+      if (!tFirst || !tGo) continue;
+      const groups = aheadGroups(entry.plan);
+      if (groups.length === 0) continue;
+      const own = recipes.get(entry.name)?.ingredients.map((g, index) => ({ index, amount: null, name: g.item }));
+      const getOut = own && own.length > 0 ? own : sampleGetOut;
+      for (const H of [800, 680]) {
+        const c = Math.min(1280 / 960, H / 600);
+        const ov = placeOverview({
+          timetable: tFirst,
+          other: tGo,
+          // The sheet's geometry as the cook screen lays it (`sheet-derived.test.ts`), its chrome at its size
+          // there (More 104 × 80 cpx, the opening's controls 170 × 80, as Chromium draws them), and the
+          // meal's own title, which takes one line or two and so moves the column's top.
+          geo: { W: 1280, H, c, E: 48, top: 92 * c, stepTop: 104 * c, footTop: H - 100 * c, ledgeTop: H - 96 * c, portrait: false },
+          measure,
+          chrome: { more: { w: 104 * c, h: 80 * c }, controls: { w: 170 * c, h: 80 * c }, hint: false },
+          toggle: true,
+          title: titleOf(entry.name),
+          opening: { getOut, scaleNote: null, handsOn: "45 min hands-on" },
+          read: null,
+          topLine: false,
+          ttDims,
+        });
+        const onAskAhead = vi.fn();
+        const r = render(
+          <Timetable
+            ov={ov}
+            rootRef={null}
+            measureText={() => measure}
+            strip={firstStrip}
+            opening={true}
+            live={false}
+            readMark={null}
+            onRead={() => {}}
+            onGo={() => {}}
+            onWhole={() => {}}
+            onClose={() => {}}
+            onMode={() => {}}
+            getOut={getOut}
+            scaleNote={null}
+            readText={null}
+            plan={entry.plan}
+            state={initialCookState("first")}
+            steps={entry.plan.tasks.map((t) => t.text)}
+            onAskAhead={onAskAhead}
+            stepper={stepper}
+          />,
+        );
+        const where = `${entry.name} at 1280×${H}`;
+        const note = () => r.container.querySelector<HTMLElement>("[data-get-out] [data-ahead]")!;
+        expect(note(), where).not.toBeNull();
+        expect(note().getAttribute("data-ahead-form"), where).toBe("column");
+        // The column as drawn: its height, Get out's head row with the stepper, the list's first two rows.
+        const avail = parseFloat(r.container.querySelector<HTMLElement>("[data-opening-body]")!.style.height) / c;
+        const head = headRowCpx({ heading: COOK_COPY.getOut, scaleNote: null, stepper: { words: "serves 4 (Sous's estimate)", scales: true }, amounts: true }, measure);
+        const rows = listRowsCpx([{ items: getOut.map((g) => g.name) }], measure);
+        const room = avail - COLUMN_GAP - head - COLUMN_GAP;
+        const full = (p: HTMLElement) => Math.max(48 / c, wrapRuns(drawnRuns(p, c), COLUMN - 24, measure) * 26 + 12);
+        if (note().getAttribute("data-ahead-fold") === "folded") {
+          folded++;
+          // Folded: one line, a 48 px target, "Ahead · 3 jobs" (one per job the note lists) whole, and the
+          // mark that opens it; no cut words, no "Missed it?". Its name is the note's words and "Show all".
+          const line = note();
+          expect(line.tagName, where).toBe("BUTTON");
+          expect(line.getAttribute("aria-expanded"), where).toBe("false");
+          expect(line.getAttribute("aria-label"), where).toMatch(/^Ahead .+\. Show all$/);
+          expect(line.className.split(/\s+/), where).toEqual(expect.arrayContaining(["min-h-[48px]", "shrink-0", "w-full", `gap-[calc(${FOLDED_GAP}*var(--cpx))]`]));
+          const words = line.querySelector<HTMLElement>("[data-ahead-count]")!;
+          expect(words?.textContent, where).toBe(`${COOK_COPY.ahead} ${foldedCount(groups.length)}`);
+          expect(line.querySelector(".truncate, .text-ellipsis"), where).toBeNull();
+          expect(line.textContent, where).not.toMatch(/…/);
+          expect(parseFloat(words.style.fontSize), where).toBeCloseTo(22 * c, 3);
+          const [aheadWord, count] = [...words.children] as HTMLElement[];
+          expect(aheadWord.className.split(/\s+/), where).toEqual(expect.arrayContaining(["font-semibold", "text-ink"]));
+          expect(parseFloat(aheadWord.style.fontSize), where).toBeCloseTo(24 * c, 3);
+          expect(count.className.split(/\s+/), where).toContain("font-medium");
+          // Whole in the column, with its chevron.
+          expect(foldedWidthCpx(groups.length, COOK_COPY.ahead, measure), where).toBeLessThanOrEqual(COLUMN);
+          expect(line.querySelector("[data-ask-words], [data-ask-ahead]"), where).toBeNull();
+          expect(line.textContent, where).not.toMatch(/Missed/);
+          expect(line.querySelector("svg"), where).not.toBeNull();
+          // Folded, the list gets its two rows.
+          expect(noteFoldedCpx(c) + rows, where).toBeLessThanOrEqual(room + 0.01);
+          // A tap opens it in full, its ask at its end working as now, and the turned mark to fold it.
+          fireEvent.click(line);
+          const open = note();
+          expect(open.getAttribute("data-ahead-fold"), where).toBe("open");
+          expect(open.querySelector("p [data-ask-words]")?.textContent, where).toBe(missedAheadAsk(groups).words);
+          // Opened, it was the note that left the list less than its two rows.
+          expect(full(open.querySelector("p")!) + rows, where).toBeGreaterThan(room);
+          const back = open.querySelector<HTMLButtonElement>("[data-ahead-fold-back]")!;
+          expect(back.getAttribute("aria-expanded"), where).toBe("true");
+          expect(back.className.split(/\s+/), where).toEqual(expect.arrayContaining(["h-[48px]", "w-[48px]"]));
+          // Its whole square is its target: no rounding on it to let a finger near its corner through to
+          // the ask under it; its ring, drawn inside, keeps the note's corner on a span of its own.
+          expect(back.className, where).not.toMatch(/\brounded/);
+          const ring = back.querySelector<HTMLElement>("[data-ahead-fold-ring]")!;
+          expect(ring.className.split(/\s+/), where).toEqual(expect.arrayContaining(["inset-0", "pointer-events-none", "rounded-tr-[var(--radius-2)]", "group-focus-visible:-outline-offset-4"]));
+          // It stands before the ask, so Tab and a swipe go on from it to the ask, not past it.
+          const askBtn = open.querySelector<HTMLButtonElement>("[data-ask-ahead]")!;
+          expect(back.compareDocumentPosition(askBtn) & Node.DOCUMENT_POSITION_FOLLOWING, where).toBeTruthy();
+          expect(document.activeElement, where).toBe(back);
+          fireEvent.click(open.querySelector<HTMLButtonElement>("[data-ask-ahead]")!);
+          expect(onAskAhead, where).toHaveBeenCalledWith(groups);
+          fireEvent.click(back);
+          expect(note().getAttribute("data-ahead-fold"), where).toBe("folded");
+          expect(document.activeElement, where).toBe(note());
+        } else {
+          fits++;
+          // A note that leaves the list its two rows is drawn as ever: no mark, nothing folds.
+          expect(note().tagName, where).toBe("DIV");
+          expect(note().hasAttribute("data-ahead-fold"), where).toBe(false);
+          expect(note().querySelector("[data-ahead-fold-back], [data-ahead-fold]"), where).toBeNull();
+          expect(full(note().querySelector("p")!) + rows, where).toBeLessThanOrEqual(room + 0.01);
+        }
+        cleanup();
+      }
+    }
+    expect(folded, "notes that fold").toBeGreaterThan(0);
+    expect(fits, "notes that fit").toBeGreaterThan(0);
+  });
+
+  /** The cookies' opening at 1280×800, as the fold test lays it, with the given props over it. */
+  const cookiesOpening = (props: Partial<React.ComponentProps<typeof Timetable>>, geoOver: Partial<typeof geo> = {}) => {
+    const entry = timetableCorpus().find((x) => x.name === "chewy-oat-cookies")!;
+    const firstStrip = strip(entry.plan, initialCookState("first"), null, 0);
+    const goStrip = strip(entry.plan, initialCookState("go"), null, 0);
+    const tFirst = buildTimetable(entry.plan, firstStrip, goStrip, "first")!;
+    const tGo = buildTimetable(entry.plan, firstStrip, goStrip, "go")!;
+    const c = 1280 / 960;
+    const g = { W: 1280, H: 800, c, E: 48, top: 92 * c, stepTop: 104 * c, footTop: 800 - 100 * c, ledgeTop: 800 - 96 * c, portrait: false, ...geoOver };
+    const getOut = [...(props.getOut ?? sampleGetOut)];
+    const ov = placeOverview({
+      timetable: tFirst,
+      other: tGo,
+      geo: g,
+      measure,
+      chrome: { more: { w: 104 * c, h: 80 * c }, controls: { w: 170 * c, h: 80 * c }, hint: false },
+      toggle: true,
+      title: titleOf(entry.name),
+      opening: { getOut, scaleNote: null, handsOn: "10 min hands-on" },
+      read: null,
+      topLine: false,
+      ttDims,
+    });
+    const all: React.ComponentProps<typeof Timetable> = {
+      ov,
+      rootRef: null,
+      measureText: () => measure,
+      strip: firstStrip,
+      opening: true,
+      live: false,
+      readMark: null,
+      onRead: () => {},
+      onGo: () => {},
+      onWhole: () => {},
+      onClose: () => {},
+      onMode: () => {},
+      getOut,
+      scaleNote: null,
+      readText: null,
+      plan: entry.plan,
+      state: initialCookState("first"),
+      steps: entry.plan.tasks.map((t) => t.text),
+      ...props,
+    };
+    return all;
+  };
+
+  it("the cook page's fresh stepper each render (every timer tick) does not measure the note again: only its words and whether it scales do", () => {
+    const measureText = vi.fn(() => measure);
+    const stepper = { recipe: { serves_base: 4, serves_estimated: true as const }, servings: 4, onChange: () => {} };
+    const props = cookiesOpening({ measureText, stepper, onAskAhead: () => {} });
+    const r = render(<Timetable {...props} />);
+    expect(r.container.querySelector("[data-ahead][data-ahead-fold='folded']")).not.toBeNull();
+    const calls = measureText.mock.calls.length;
+    // A tick: the same values in a new object, and a new onChange.
+    r.rerender(<Timetable {...props} stepper={{ ...stepper, recipe: { ...stepper.recipe }, onChange: () => {} }} />);
+    expect(measureText.mock.calls.length).toBe(calls);
+    // A new serving count is new words: the note is measured again.
+    r.rerender(<Timetable {...props} stepper={{ ...stepper, servings: 12 }} />);
+    expect(measureText.mock.calls.length).toBeGreaterThan(calls);
+  });
+
+  it("the stacked and one-line notes keep their height in a full column with the ask or without it (shrink-0)", () => {
+    // Upright: the stacked form; wide with no Get out: the one-line form. Each without its ask.
+    const upright = { W: 800, H: 1280, c: 800 / 600, E: 35, top: 64, stepTop: 84, footTop: 1200, ledgeTop: 1178, portrait: true };
+    for (const [form, props, g] of [
+      ["stacked", {}, upright],
+      ["row", { getOut: [] }, {}],
+    ] as const) {
+      const r = render(<Timetable {...cookiesOpening(props, g)} />);
+      const note = r.container.querySelector<HTMLElement>("[data-ahead]")!;
+      expect(note.getAttribute("data-ahead-form"), form).toBe(form);
+      expect(note.querySelector("[data-ask-ahead]"), form).toBeNull();
+      expect(note.className.split(/\s+/), form).toContain("shrink-0");
+      cleanup();
+    }
   });
 
   it("with Ahead work and no Get out, Ahead stands above the lines in its one-line form, the ask's words in its text at its size, and the lines leave it its real height: drawn whole or scrolling, never cut (review: bug 3; review round 3)", () => {

@@ -1,6 +1,10 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test, expect } from "./fixtures";
+import { parseCookPlan } from "../src/lib/kitchen/cook-plan";
 import { liveNowLine } from "./cook-helpers";
-import { readQueueRowById, readQueueRowByName } from "./db";
+import { getHomeKitchenId, readQueueRowById, readQueueRowByName, seedQueueRow } from "./db";
 import { BUNDLED_PACK_ID, RECIPE_NAMES, SEED_NOW } from "./seed-data";
 
 test.describe("Cook mode", () => {
@@ -455,6 +459,11 @@ test.describe("Cook mode", () => {
     await expect(page.locator("[data-opening-start]")).toBeVisible();
 
     const note = page.locator("[data-ahead]");
+    const folded = page.locator("[data-ahead][data-ahead-fold='folded']");
+    if ((await folded.count()) > 0) {
+      await folded.click();
+      await expect(page.locator("[data-ahead][data-ahead-fold='open']")).toBeVisible();
+    }
     const words = note.locator("[data-ask-words]");
     const target = note.locator("[data-ask-ahead]");
     await expect(words).toHaveText("Missed it?");
@@ -463,13 +472,20 @@ test.describe("Cook mode", () => {
     const m = await words.evaluate((el) => {
       const noteEl = el.closest<HTMLElement>("[data-ahead]")!;
       const button = noteEl.querySelector<HTMLElement>("[data-ask-ahead]")!;
+      const fold = noteEl.querySelector<HTMLElement>("[data-ahead-fold-back]")?.getBoundingClientRect() ?? null;
       const n = noteEl.getBoundingClientRect();
-      // A finger anywhere on the note, across its width and down its height, lands on the ask.
+      // A finger anywhere on the note, across its width and down its height, lands on the ask
+      // (save the turned chevron corner when opened from a fold).
       const missed: string[] = [];
       for (const fy of [0.15, 0.5, 0.85]) {
         for (let fx = 0.05; fx < 1; fx += 0.1) {
-          const at = document.elementFromPoint(n.left + n.width * fx, n.top + n.height * fy);
-          if (at !== button) missed.push(`${fx.toFixed(2)},${fy}: ${at ? at.tagName : "nothing"}`);
+          const x = n.left + n.width * fx;
+          const y = n.top + n.height * fy;
+          const at = document.elementFromPoint(x, y);
+          const inFold = fold !== null && x >= fold.left && x <= fold.right && y >= fold.top && y <= fold.bottom;
+          if (inFold ? !at?.closest("[data-ahead-fold-back]") : at !== button) {
+            missed.push(`${fx.toFixed(2)},${fy}: ${at ? at.tagName : "nothing"}`);
+          }
         }
       }
       const w = el.getBoundingClientRect();
@@ -500,4 +516,72 @@ test.describe("Cook mode", () => {
     );
   });
 
+  test("COOK-9: on the wide tablet a tall Ahead note folds to leave Get out two rows, opens in full, tabs to Missed these?, and folds back", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const dir = dirname(fileURLToPath(import.meta.url));
+    const fixturesDir = join(dir, "../src/lib/kitchen/__tests__/fixtures/cook-plan");
+    const rawFixture = JSON.parse(readFileSync(join(fixturesDir, "chewy-oat-cookies.json"), "utf8")) as {
+      recipe: { ingredients: Array<{ item: string; amount?: string; unit?: string }>; steps: string[] };
+    };
+    const derived = JSON.parse(readFileSync(join(fixturesDir, "derived/chewy-oat-cookies.json"), "utf8")) as {
+      raw: unknown;
+    };
+    const parsed = parseCookPlan(derived.raw, rawFixture.recipe);
+    if (!parsed.ok) {
+      throw new Error(
+        `chewy-oat-cookies fixture failed to parse: ${JSON.stringify(parsed.violations)}`,
+      );
+    }
+    const kitchenId = await getHomeKitchenId();
+    const queueId = await seedQueueRow(kitchenId, {
+      recipeData: {
+        name: "Chewy Oat Cookies",
+        serves: 24,
+        ingredients: rawFixture.recipe.ingredients,
+        steps: rawFixture.recipe.steps,
+      },
+      cookPlan: parsed.plan as unknown as Record<string, unknown>,
+    });
+
+    await page.goto(`/kitchen/queue/${queueId}`);
+    await expect(page.locator("[data-opening-start]")).toBeVisible();
+
+    const getOut = page.locator("[data-get-out]");
+    const listRows = await getOut.locator("[data-get-out-scroll]").evaluate((list) => {
+      const rows: { top: number; bottom: number }[] = [];
+      for (const li of list.querySelectorAll("li")) {
+        for (const r of li.getClientRects()) {
+          const at = rows.find((x) => Math.abs(x.top - r.top) < 2);
+          if (at) at.bottom = Math.max(at.bottom, r.bottom);
+          else rows.push({ top: r.top, bottom: r.bottom });
+        }
+      }
+      rows.sort((a, b) => a.top - b.top);
+      return { rows, clipBottom: list.getBoundingClientRect().bottom };
+    });
+    const seen = listRows.rows.filter((r) => r.bottom <= Math.min(listRows.clipBottom, 800) + 0.5).length;
+    expect(seen, "Get out keeps at least two rows visible at rest").toBeGreaterThanOrEqual(2);
+
+    const folded = getOut.locator("[data-ahead][data-ahead-fold='folded']");
+    await expect(folded).toBeVisible();
+    await expect(folded).toHaveAttribute("aria-expanded", "false");
+    await expect(folded).toHaveText("Ahead · 3 jobs");
+    await expect(folded).not.toContainText("Missed");
+
+    await folded.click();
+    const open = getOut.locator("[data-ahead][data-ahead-fold='open']");
+    await expect(open).toBeVisible();
+    await expect(open.locator("p [data-ask-words]")).toHaveText("Missed these?");
+    const back = open.locator("[data-ahead-fold-back]");
+    await expect(back).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(open.locator("[data-ask-ahead]")).toBeFocused();
+
+    await back.click();
+    await expect(folded).toBeVisible();
+    await expect(folded).toBeFocused();
+    await expect(page.locator("[data-opening-start]")).toBeVisible();
+  });
 });

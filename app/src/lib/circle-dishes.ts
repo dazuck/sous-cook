@@ -15,7 +15,12 @@ import {
   kitchens,
 } from "./db";
 import { getDeploymentMode } from "./kitchens/deployment";
-import { UUID_PATTERN } from "./kitchens/circles";
+import {
+  KitchenCircleError,
+  UUID_PATTERN,
+  removeKitchenFromCircle,
+  type RemoveFromCircleResult,
+} from "./kitchens/circles";
 import {
   readVisibleKitchenPacks,
   shareKitchenPack,
@@ -53,7 +58,6 @@ export interface CircleDishSummary {
   recipeTitle: string;
   kitchenName: string;
   cookedDay: string;
-  rating: number | null;
   note: string | null;
   canOpenRecipe: boolean;
   packBlocked: boolean;
@@ -64,11 +68,22 @@ export interface ReadOnlyCircleRecipe {
   title: string;
   kitchenName: string;
   cookedDay: string;
-  rating: number | null;
   note: string | null;
   recipe: KitchenQueueRecipeData;
   isPackRecipe: boolean;
   sourceKitchenPackId: string | null;
+}
+
+export interface CircleOverviewMember {
+  kitchenId: string;
+  name: string;
+  isSelf: boolean;
+}
+
+export interface CircleOverview {
+  inCircle: boolean;
+  circleName: string | null;
+  members: CircleOverviewMember[];
 }
 
 export interface ReadOnlySharedRecipe {
@@ -340,7 +355,6 @@ export async function getCircleDishesForKitchen(
           recipeSnapshot: kitchenCookLog.recipeSnapshot,
           recipeTitle: kitchenCookLog.recipeTitle,
           cookedDay: kitchenCookLog.cookedDay,
-          rating: kitchenCookLog.rating,
           notes: kitchenCookLog.notes,
           notePrivate: kitchenCookLog.notePrivate,
           noteUpdatedAt: kitchenCookLog.noteUpdatedAt,
@@ -459,7 +473,6 @@ export async function getCircleDishesForKitchen(
           recipeTitle: dish.recipeTitle,
           kitchenName: member.kitchenName,
           cookedDay: dish.cookedDay,
-          rating: null,
           note: null,
           canOpenRecipe: false,
           packBlocked: true,
@@ -507,7 +520,6 @@ export async function getCircleDishesForKitchen(
       recipeTitle: dish.recipeTitle,
       kitchenName: member.kitchenName,
       cookedDay: dish.cookedDay,
-      rating: dish.rating,
       note: visibleNoteForCircle(dish, member.joinedAt),
       canOpenRecipe: !isPrivate && canReadRecipe,
       packBlocked: false,
@@ -555,7 +567,6 @@ export async function resolveAccessibleCircleDish(
       recipeTitle: kitchenCookLog.recipeTitle,
       cookedDay: kitchenCookLog.cookedDay,
       cookedAt: kitchenCookLog.cookedAt,
-      rating: kitchenCookLog.rating,
       notes: kitchenCookLog.notes,
       notePrivate: kitchenCookLog.notePrivate,
       noteUpdatedAt: kitchenCookLog.noteUpdatedAt,
@@ -662,13 +673,73 @@ export async function resolveAccessibleCircleDish(
     title: row.recipeTitle,
     kitchenName: cookMember.kitchenName,
     cookedDay: row.cookedDay,
-    rating: row.rating,
     note: visibleNoteForCircle(row, cookMember.joinedAt),
     recipe: normalizedRecipe,
     isPackRecipe: packRef !== null,
     sourceKitchenPackId: resolvedSourceKitchenPackId,
   };
 }
+
+/**
+ * Returns the viewer kitchen's circle membership metadata and member kitchens.
+ * Never returns membership details outside sign-in mode or when not in a circle.
+ */
+export async function getCircleOverviewForKitchen(
+  viewerKitchenId: string,
+  database: CircleDishesDb = db,
+  env: Record<string, string | undefined> = process.env,
+): Promise<CircleOverview> {
+  if (getDeploymentMode(env) !== "sign-in") {
+    return { inCircle: false, circleName: null, members: [] };
+  }
+
+  const [membership] = await database
+    .select({
+      circleId: circles.id,
+      circleName: circles.name,
+    })
+    .from(circleMembers)
+    .innerJoin(circles, eq(circleMembers.circleId, circles.id))
+    .where(eq(circleMembers.kitchenId, viewerKitchenId))
+    .limit(1);
+
+  if (!membership) {
+    return { inCircle: false, circleName: null, members: [] };
+  }
+
+  const rows = await database
+    .select({
+      kitchenId: kitchens.id,
+      name: kitchens.name,
+    })
+    .from(circleMembers)
+    .innerJoin(kitchens, eq(circleMembers.kitchenId, kitchens.id))
+    .where(eq(circleMembers.circleId, membership.circleId))
+    .orderBy(asc(kitchens.name), asc(kitchens.slug));
+
+  return {
+    inCircle: true,
+    circleName: membership.circleName,
+    members: rows.map((row) => ({
+      kitchenId: row.kitchenId,
+      name: row.name,
+      isSelf: row.kitchenId === viewerKitchenId,
+    })),
+  };
+}
+
+/**
+ * Removes the caller's kitchen from its circle. Only owners in sign-in mode may leave.
+ */
+export async function leaveCircleForOwner(
+  kitchenSlug: string,
+  database: CircleDishesDb = db,
+  env: Record<string, string | undefined> = process.env,
+): Promise<RemoveFromCircleResult> {
+  return removeKitchenFromCircle({ kitchenSlug }, database, env);
+}
+
+export { KitchenCircleError };
 
 /**
  * Resolves a share-linked recipe (`/kitchen/shared/[recipeId]`). Opens only

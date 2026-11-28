@@ -69,6 +69,7 @@ test.describe("Package 6: Circles, share links, and pack circle sharing in singl
     page.on("request", (req) => {
       if (
         req.url().includes("getCircleDishes") ||
+        req.url().includes("getCircleOverview") ||
         req.url().includes("getPackCircleShares")
       ) {
         circleRequests.push(req.url());
@@ -135,6 +136,10 @@ test.describe("Package 6: Circles, share links, and pack circle sharing in singl
     allowConsoleError,
   }) => {
     allowConsoleError(/Failed to load resource: the server responded with a status of 404/);
+
+    await page.goto("/kitchen/circle");
+    await expect(page.locator("[data-not-available]")).toHaveText("Not available");
+    await expect(page.getByRole("link", { name: "Back to the kitchen" })).toBeVisible();
 
     await page.goto("/kitchen/circle/dish/00000000-0000-4000-8000-000000000001");
     await expect(page.locator("[data-not-available]")).toHaveText("Not available");

@@ -219,6 +219,31 @@ export async function seedDocRecipeRow(
   `;
 }
 
+export async function seedQueueRow(
+  kitchenId: string,
+  input: {
+    recipeData: Record<string, unknown>;
+    cookPlan?: Record<string, unknown> | null;
+  },
+): Promise<string> {
+  const rows = await getClient()<{ id: string }[]>`
+    INSERT INTO public.kitchen_queue (
+      kitchen_id,
+      recipe_data,
+      status,
+      cook_plan
+    )
+    VALUES (
+      ${kitchenId}::uuid,
+      ${JSON.stringify(input.recipeData)}::jsonb,
+      'pending',
+      ${input.cookPlan ? JSON.stringify(input.cookPlan) : null}::jsonb
+    )
+    RETURNING id
+  `;
+  return rows[0]!.id;
+}
+
 export async function readDocRecipePrivate(
   kitchenId: string,
   docSlug: string,
@@ -260,4 +285,19 @@ export async function readLatestUserConversationContext(
   return typeof rows[0].context === "string"
     ? rows[0].context
     : JSON.stringify(rows[0].context);
+}
+
+export async function readLatestCookReport(
+  kitchenId: string,
+): Promise<{ id: string; screen: string; note: string; path: string } | null> {
+  const rows = await getClient()<
+    { id: string; screen: string; note: string; path: string }[]
+  >`
+    SELECT id, screen, note, path
+    FROM public.cook_reports
+    WHERE kitchen_id = ${kitchenId}::uuid
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
 }

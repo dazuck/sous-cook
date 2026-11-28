@@ -10,7 +10,7 @@
  * the profile picker, mounted after the page, is above every screen.
  */
 export function topLayer(): Element | null {
-  const layers = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+  const layers = document.querySelectorAll('[role="dialog"][aria-modal="true"], dialog[open]');
   return layers.item(layers.length - 1);
 }
 

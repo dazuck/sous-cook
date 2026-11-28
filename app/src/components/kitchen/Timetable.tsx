@@ -44,7 +44,8 @@ import { ServingStepper, type ServingStepperProps } from "./ServingStepper";
 import { mealLines } from "@/lib/kitchen/meal-lines";
 import { layoutMealLines, type LinesDrawing } from "@/lib/kitchen/meal-lines-layout";
 import type { Measure } from "@/lib/kitchen/sheet-layout";
-import type { StoredIngredientLines } from "@/lib/kitchen/ingredient-display";
+import { servingsText, type StoredIngredientLines } from "@/lib/kitchen/ingredient-display";
+import { aheadFolds as foldsFor, foldedCount, headRowCpx, listRowsCpx, noteFoldedCpx, noteFullCpx, noteRuns } from "./get-out-room";
 import type { OverviewPlace } from "@/lib/kitchen/overview-place";
 import { saysOf } from "@/lib/kitchen/says-of";
 import {
@@ -86,6 +87,8 @@ export function wholeLinesBottom(ov: OverviewPlace): number {
 }
 const SOONER_FADE_MS = 600;
 const FOCUS = "outline-none focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ink";
+/** The ring drawn inside a control that stands flush with a column that clips, where a ring outside would be cut. */
+const FOCUS_IN = "outline-none focus-visible:outline-3 focus-visible:-outline-offset-4 focus-visible:outline-ink";
 /** A scroller that never draws a scrollbar (Whole recipe's rule): its foot's fade is the cue. */
 const NO_SCROLLBAR = "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
 /** The dotted rule's colour and offset under a Get out amount that opens (the step pairs' own; `AMOUNT_RULE` draws it). */
@@ -443,6 +446,63 @@ export function Timetable(props: TimetableProps) {
     // `room` is read through `roomKey`: the same numbers, the same drawing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines, roomKey, c, stacked, hasGetOut, hasAhead, aheadAsks, portrait, measureText, fontsLoaded]);
+
+  // Get out keeps room for two rows (DS v1.66, DECISIONS 2026-11-24): heading Get out's column on the
+  // wide tablet, the Ahead note folds to one line where at its full height it would leave the list less
+  // than its first two rows. Worked out from the room and the words, never from what is drawn, so a note
+  // that fits never moves. It starts folded each time the opening is shown.
+  // The stepper's words and whether it scales, not the object: the cook page builds a fresh one each
+  // render (every timer tick), and the note is measured again only when what it reads changes.
+  const stepperWords = stepper ? servingsText(stepper.recipe, stepper.scales === false ? stepper.recipe.serves_base : stepper.servings) : null;
+  const stepperScales = stepper ? stepper.scales !== false : false;
+  const aheadFolds = useMemo((): boolean => {
+    if (!room || room.kind !== "opening" || stacked || linesDrawing === null || !hasGetOut || !hasAhead) return false;
+    const measure = (measureText ?? pageMeasure)();
+    const ahead = phasesModel?.ahead ?? [];
+    const runs = noteRuns(
+      ahead,
+      ov.opening?.ahead?.items ?? [],
+      COOK_COPY.ahead,
+      aheadAsks ? missedAheadAsk(ahead.map((a) => a.group)).words : null,
+    );
+    const bodyHeight = Math.max(180 * c, room.bottom - room.y * c - LINES_OVER_FOOT * c);
+    const groups = [
+      getOutModel.equipment,
+      getOutModel.fridge.map((it) => it.bare),
+      getOutModel.pantry.map((it) => it.bare),
+    ].map((items) => ({ items }));
+    return foldsFor({
+      avail: bodyHeight / c,
+      noteFull: noteFullCpx(runs, c, measure, aheadAsks),
+      folded: noteFoldedCpx(c),
+      head: headRowCpx(
+        {
+          heading: COOK_COPY.getOut,
+          scaleNote,
+          stepper: stepperWords !== null ? { words: stepperWords, scales: stepperScales } : null,
+          amounts: getOutModel.fridge.length > 0 || getOutModel.pantry.length > 0,
+        },
+        measure,
+      ),
+      rows: listRowsCpx(groups, measure),
+    });
+    // `room` is read through `roomKey`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomKey, c, stacked, linesDrawing, hasGetOut, hasAhead, aheadAsks, phasesModel, ov.opening, getOutModel, scaleNote, stepperWords, stepperScales, measureText, fontsLoaded]);
+  const [aheadOpen, setAheadOpen] = useState(false);
+  const [openingShown, setOpeningShown] = useState(opening);
+  if (openingShown !== opening) {
+    setOpeningShown(opening);
+    if (opening) setAheadOpen(false);
+  }
+  /** Where the focus goes once the note is opened or folded by its mark: to the mark that undoes it. */
+  const aheadFoldMoved = useRef(false);
+  const aheadFoldRef = useCallback((el: HTMLButtonElement | null) => {
+    if (el && aheadFoldMoved.current) {
+      aheadFoldMoved.current = false;
+      el.focus({ preventScroll: true });
+    }
+  }, []);
   const shedOrder = stacked && !linesDrawing ? stackShedOrder(phases) : [];
   /** The last step of the first rung: tight, every optional line given way, Get out's heads over their lists. */
   const rungEnd = 1 + shedOrder.length;
@@ -885,17 +945,57 @@ export function Timetable(props: TimetableProps) {
                   ))}
             </>
           );
-          const aheadBlock = hasAhead && (
+          // Get out keeps room for two rows (DS v1.66): folded, the note is one line, "Ahead · 3 jobs", and
+          // the mark that opens it, the whole line its target; opened, it is drawn as ever with the same
+          // mark turned in its corner to fold it again.
+          const folding = aheadColumn && aheadFolds;
+          const aheadJobs = aheadList.length > 0 ? aheadList.length : (op.ahead?.items.length ?? 0);
+          const aheadText = `${COOK_COPY.ahead} ${
+            aheadList.length > 0
+              ? aheadList.map((a) => `${a.summary} · ${a.lead}`).join(" · ")
+              : (op.ahead?.items ?? []).map((a) => `${a.name} ${a.lead}`).join(" · ")
+          }`;
+          const foldTo = (open: boolean) => (e: React.MouseEvent) => {
+            e.stopPropagation();
+            aheadFoldMoved.current = true;
+            setAheadOpen(open);
+          };
+          const aheadFolded = folding && !aheadOpen && (
+            <button
+              type="button"
+              ref={aheadFoldRef}
+              data-ahead
+              data-sand=""
+              data-ahead-form="column"
+              data-ahead-fold="folded"
+              aria-expanded={false}
+              aria-label={`${aheadText}. Show all`}
+              onClick={foldTo(true)}
+              className={`pointer-events-auto relative flex min-h-[48px] w-full shrink-0 cursor-pointer items-center gap-[calc(4*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(6*var(--cpx))] text-left ${FOCUS_IN}`}
+            >
+              <span aria-hidden="true" data-ahead-count className="min-w-0 flex-1 whitespace-nowrap" style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}>
+                <span className="font-semibold text-ink" style={{ fontSize: px(24), lineHeight: `${px(26)}px` }}>
+                  {COOK_COPY.ahead}
+                </span>{" "}
+                <span className="font-medium text-ink-soft">{foldedCount(aheadJobs)}</span>
+              </span>
+              <span aria-hidden="true" className="inline-flex shrink-0 text-ink">
+                <Chevron size={px(22)} turn="down" />
+              </span>
+            </button>
+          );
+          const aheadBlock = hasAhead && (aheadFolded || (
                     <div
                       data-ahead
                       data-sand=""
                       data-ahead-form={stacked ? "stacked" : aheadColumn ? "column" : "row"}
+                      data-ahead-fold={folding ? "open" : undefined}
                       className={
                         aheadColumn
                           ? `relative flex shrink-0 flex-col items-start justify-center gap-[calc(4*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(6*var(--cpx))]${askHere ? " min-h-[48px]" : ""}`
                           : stacked
-                          ? `relative flex items-center justify-between gap-[calc(10*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))]${askHere ? " min-h-[48px] shrink-0" : ""}`
-                          : `flex flex-nowrap justify-between gap-[calc(10*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))] ${askHere ? "relative min-h-[48px] shrink-0 items-center" : "items-baseline overflow-hidden"}`
+                          ? `relative flex shrink-0 items-center justify-between gap-[calc(10*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))]${askHere ? " min-h-[48px]" : ""}`
+                          : `flex shrink-0 flex-nowrap justify-between gap-[calc(10*var(--cpx))] rounded-[var(--radius-2)] bg-sand px-[calc(12*var(--cpx))] py-[calc(4*var(--cpx))] ${askHere ? "relative min-h-[48px] items-center" : "items-baseline overflow-hidden"}`
                       }
                     >
                       <p
@@ -903,6 +1003,14 @@ export function Timetable(props: TimetableProps) {
                         className={aheadWraps ? "m-0 min-w-0 flex-1" : "m-0 flex min-w-0 flex-1 items-baseline whitespace-nowrap"}
                         style={{ fontSize: px(22), lineHeight: `${px(26)}px` }}
                       >
+                        {/* Opened from its fold, the words keep clear of the mark in the corner. */}
+                        {folding && (
+                          <span
+                            aria-hidden="true"
+                            className="float-right block"
+                            style={{ width: Math.max(0, 48 - px(12)), height: Math.max(0, 48 - px(6)) }}
+                          />
+                        )}
                         {/* One line: the note's words cut with an ellipsis, the ask's after them, whole, in
                             the same text and at its size (review round 3). */}
                         {aheadWraps ? (
@@ -929,6 +1037,27 @@ export function Timetable(props: TimetableProps) {
                             </>
                           ))}
                       </p>
+                      {/* Before the ask, so Tab and a swipe go from it to the ask (it takes the focus on opening).
+                          Its whole 48 px square is its target, corners and all, so a finger near its corner
+                          never falls through to the ask under it; the ring, on the span, keeps the note's corner. */}
+                      {folding && (
+                        <button
+                          type="button"
+                          ref={aheadFoldRef}
+                          data-ahead-fold-back
+                          aria-expanded={true}
+                          aria-label="Show less"
+                          onClick={foldTo(false)}
+                          className="group pointer-events-auto absolute top-0 right-0 z-[1] inline-flex h-[48px] w-[48px] cursor-pointer items-center justify-center text-ink outline-none"
+                        >
+                          <span
+                            aria-hidden="true"
+                            data-ahead-fold-ring
+                            className="pointer-events-none absolute inset-0 rounded-tr-[var(--radius-2)] group-focus-visible:outline-3 group-focus-visible:-outline-offset-4 group-focus-visible:outline-ink"
+                          />
+                          <Chevron size={px(22)} turn="up" />
+                        </button>
+                      )}
                       {askHere && onAskAhead && (
                         <button
                           type="button"
@@ -941,11 +1070,11 @@ export function Timetable(props: TimetableProps) {
                             onAskAhead(aheadList.map((a) => a.group));
                           }}
                           // The ring is drawn inside the note: it stands flush with columns that clip, where a ring outside would be cut.
-                          className={`pointer-events-auto absolute inset-0 cursor-pointer rounded-[var(--radius-2)] outline-none focus-visible:outline-3 focus-visible:-outline-offset-4 focus-visible:outline-ink`}
+                          className={`pointer-events-auto absolute inset-0 cursor-pointer rounded-[var(--radius-2)] ${FOCUS_IN}`}
                         />
                       )}
                     </div>
-          );
+          ));
           const allowedPassiveKeys = new Set<string>();
           const allowedSummaryKeys = new Set<string>();
           /** Portrait: the optional lines the fit has given way so far. */
@@ -1695,7 +1824,7 @@ function cardName(label: string, pot: boolean, state: string): string {
   return `${label.charAt(0).toUpperCase()}${label.slice(1)}, ${pot ? "pot" : "hands-on"}${st}`;
 }
 
-function Chevron({ size }: { size: number }) {
+function Chevron({ size, turn }: { size: number; turn?: "down" | "up" }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -1705,7 +1834,7 @@ function Chevron({ size }: { size: number }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, transform: turn === "down" ? "rotate(-90deg)" : turn === "up" ? "rotate(90deg)" : undefined }}
     >
       <path d="M15 5l-7 7 7 7" />
     </svg>

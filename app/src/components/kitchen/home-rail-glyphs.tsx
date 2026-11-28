@@ -20,6 +20,8 @@ export type GlyphName =
   | "ask"
   | "recipeBook"
   | "cookLog"
+  | "circle"
+  | "feedback"
   | "settings"
   | "signOut";
 
@@ -53,6 +55,10 @@ const GLYPHS: Record<GlyphName, Shape[]> = {
   ],
   // Cook log (panel only): a journal page with lines
   cookLog: [{ r: [5.5, 4, 13, 16, 2] }, "M9 9h6", "M9 13h6", "M9 17h4"],
+  // Friends' kitchens (panel only, in circle): two kitchens sharing a table
+  circle: ["M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z", "M4.5 19a4.5 4.5 0 0 1 9 0", "M16.5 11.5a2.5 2.5 0 1 0 0-5", "M17 15c2 .4 3.5 1.8 3.5 4"],
+  // Send feedback (panel only): a flag on a post
+  feedback: ["M6 4v16", "M6 5.5h11.5l-2 3.5 2 3.5H6"],
   // Settings (panel only): three horizontal sliders
   settings: ["M4 7h16", "M4 12h16", "M4 17h16", "M9 5v4", "M15 10v4", "M10 15v4"],
   // Sign out (panel only, in sign-in mode): a door with an arrow leaving it

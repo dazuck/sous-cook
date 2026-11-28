@@ -48,7 +48,7 @@ export default function CircleDishPage({ params }: PageProps) {
   return (
     <div className="cook-edge">
       <BorrowedPage
-        kind="Circle dish"
+        kind="Friends' kitchens"
         back={{ label: "Back to the kitchen", href: "/kitchen" }}
         ready={!dishQuery.isPending}
       >
@@ -69,7 +69,6 @@ export default function CircleDishPage({ params }: PageProps) {
             title={dishQuery.data.title}
             kitchenName={dishQuery.data.kitchenName}
             cookedDay={dishQuery.data.cookedDay}
-            rating={dishQuery.data.rating}
             note={dishQuery.data.note}
             recipe={dishQuery.data.recipe}
             queuing={queueMutation.isPending}

@@ -17,13 +17,20 @@ const state: {
   tokens: TokenItem[];
   listCalls: number;
   nextTokenNum: number;
+  circleOverview: {
+    inCircle: boolean;
+    circleName: string | null;
+    members: Array<{ kitchenId: string; name: string; isSelf: boolean }>;
+  };
 } = {
   memberRole: "owner",
   tokens: [],
   listCalls: 0,
   nextTokenNum: 1,
+  circleOverview: { inCircle: false, circleName: null, members: [] },
 };
 
+const leaveCircleMock = vi.fn();
 let rerenderTrigger: (() => void) | null = null;
 
 vi.mock("next/navigation", () => ({
@@ -35,6 +42,8 @@ vi.mock("@/lib/trpc", () => ({
     useUtils: () => ({
       getKitchenSettings: { invalidate: vi.fn() },
       getCollectionAuthoringInfo: { invalidate: vi.fn() },
+      getCircleOverview: { invalidate: vi.fn() },
+      getCircleDishes: { invalidate: vi.fn() },
       listKitchenWebhookTokens: {
         invalidate: () => {
           rerenderTrigger?.();
@@ -67,6 +76,12 @@ vi.mock("@/lib/trpc", () => ({
     },
     updateKitchenAbout: {
       useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+    },
+    getCircleOverview: {
+      useQuery: () => ({ data: state.circleOverview, error: null }),
+    },
+    leaveCircle: {
+      useMutation: () => ({ mutate: leaveCircleMock, isPending: false }),
     },
     listKitchenWebhookTokens: {
       useQuery: () => {
@@ -158,6 +173,8 @@ beforeEach(() => {
   state.tokens = [];
   state.listCalls = 0;
   state.nextTokenNum = 1;
+  state.circleOverview = { inCircle: false, circleName: null, members: [] };
+  leaveCircleMock.mockReset();
   rerenderTrigger = null;
   setSignInCookie(false);
 });
@@ -285,5 +302,67 @@ describe("KitchenSettingsPage owner webhook token UI", () => {
       screen.getByRole("button", { name: "Revoke Replacement" }),
     );
     expect(document.querySelector("[data-webhook-token-value]")).toBeNull();
+  });
+});
+
+describe("KitchenSettingsPage Circle, About, and Feedback sections", () => {
+  it("hides Circle section outside sign-in mode or when not in a circle", () => {
+    setSignInCookie(true);
+    renderSettings();
+    expect(document.querySelector("[data-circle-settings]")).toBeNull();
+    cleanup();
+
+    setSignInCookie(false);
+    state.circleOverview = {
+      inCircle: true,
+      circleName: "Sunday Suppers",
+      members: [{ kitchenId: "k1", name: "Home", isSelf: true }],
+    };
+    renderSettings();
+    expect(document.querySelector("[data-circle-settings]")).toBeNull();
+  });
+
+  it("shows circle members and requires two taps for an owner to leave", () => {
+    setSignInCookie(true);
+    state.memberRole = "owner";
+    state.circleOverview = {
+      inCircle: true,
+      circleName: "Sunday Suppers",
+      members: [
+        { kitchenId: "k1", name: "Maple Kitchen", isSelf: true },
+        { kitchenId: "k2", name: "Cedar Kitchen", isSelf: false },
+      ],
+    };
+
+    renderSettings();
+    expect(document.querySelector("[data-circle-settings]")).toBeTruthy();
+    expect(screen.getByText("Sunday Suppers")).toBeTruthy();
+    expect(screen.getByText("Maple Kitchen (this kitchen) · Cedar Kitchen")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Leave circle" }));
+    expect(leaveCircleMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm leave" }));
+    expect(leaveCircleMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides Leave circle for non-owner cooks", () => {
+    setSignInCookie(true);
+    state.memberRole = "cook";
+    state.circleOverview = {
+      inCircle: true,
+      circleName: "Sunday Suppers",
+      members: [{ kitchenId: "k1", name: "Maple Kitchen", isSelf: true }],
+    };
+
+    renderSettings();
+    expect(document.querySelector("[data-circle-settings]")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Leave circle" })).toBeNull();
+  });
+
+  it("renders Send feedback action in both modes and anchors About section at #about", () => {
+    renderSettings();
+    expect(document.getElementById("about")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Send feedback" })).toBeTruthy();
   });
 });

@@ -738,3 +738,28 @@ describe("SIGNOUT-1: Sign out in the kitchen home rail menu", () => {
     }
   });
 });
+
+describe("Friends' kitchens and Send feedback menu items", () => {
+  it("shows Friends' kitchens only when inCircle is true, and Send feedback when onOpenFeedback is provided", () => {
+    render(<HomeRail {...makeRailProps()} />);
+    openRailMenu();
+    expect(screen.queryByRole("menuitem", { name: "Friends' kitchens" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Send feedback" })).toBeNull();
+    cleanup();
+
+    const onOpenFeedback = vi.fn();
+    render(
+      <HomeRail
+        {...makeRailProps()}
+        inCircle={true}
+        onOpenFeedback={onOpenFeedback}
+      />,
+    );
+    openRailMenu();
+    expect(
+      screen.getByRole("menuitem", { name: "Friends' kitchens" }).getAttribute("href"),
+    ).toBe("/kitchen/circle");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Send feedback" }));
+    expect(onOpenFeedback).toHaveBeenCalledTimes(1);
+  });
+});

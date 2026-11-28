@@ -144,12 +144,12 @@ describe("circle home dishes, showing rule, privacy, before-join, and leaving", 
         recipeTitle: "Unrated Focaccia",
         kitchenName: "Maple Kitchen",
         cookedDay: "2026-11-24",
-        rating: null,
         note: "Crisp crust",
         canOpenRecipe: true,
         packBlocked: false,
       },
     ]);
+    expect("rating" in dishesForB[0]!).toBe(false);
     // Own dishes never show
     expect(await getCircleDishesForKitchen(kitchenA.id, db)).toEqual([]);
     // Non-circle kitchen sees nothing
@@ -162,12 +162,14 @@ describe("circle home dishes, showing rule, privacy, before-join, and leaving", 
     });
     expect(await getCircleDishesForKitchen(kitchenB.id, db)).toEqual([]);
 
-    // One-tap toggle on log entry shows it despite rating 3
+    // One-tap toggle on log entry shows it despite rating 3, still never exposing rating
     await updateCookLogEntry(kitchenA.id, {
       id: unrated!.id,
       heldBack: false,
     });
-    expect((await getCircleDishesForKitchen(kitchenB.id, db))[0]?.rating).toBe(3);
+    const revealed = await getCircleDishesForKitchen(kitchenB.id, db);
+    expect(revealed).toHaveLength(1);
+    expect("rating" in revealed[0]!).toBe(false);
   });
 
   it("supports one-tap hold-back from 'How was it?' before rating and preserves choice on subsequent rating", async () => {
@@ -321,9 +323,9 @@ describe("circle home dishes, showing rule, privacy, before-join, and leaving", 
       recipeTitle: "Family Dal",
       canOpenRecipe: false,
       packBlocked: false,
-      rating: 5,
       note: "Rich spice",
     });
+    expect("rating" in homePrivate!).toBe(false);
     await expect(
       resolveAccessibleCircleDish(kitchenB.id, privateDish!.id, db),
     ).rejects.toBeInstanceOf(CircleNotAvailableError);
@@ -362,16 +364,16 @@ describe("circle home dishes, showing rule, privacy, before-join, and leaving", 
     const [blockedView] = await getCircleDishesForKitchen(kitchenB.id, db);
     expect(blockedView).toMatchObject({
       recipeTitle: "Herb White Beans",
-      rating: null,
       note: null,
       canOpenRecipe: false,
       packBlocked: true,
     });
+    expect("rating" in blockedView!).toBe(false);
     await expect(
       resolveAccessibleCircleDish(kitchenB.id, packDish!.id, db),
     ).rejects.toBeInstanceOf(CircleNotAvailableError);
 
-    // Sharing pack with Cedar exposes full dish & allows opening
+    // Sharing pack with Cedar exposes dish without rating & allows opening
     await shareKitchenPack(
       { pack: "circle-suppers", kitchenSlug: "maple", withKitchenSlug: "cedar" },
       db,
@@ -379,13 +381,14 @@ describe("circle home dishes, showing rule, privacy, before-join, and leaving", 
     const [sharedView] = await getCircleDishesForKitchen(kitchenB.id, db);
     expect(sharedView).toMatchObject({
       recipeTitle: "Herb White Beans",
-      rating: 5,
       note: "Secret pack note",
       canOpenRecipe: true,
       packBlocked: false,
     });
+    expect("rating" in sharedView!).toBe(false);
     const opened = await resolveAccessibleCircleDish(kitchenB.id, packDish!.id, db);
     expect(opened.title).toBe("Herb White Beans");
+    expect("rating" in opened).toBe(false);
   });
 
   it("share links open only for same-circle non-private recipes and give identical error otherwise", async () => {
@@ -652,9 +655,9 @@ describe("circle home dishes, showing rule, privacy, before-join, and leaving", 
     expect(blockedDishes[0]).toMatchObject({
       packBlocked: true,
       canOpenRecipe: false,
-      rating: null,
       note: null,
     });
+    expect("rating" in blockedDishes[0]!).toBe(false);
     await expect(
       resolveAccessibleCircleDish(kitchenB.id, logRow!.id, db),
     ).rejects.toBeInstanceOf(CircleNotAvailableError);
